@@ -64,7 +64,7 @@ change (talon size, bid increments, marriage values, barrel rules, ...).
 
 ### 1.1 Cards & deck
 
-- [ ] Define the canonical `RuleConfig` baseline and the card model.
+- [x] Define the canonical `RuleConfig` baseline and the card model.
   - Card has suit (♠♣♦♥) and rank (9,J,Q,K,10,A).
   - Card point values are A=11, 10=10, K=4, Q=3, J=2, 9=0.
   - Trick rank order is A > 10 > K > Q > J > 9.
@@ -128,6 +128,10 @@ change (talon size, bid increments, marriage values, barrel rules, ...).
   - Trick winner leads next.
   - A deal is exactly 8 tricks.
   - Every illegal play is logged with the rule it broke.
+- [ ] Fix trick-count inconsistency in `docs/rules/setup.md`.
+  - The overview at line 21 says "7 tricks played"; every other rules
+    page and this task list establish 8 tricks per deal (each player
+    holds 8 cards after the talon pass).
 
 ### 1.7 Scoring & barrel
 
