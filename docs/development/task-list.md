@@ -135,7 +135,7 @@ change (talon size, bid increments, marriage values, barrel rules, ...).
 
 ### 1.7 Scoring & barrel
 
-- [ ] Implement deal scoring and contract resolution.
+- [x] Implement deal scoring and contract resolution.
   - Captured card points sum to at most 120 across all sides.
   - Marriage bonuses are credited to the player who declared them.
   - Captured card points round to nearest 5; marriage bonuses stay exact.
