@@ -103,9 +103,9 @@ in [Architecture](./architecture.md).
 ### 5. Implement minimally
 
 - Touch only the files needed for this one task.
-- Match the layering: `src/core` stays pure Lua (no `love.*`);
-  platform-conditional code stays in `src/ui` or `platform/`;
-  `src/app/ai/` and `src/app/llm/` never import each other.
+- Match the layering: `core/` stays pure Lua (no `love.*`);
+  platform-conditional code stays in `ui/` or `platform/`;
+  `app/ai/` and `app/llm/` never import each other.
 - Every player-visible string goes through `t()` — no literals, even in
   placeholder UI.
 - Never hard-code a rule constant the engine reads from `RuleConfig`.
@@ -117,7 +117,7 @@ In this exact order. Skipping any one of these is failure.
 
 #### 6a. Unit tests (busted, plain `lua`)
 
-Mandatory for **any** change in `src/core` or `src/app`. Cover the happy
+Mandatory for **any** change in `core/` or `app/`. Cover the happy
 path and at least one edge case. The full `make test` (or equivalent)
 suite must pass.
 
@@ -196,7 +196,7 @@ End your turn with exactly this report:
 
 These override anything you might infer otherwise.
 
-- **Algorithm-vs-LLM firewall.** `src/app/ai/` and `src/app/llm/` may
+- **Algorithm-vs-LLM firewall.** `app/ai/` and `app/llm/` may
   not import each other. CI lint guards this — do not silence it.
 - **No hard-coded rule constants.** Everything variable across
   templates reads from `RuleConfig`.
@@ -222,7 +222,7 @@ true:
 - Implementing it requires a decision under "Out of scope of this
   document" in [Architecture](./architecture.md).
 - You'd need to add a new third-party dependency.
-- You'd need platform-conditional code in `src/core` or `src/app`.
+- You'd need platform-conditional code in `core/` or `app/`.
 - Tests pass locally but the computer-use smoke check shows the change
   doesn't actually do what the task asked for.
 - The next task on the list depends on something not yet built and

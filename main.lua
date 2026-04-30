@@ -1,4 +1,4 @@
--- Layer 4 entry point. Real scenes live in src/ui/ from Phase 2.
+-- Layer 4 entry point. Real scenes live in ui/ from Phase 2.
 
 function love.load()
 end

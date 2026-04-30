@@ -30,11 +30,11 @@ plumbing every later phase relies on (i18n, settings, save dir) exists
 from day one.
 
 - [x] **P0** Initialise Love2D project skeleton (`main.lua`, `conf.lua`, window title, version).
-- [ ] **P0** Set up the directory layout from [Architecture](./architecture.md): `src/core`, `src/app`, `src/ui`, `src/assets`, `tests/`, `platform/`.
+- [ ] **P0** Set up the directory layout from [Architecture](./architecture.md): `core/`, `app/`, `ui/`, `assets/`, `tests/`, `platform/`.
 - [ ] **P0** Add a Lua linter (luacheck) and formatter (stylua) with a single project config.
 - [ ] **P0** Add a unit-test runner that works on plain `lua` from the command line (e.g. busted) and a `make test` / shell script entry point.
 - [ ] **P0** GitHub Actions: run lint + tests on every push.
-- [ ] **P0** **i18n module**: a `t(key, …)` lookup against `src/assets/i18n/<locale>.lua`. Active locale lives in settings. Stub locale tables for `en`, `ru`, `pl`, `uk` (initially identical to `en`; populated in Phase 8).
+- [ ] **P0** **i18n module**: a `t(key, …)` lookup against `assets/i18n/<locale>.lua`. Active locale lives in settings. Stub locale tables for `en`, `ru`, `pl`, `uk` (initially identical to `en`; populated in Phase 8).
 - [ ] **P0** **Locale fallback**: if a key is missing in the active locale, fall back to `en` and log once per missing key.
 - [ ] **P1** GitHub Actions: produce a `.love` artifact on every push to `main`.
 - [ ] **P1** Project `README.md` at the repo root: how to run, how to test, how to package.
@@ -120,10 +120,10 @@ barrel rules, …).
 
 ### 1.8 Test suite for the engine
 
-- [ ] **P0** Unit tests for every public function in `src/core`.
+- [ ] **P0** Unit tests for every public function in `core/`.
 - [ ] **P0** End-to-end test: simulate a full scripted deal and assert final scores.
 - [ ] **P0** Property-test or scripted test: no rule violation reachable via the public API.
-- [ ] **P1** Coverage report; aim for 80%+ on `src/core`.
+- [ ] **P1** Coverage report; aim for 80%+ on `core/`.
 
 ---
 
@@ -374,7 +374,7 @@ The base hot-seat game (Phases 0–4) plays correctly on every v1 target.
 Goal: a single human plays against two AI seats at one difficulty. **No
 LLM yet — silent AI.**
 
-- [ ] **P0** AI player abstraction: `chooseBid`, `chooseTalonPass`, `chooseRaise`, `chooseCard`, `chooseMarriage`. Lives in `src/app/ai/`.
+- [ ] **P0** AI player abstraction: `chooseBid`, `chooseTalonPass`, `chooseRaise`, `chooseCard`, `chooseMarriage`. Lives in `app/ai/`.
 - [ ] **P0** Rule-based AI v1: legal bidding heuristic from the [Strategy](../strategy.md) page.
 - [ ] **P0** Rule-based AI v1: legal trick play that obeys must-follow / must-beat / must-trump.
 - [ ] **P0** AI never produces an illegal move (verified by the same rules engine that guards the human).
@@ -403,7 +403,7 @@ and talk to the architect.
 
 ### 7.1 Algorithm-vs-LLM firewall
 
-- [ ] **P0** `src/app/ai/` (move logic) and `src/app/llm/` (chat) live in separate modules and never import each other.
+- [ ] **P0** `app/ai/` (move logic) and `app/llm/` (chat) live in separate modules and never import each other.
 - [ ] **P0** CI lint fails the build if the import graph is violated.
 - [ ] **P0** The LLM client's only public output type is **text**. It has no method shape that could return a card, bid, or move.
 - [ ] **P0** Test: with the LLM client stubbed to return chaos / errors / nothing, every test from Phases 1, 2, 3 and 6 still passes unchanged.
@@ -436,7 +436,7 @@ copy later.
 
 ### 7.5 OpenAI-compatible LLM client
 
-- [ ] **P0** Minimal HTTP client in `src/app/llm/` that calls the **OpenAI Chat Completions** shape (or any endpoint that mimics it).
+- [ ] **P0** Minimal HTTP client in `app/llm/` that calls the **OpenAI Chat Completions** shape (or any endpoint that mimics it).
 - [ ] **P0** Configurable: base URL, API key, model name, optional extra headers.
 - [ ] **P0** Verified to work with at least: **OpenAI** (api.openai.com), **OpenRouter**, **local Ollama** (its `/v1` OpenAI-compatible mode), and **LM Studio**.
 - [ ] **P0** **Non-blocking**: an LLM call never stalls the game loop. Use coroutines or a worker.
@@ -556,7 +556,7 @@ accessible from the main menu, that teaches the game from scratch.
 - [ ] **P0** Keep the [Rules of Play](../rules/setup.md) in sync with code. If they disagree, fix the docs first.
 - [ ] **P0** Every PR runs lint + tests; no merges on red.
 - [ ] **P0** **Every player-visible string goes through `t()`.** No hard-coded UI literals, ever — not in placeholders, not in error messages, not in tutorials. Phase 8 only adds translations against keys that already exist.
-- [ ] **P0** No platform-conditional code in `src/core` or `src/app`. Anything platform-specific lives in `src/ui` or `platform/` so the post-v1 Windows and Android targets stay cheap.
+- [ ] **P0** No platform-conditional code in `core/` or `app/`. Anything platform-specific lives in `ui/` or `platform/` so the post-v1 Windows and Android targets stay cheap.
 - [ ] **P0** No absolute filesystem paths anywhere — `love.filesystem` only.
 - [ ] **P0** Touch + mouse input parity: every interaction works under both, so the same code covers iOS, desktop, and (later) Android.
 - [ ] **P1** Update this task list as you go: tick boxes off, add tasks you discover, do **not** delete obsolete ones — strike them through with a note.
