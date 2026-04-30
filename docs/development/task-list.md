@@ -96,7 +96,7 @@ change (talon size, bid increments, marriage values, barrel rules, ...).
 
 ### 1.4 Talon, pass and raise
 
-- [ ] Implement talon reveal, pickup, pass, and post-talon raise.
+- [x] Implement talon reveal, pickup, pass, and post-talon raise.
   - The 3 talon cards are publicly revealed.
   - Declarer takes the talon and reaches 10 cards; opponents stay at 7.
   - Declarer passes 1 face-down card to each opponent, producing 8 / 8 / 8.
