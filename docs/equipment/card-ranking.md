@@ -17,7 +17,7 @@ Within any single suit, cards rank as follows during a trick:
 A  >  10  >  K  >  Q  >  J  >  9
 ```
 
-:::caution The 10 outranks the King
+:::warning[The 10 outranks the King]
 This is the most common point of confusion for beginners coming from Whist or
 Bridge. In Thousand, **the 10 is the second-highest card in every suit**,
 beaten only by the Ace.
@@ -56,7 +56,7 @@ tricks. Marriage values vary by suit:
 The mnemonic **100 / 80 / 60 / 40** descends through the suits in order
 **♥ ♦ ♣ ♠**.
 
-:::info Total possible per deal
+:::info[Total possible per deal]
 With every marriage active and all tricks captured, a single player can score
 **120 + 100 + 80 + 60 + 40 = 400 points** in one deal — though this
 practically never happens.

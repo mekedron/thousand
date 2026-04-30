@@ -45,7 +45,7 @@ of the auction. A higher bid implicitly relies on cards a player cannot yet
 see and is reserved for the [Raise](./talon.md#step-4-raising-the-bid) phase after the
 declarer has seen the talon.
 
-:::tip How high should you open?
+:::tip[How high should you open?]
 A typical opening at 100 promises:
 - One reliable trump suit (4+ cards), **or**
 - A marriage (King + Queen of any suit).

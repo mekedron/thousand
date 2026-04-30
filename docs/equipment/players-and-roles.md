@@ -36,7 +36,7 @@ deal:
 | **Defenders** | The other two players | Cooperate **without sharing information** to stop the declarer from making their contract. |
 | **Dealer** | Rotates clockwise | Shuffles and deals; opponent of the dealer to their left is forehand. |
 
-:::caution Defenders cannot collude openly
+:::warning[Defenders cannot collude openly]
 Defenders may not show cards, signal, or discuss strategy. They simply share
 the goal of preventing the declarer from making their contract — and each
 defender keeps their **own** independent score.

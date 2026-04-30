@@ -48,7 +48,7 @@ card from another suit — and that discard cannot win the trick.
 | No led suit, have trump | Play trump. Over-trump if you can. |
 | Neither led suit nor trump | Discard freely; cannot win. |
 
-:::caution Strict overtrumping
+:::warning[Strict overtrumping]
 The "must beat if you can" rule is strict. **Failing to overtake a trick
 when you could have** is a **revoke** — typically penalised by awarding the
 declarer's full bid to the opponents (or the equivalent penalty in your

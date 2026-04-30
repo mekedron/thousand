@@ -119,7 +119,7 @@ work, not a Lua rewrite.
 - [Task List](./task-list.md) — the living checklist; tick items off as
   you go.
 
-:::tip One source of truth
+:::tip[One source of truth]
 If the code disagrees with the rules documentation, **the documentation
 wins** — fix the code. If the rules documentation is wrong, fix the docs
 first in a separate change, then update the code.

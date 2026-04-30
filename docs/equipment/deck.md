@@ -26,7 +26,7 @@ The stripped deck is shared with several relatives in the Marriage family
 that every card matters: in a 24-card game every card has either point value
 in tricks, marriage potential, or both.
 
-:::tip Where to find a deck
+:::tip[Where to find a deck]
 Any standard playing-card deck works — simply remove cards 2 through 8 before
 play. Dedicated **Преферанс** (Preference) or **Schnapsen** decks ship as
 24-card packs ready to use.

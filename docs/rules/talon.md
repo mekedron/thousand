@@ -32,7 +32,7 @@ opponent**. After passing:
 The cards passed are at the declarer's discretion — usually the lowest in
 suits the declarer does **not** want to use as trump.
 
-:::caution The pass is binding
+:::warning[The pass is binding]
 Once the declarer has placed cards face-down in front of the opponents and
 released them, those cards are committed. No look-backs or trades.
 :::
@@ -51,7 +51,7 @@ A common reason to raise:
 A declarer who is **disappointed** by the talon may **not lower** their bid.
 They must play to make their original contract or pay the penalty.
 
-:::tip Raise carefully
+:::tip[Raise carefully]
 The raise locks in your contract — you score it on success, but lose the
 **raised** amount on failure. Most players raise only when the talon turns
 a 100 bid into a clear 120-150 hand.

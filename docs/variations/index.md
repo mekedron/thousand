@@ -40,7 +40,7 @@ Each variation page lists **only the differences** from the standard rules
 documented in [Rules of Play](../rules/setup.md). Where a rule is not
 mentioned, assume the standard rule applies.
 
-:::tip Always agree before the first deal
+:::tip[Always agree before the first deal]
 The most common source of arguments in Thousand is mismatched expectations.
 Spend 30 seconds before the first hand confirming:
 1. Marriage values.

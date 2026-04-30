@@ -18,7 +18,7 @@ also pass without bidding, the **dealer is forced to take the contract at
 100** — they cannot escape the auction. This prevents endless
 pass-everything-around stalling.
 
-:::note Two rules share the name "bolt"
+:::note[Two rules share the name "bolt"]
 The Russian word *болт* (and its synonym *палка*) is used in some
 traditions for a **completely different rule**: a zero-tricks penalty
 documented under

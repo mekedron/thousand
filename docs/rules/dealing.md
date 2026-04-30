@@ -27,7 +27,7 @@ Result:
   face down in the centre of the table.
 - All 24 cards have been dealt: `3 × 7 + 3 = 24`.
 
-:::tip Alternative deal patterns
+:::tip[Alternative deal patterns]
 Some tables simply deal **7 cards each** in any pattern, then put the
 remaining **3 cards face down** as the talon. Mathematically identical, just
 quicker. Agree before the first hand which pattern you use.
@@ -64,7 +64,7 @@ combinations of these.
 The auction begins immediately. **Forehand** (left of the dealer) is the
 first to bid. See [Bidding](./bidding).
 
-:::info Don't peek at the talon
+:::info[Don't peek at the talon]
 Until the auction ends, the talon is sacred. Looking at it ends the deal
 with a penalty equal to a typical contract (commonly 120 points) deducted
 from the offender's score.

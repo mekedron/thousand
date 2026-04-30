@@ -79,7 +79,7 @@ up to **150** if the bidder has very strong cards. Confirm before play.
 If everyone passes, the dealer is forced into a 100 contract. Sometimes
 called *бовт* or *болт*. Standard in Ukrainian play; optional elsewhere.
 
-:::caution Same word, two rules
+:::warning[Same word, two rules]
 The Russian word *болт* (and its synonym *палка*) is **also** used for
 the **zero-tricks penalty** under
 [Penalty house rules](#zero-tricks-penalty-болт--палка) — a completely
@@ -536,7 +536,7 @@ Variants:
   [Golden deal](#golden-deal--золотой-кон) rule is active).
 - **Declarer exempt** — only defenders can earn bolts (rare).
 
-:::caution Same word, different rule
+:::warning[Same word, different rule]
 This is **not** the same as the [forced dealer
 bid](#forced-dealer-bid-бовт--bolt) — that's also called *болт* in
 some traditions but means a forced 100 contract, not a zero-tricks

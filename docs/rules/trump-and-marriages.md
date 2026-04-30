@@ -35,7 +35,7 @@ suit at the start of a trick**, and announcing the marriage.
 The marriage card itself is then played as a normal lead in the current
 trick — it is not a free declaration.
 
-:::caution The lead must be from the K or Q
+:::warning[The lead must be from the K or Q]
 Holding K + Q is not enough. The marriage is **only** scored when one of
 the two cards is led from the player's hand on the lead. Cards captured in
 tricks do not count.

@@ -9,7 +9,7 @@ This file is the **living checklist** for building the game. Tick boxes off
 as you complete them. Tasks are grouped by phase from the
 [Roadmap](./roadmap.md) and ordered by priority **within** each phase.
 
-:::tip How to use this page
+:::tip[How to use this page]
 - **Top-to-bottom is priority order.** Don't skip ahead within a phase.
 - A task is "done" when its acceptance line is true and the change is
   merged to `main`.
@@ -47,7 +47,7 @@ from day one.
 
 Goal: every rule from [Rules of Play](../rules/setup.md) implemented and tested. **No Love2D in this layer.**
 
-:::caution Read from `RuleConfig` from day one
+:::warning[Read from `RuleConfig` from day one]
 The engine is **parameterised by a `RuleConfig`** from this phase's
 first commit. Phase 1 ships exactly one `RuleConfig` value — the
 canonical Russian default — but never hard-codes a value any future
@@ -394,7 +394,7 @@ OpenAI-compatible LLM endpoint configured, characters banter, react and
 attempt to bluff during play. The algorithm still picks every move — the
 LLM only writes text.
 
-:::caution Inviolable invariant
+:::warning[Inviolable invariant]
 **The algorithm picks every move. The LLM only writes dialogue.**
 This phase must not weaken that boundary. If you find yourself wanting
 the LLM to choose a card "just this once", you are doing it wrong — stop

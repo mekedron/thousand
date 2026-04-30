@@ -40,7 +40,7 @@ points; see [House Rules](../variations/house-rules).)
 Each defender independently adds **the points they actually captured** in
 the deal (cards + any marriages they declared) to their running total.
 
-:::tip Why declarer doesn't always want a high contract
+:::tip[Why declarer doesn't always want a high contract]
 Even though a higher bid scores more on success, defenders score nothing
 extra when the declarer wins — but they score everything they capture
 *regardless* of the declarer's outcome. Bidding too high to keep them off
