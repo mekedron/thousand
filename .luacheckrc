@@ -13,6 +13,7 @@ globals = { "love" }
 exclude_files = {
     "love2d-mcp/",
     "docs-site/",
+    ".luarocks/",
 }
 
 -- Tests run under busted, which injects describe/it/before_each/after_each/setup/teardown
