@@ -43,7 +43,48 @@ the active phase, move to the next phase.
 
 If two tasks are equally prioritised, take the one closer to the top.
 
-### 3. Plan in writing
+### 3. Assess complexity — request Plan Mode if warranted
+
+Before writing anything else, decide whether the task is big enough to
+warrant **Plan Mode**. Plan Mode forces an architectural plan with
+explicit user approval before any implementation, and is the right
+default for large or risky work.
+
+**Request Plan Mode for:**
+
+- Any task in **Phase 6** (algorithmic AI) — bidding heuristics, trick
+  play, difficulty levels, AI player abstraction.
+- Any task in **Phase 7** (AI characters & LLM) — LLM client, character
+  presets, chat HUD, endpoint settings, secure-storage integration.
+- Tasks that **establish a foundational subsystem** the rest of the
+  codebase will depend on: the i18n module, the e2e harness, the
+  `RuleConfig` schema, the save format, the skin asset-pack format,
+  the import-graph CI lint.
+- Tasks that **touch more than one sub-section** of a phase at once.
+- Tasks that require **choosing between architectural alternatives**
+  (e.g. rule-based vs. MCTS AI, sync vs. streaming LLM responses,
+  Keychain vs. file-based key storage).
+- Any task whose line names a major subsystem ("system", "engine",
+  "framework", "harness", "manager", "client").
+
+**Do NOT request Plan Mode for:**
+
+- Adding one rule + its unit test.
+- Editing a single locale string.
+- Wiring a single UI control to an existing handler.
+- Single-file refactors with no API change.
+- Cosmetic tweaks (a colour, a margin, a label).
+
+If Plan Mode is warranted, **stop here** and reply to the user:
+
+> This task warrants **Plan Mode**. Please toggle it on (Shift+Tab in
+> Claude Code) and re-invoke me. The task line is:
+> `<quote the task line>`.
+
+Do not proceed without the user's confirmation. If Plan Mode is **not**
+warranted, continue to step 4.
+
+### 4. Plan in writing
 
 Before writing code, post a plan covering:
 
@@ -59,7 +100,7 @@ Before writing code, post a plan covering:
 would require a decision listed under "Out of scope of this document"
 in [Architecture](./architecture.md).
 
-### 4. Implement minimally
+### 5. Implement minimally
 
 - Touch only the files needed for this one task.
 - Match the layering: `src/core` stays pure Lua (no `love.*`);
@@ -70,17 +111,17 @@ in [Architecture](./architecture.md).
 - Never hard-code a rule constant the engine reads from `RuleConfig`.
 - No new third-party dependencies without a plan-step decision.
 
-### 5. Cover with tests — always
+### 6. Cover with tests — always
 
 In this exact order. Skipping any one of these is failure.
 
-#### 5a. Unit tests (busted, plain `lua`)
+#### 6a. Unit tests (busted, plain `lua`)
 
 Mandatory for **any** change in `src/core` or `src/app`. Cover the happy
 path and at least one edge case. The full `make test` (or equivalent)
 suite must pass.
 
-#### 5b. e2e tests
+#### 6b. e2e tests
 
 Mandatory for **any** change with a UI surface (Phase 2+). Add or update
 a journey under `tests/e2e/` that exercises the path through the running
@@ -88,7 +129,7 @@ game from a fresh-launch state. If the e2e harness doesn't exist yet,
 add an `e2e harness setup` task to Phase 0 of the task list and finish
 that first — do **not** commit the feature without an e2e covering it.
 
-#### 5c. Computer-use MCP smoke test
+#### 6c. Computer-use MCP smoke test
 
 Use the `mcp__computer-use__*` tools to:
 
@@ -104,10 +145,10 @@ If the screenshots don't match what the task asked for, **stop**: do
 not commit. Fix or escalate.
 
 If the task genuinely has no UI surface (pure Core engine work), state
-that explicitly in your plan and skip step 5c only — 5a is still
+that explicitly in your plan and skip step 6c only — 6a is still
 mandatory.
 
-### 6. Update docs and the checklist
+### 7. Update docs and the checklist
 
 - Tick the task off in `docs/development/task-list.md`: replace `[ ]`
   with `[x]` on that exact line. Do **not** delete the line.
@@ -118,7 +159,7 @@ mandatory.
   disagrees with what you implemented, fix the docs first in the same
   commit and call it out in the commit body.
 
-### 7. Commit and push
+### 8. Commit and push
 
 One commit per task. Conventional commits format:
 
@@ -138,7 +179,7 @@ Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`, `perf`, `ci`.
 Then `git push`. **Never** skip pre-commit hooks (no `--no-verify`).
 **Never** force-push.
 
-### 8. Stop and report
+### 9. Stop and report
 
 End your turn with exactly this report:
 
@@ -175,6 +216,8 @@ These override anything you might infer otherwise.
 Surface a question and stop instead of guessing if any of these are
 true:
 
+- The task warrants Plan Mode (see step 3) and Plan Mode is not
+  currently enabled.
 - The task line is ambiguous or contradicts another document.
 - Implementing it requires a decision under "Out of scope of this
   document" in [Architecture](./architecture.md).

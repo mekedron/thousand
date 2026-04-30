@@ -66,7 +66,13 @@ under plain `lua` from the command line. This is the part that the
 - **Algorithmic AI players** (one or more difficulty levels). This module
   is what actually decides every move. **It must not import the LLM
   client.**
-- Save / load of an in-progress game and running scores.
+- **Save / load** of in-progress games. Auto-save on every scored deal
+  and on suspend; manual named-slot saves between deals. The save
+  payload includes a snapshot of the active rule template's toggles
+  (not just its name) so a loaded game replays under the exact rules
+  it started with, even if the template has since been edited or
+  deleted. JSON-on-disk via `love.filesystem`, versioned by
+  `schemaVersion`.
 - **Template manager** for `RuleConfig` (built-in + user-saved).
 - **Character manager**: a `CharacterPreset` data type that pairs a
   personality (name, avatar, description, LLM system prompt, voice/tone

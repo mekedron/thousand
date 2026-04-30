@@ -141,6 +141,7 @@ Goal: three humans pass a desktop around and play a real game to 1000.
 - [ ] **P0** Persistent running scoreboard visible during play.
 - [ ] **P0** End-of-game screen showing winner and final scores.
 - [ ] **P0** **Every player-visible string in this phase goes through `t()`** — no hard-coded literals, even in placeholder UI.
+- [ ] **P0** **Auto-save the current game** to a single slot on app suspend / quit and after every scored deal; restore on next launch. Save format is JSON via `love.filesystem`, includes a `schemaVersion`, and snapshots the running scores plus the in-progress deal (hands, talon, bids, played tricks, declared marriages, current trump). The full save & load UI lands in Phase 4 — this phase only guarantees a long game survives a quit.
 - [ ] **P1** Hot-seat privacy screen ("pass to next player" overlay) so each player only sees their own hand.
 - [ ] **P1** "New game" / "abandon game" controls in the main menu.
 - [ ] **P2** Visual indicator for which cards are *legal* to play (must-follow / must-beat / must-trump aware).
@@ -273,6 +274,29 @@ Goal: it looks and feels like a card game, not a prototype.
 - [ ] **P0** All skins must keep card rank/suit instantly readable — accessibility test: a player can identify any card in &lt; 1 second.
 - [ ] **P1** Per-skin sound override (optional — some skins ship their own card-flip sound).
 - [ ] **P2** User-imported custom skins (drop a folder under the save dir).
+
+### 4.3 Save & load games
+
+A complete game to 1000 can run an hour or more across many deals. Players need to set a game aside and come back to it — possibly with multiple games on the go.
+
+- [ ] **P0** **Auto-save** at every checkpoint: after each scored deal, on app suspend, on graceful quit. Single auto-save slot (latest). Builds on the Phase 2 baseline.
+- [ ] **P0** **Save format** is JSON via `love.filesystem` and includes:
+  - `schemaVersion`,
+  - the active rule template's identity **and a full snapshot of its toggles** (so a loaded game replays under the exact rules it started with, even if the template was edited later),
+  - assigned characters per seat (placeholder data until Phase 7 lands),
+  - running scores and the full history of played deals (for score-sheet review),
+  - the in-progress deal: hands, talon, bidding state, played tricks, declared marriages, current trump,
+  - wall-clock timestamps for created / last-saved.
+- [ ] **P0** **Continue** button on the main menu loads the auto-save and resumes mid-deal. Disabled if no auto-save exists.
+- [ ] **P0** **Manual save slots**: at any non-blocking moment (between deals; never mid-trick), save the current game with a user-chosen name. Up to N named slots (default 10).
+- [ ] **P0** **Saved-games list** scene: one row per save showing player names, current running scores, deal number, and last-played timestamp.
+- [ ] **P0** **Load** any saved game from the list; confirmation prompt if there is an in-progress game that would be abandoned.
+- [ ] **P0** **Delete** a saved game with a confirmation prompt.
+- [ ] **P0** Reject corrupted or schema-incompatible saves with a clear, localised message — never crash on a bad save file.
+- [ ] **P1** Rename a saved game.
+- [ ] **P1** Sort saved games (recent / name).
+- [ ] **P1** Save thumbnail / preview shows the table state at save time.
+- [ ] **P2** Export / import a saved game as a JSON file (for sharing or backup).
 
 ---
 
@@ -428,9 +452,13 @@ against the keys already used in the code.
 
 ### 8.2 Persistence
 
-- [ ] **P0** Save in-progress game on app suspend / quit; restore on next launch.
-- [ ] **P0** Save format includes a `schemaVersion`; reject incompatible saves gracefully.
-- [ ] **P0** User-saved rule templates and characters survive app updates.
+The save format (with `schemaVersion`) and the save/load UI already land
+in Phase 2 and Phase 4. This sub-section hardens persistence for
+release.
+
+- [ ] **P0** Audit auto-save coverage across **all platform-specific suspension points**: iOS app backgrounding, macOS app quit, Linux SIGTERM, terminal Ctrl-C.
+- [ ] **P0** `schemaVersion` migration logic: saves from earlier versions either auto-migrate forward or are rejected with a clear, localised message.
+- [ ] **P0** User-saved rule templates, characters, **and saved games** all survive app updates.
 - [ ] **P1** Score history (last N games) viewable in the menu.
 
 ### 8.3 Packaging & distribution

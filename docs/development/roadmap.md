@@ -15,9 +15,9 @@ actionable items.
 |---|---|---|
 | 0 | **Project setup** | `love .` opens a window. CI green on macOS and Linux. Lint, formatter, test runner and **i18n plumbing** all in place. |
 | 1 | **Core rules engine** | Pure-Lua rules pass a unit-test suite for a full standard 3-player Russian deal. Engine reads from `RuleConfig` from day one. |
-| 2 | **Hot-seat MVP** | Three humans play a complete game to 1000 on one desktop. Functional UI; every UI string keyed via `t()`. |
+| 2 | **Hot-seat MVP** | Three humans play a complete game to 1000 on one desktop. Functional UI; every UI string keyed via `t()`. Auto-save on quit. |
 | 3 | **Rule template system** | Built-in templates for Russian, Polish, Ukrainian, 2-player and 4-player. Players can clone, edit and save custom templates. |
-| 4 | **UX & polish** | Animations, sounds, polished scoreboard, settings, interactive tutorial, multiple selectable card skins. |
+| 4 | **UX & polish** | Animations, sounds, polished scoreboard, settings, interactive tutorial, multiple selectable card skins, save & load with named slots. |
 | 5 | **iOS port — cross-platform prototype** 🎯 | The base game runs on **macOS, Linux and iOS** from one codebase. Hot-seat only; AI deferred. |
 | 6 | **AI opponents (algorithmic)** | Single human vs. two algorithmic AI seats at one difficulty. Silent AI — no LLM yet. AI is legal under every built-in `RuleConfig`. |
 | 7 | **AI characters & psychology** | Built-in and user-saved character presets. User-configured OpenAI-compatible LLM endpoint produces in-character chat. *Inviolable invariant: the algorithm picks every move; the LLM only writes dialogue.* |
