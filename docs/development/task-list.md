@@ -118,7 +118,7 @@ change (talon size, bid increments, marriage values, barrel rules, ...).
 
 ### 1.6 Trick-taking
 
-- [ ] Implement legal-play validation and trick resolution.
+- [x] Implement legal-play validation and trick resolution.
   - Player must follow suit if possible.
   - Player must beat the led card if possible when following suit.
   - Player must trump when void in led suit and trump exists.
