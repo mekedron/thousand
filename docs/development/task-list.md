@@ -77,7 +77,7 @@ change (talon size, bid increments, marriage values, barrel rules, ...).
 
 ### 1.2 Dealing
 
-- [ ] Implement standard 3-player deal and deal validation.
+- [x] Implement standard 3-player deal and deal validation.
   - Deal sequence is 3+3+3, 2 to talon, 2+2, 1 to talon, 2+2.
   - Each player ends with 7 cards and the talon has 3 cards.
   - Every completed deal still contains exactly 24 unique cards.
