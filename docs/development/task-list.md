@@ -29,7 +29,7 @@ Goal: `love .` opens a window. CI is green on macOS and Linux. The
 plumbing every later phase relies on (i18n, settings, save dir) exists
 from day one.
 
-- [ ] **P0** Initialise Love2D project skeleton (`main.lua`, `conf.lua`, window title, version).
+- [x] **P0** Initialise Love2D project skeleton (`main.lua`, `conf.lua`, window title, version).
 - [ ] **P0** Set up the directory layout from [Architecture](./architecture.md): `src/core`, `src/app`, `src/ui`, `src/assets`, `tests/`, `platform/`.
 - [ ] **P0** Add a Lua linter (luacheck) and formatter (stylua) with a single project config.
 - [ ] **P0** Add a unit-test runner that works on plain `lua` from the command line (e.g. busted) and a `make test` / shell script entry point.
