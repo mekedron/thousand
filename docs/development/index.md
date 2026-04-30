@@ -85,7 +85,7 @@ simply stops talking.
   and iOS.
 - **Multi-language by default.** Every player-visible string is keyed
   via i18n from the first UI commit. English ships first; Russian,
-  Polish and Ukrainian translations land in Phase 8 against the same
+  Polish and Ukrainian translations land in Phase 9 against the same
   keys.
 - **No backend of our own.** The LLM endpoint is user-supplied and the
   API key lives only on the user's device.

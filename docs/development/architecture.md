@@ -20,7 +20,7 @@ review, not here.
 | Build for iOS | **love-ios** (Love2D's iOS port) via Xcode wrapper | Same Lua source, packaged as an iOS app. |
 | Build for Android *(post-v1)* | **love-android** Gradle project | Same Lua source; packaging only. |
 | Persistence | Love2D `love.filesystem` (JSON files) | No DB; v1 has only local data. |
-| Localisation | Plain Lua tables keyed by locale, used **from day one** | Every UI string is keyed via `t()`; translations are added in Phase 8 against the same keys, not retrofitted. |
+| Localisation | Plain Lua tables keyed by locale, used **from day one** | Every UI string is keyed via `t()`; translations are added in Phase 9 against the same keys, not retrofitted. |
 
 We are **not** introducing a separate UI framework, ECS, networking
 library or scripting layer. Love2D is enough.
@@ -91,7 +91,7 @@ under plain `lua` from the command line. This is the part that the
 - **i18n module**: a tiny `t(key, …)` lookup against the locale table
   loaded from `assets/i18n/<locale>.lua`. The active locale lives in
   settings. Every UI string in the codebase goes through this from the
-  first UI commit; translation work in Phase 8 is purely populating
+  first UI commit; translation work in Phase 9 is purely populating
   locale tables.
 - Settings (active rule template, default characters per seat, active
   card skin, LLM endpoint config, language, sound, accessibility).

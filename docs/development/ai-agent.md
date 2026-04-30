@@ -37,11 +37,9 @@ Before doing anything else, read:
 ### 2. Pick the next task
 
 Walk the [Task List](./task-list.md) top to bottom and pick the **first
-unchecked task** in the **earliest active phase**. Within a phase: P0
-before P1 before P2; never skip ahead. If there is no unchecked task in
-the active phase, move to the next phase.
-
-If two tasks are equally prioritised, take the one closer to the top.
+unchecked task** in the **earliest active phase**. Within a phase, task
+order is authoritative; never skip ahead. If there is no unchecked task
+in the active phase, move to the next phase.
 
 ### 3. Assess complexity — request Plan Mode if warranted
 
