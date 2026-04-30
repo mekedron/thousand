@@ -167,29 +167,55 @@ own.
 
 ### 3.2 Toggle catalogue (the actual switches)
 
-Group toggles in `RuleConfig` so the UI in §3.5 can render them in clear sections.
+Group toggles in `RuleConfig` so the UI in §3.5 can render them in clear
+sections. Each toggle's wording maps to a section in
+[House Rules](../variations/house-rules.md) — the docs are the source of
+truth for what each option does.
 
 - [ ] **P0** **Players & seating**
   - Player count (2 / 3 / 4).
   - Partnership mode (none / fixed across-the-table) — only valid for 4 players.
   - 4-player configuration (A: dealer plays no talon / B: dealer sits out).
   - 2-player configuration (A: closed-talon draw stock / B: fixed deal no draw).
-- [ ] **P0** **Dealing & talon**
+- [ ] **P0** **Dealing & redeal triggers**
+  - 4-nine redeal (off / optional / mandatory).
+  - 3-nine redeal (off / optional).
+  - 4-jack redeal (off / on).
+  - Weak-hand redeal (off / strict: no marriage + no Ace + no card above 10 / loose: no marriage + no Ace / counted: hand-points below threshold).
+  - Misdeal handling (redeal by same dealer / pass deal clockwise / flat penalty + redeal).
+  - All-pass handling when no forced-bid rule fires (redeal by same / pass-out clockwise / распасы reverse-scoring).
+- [ ] **P0** **Talon**
   - Talon size (0 / 2 / 3).
   - Talon distribution (declarer takes all then passes / split face-down to opponents / face-up before auction).
+  - Talon-flip-after-first-round (on / off).
   - Pass-the-talon (concede after seeing) on / off.
+  - Buyback (discard hand for fresh deal at fixed penalty) on / off.
+  - Hidden talon on minimum-100 contract (off / on — talon hidden from defenders when declarer is on a forced 100).
+  - Bad-talon redeal (off / on — and trigger: fewer-than-5 card-points / 2 nines / 3 jacks / configurable; restricted to minimum 100 only on / off).
+  - Talon re-buy (off / on — second auction with declared values 120 / 240 / open).
+  - Open discard (off / on — declarer's pass-cards face-up rather than face-down).
 - [ ] **P0** **Bidding**
   - Minimum opening bid (default 100).
   - Maximum first-round (pre-talon) bid (120 / 150).
   - Increment below 200 (5 / 10).
   - Increment from 200 onward (default 10).
   - Forced opening at 100 (forehand cannot pass) on / off.
-  - Bolt — dealer forced into 100 if all pass (on / off).
+  - Forced dealer bid — *бовт* (off / on — dealer takes 100 if all pass; **distinct** from the zero-tricks "Бoлт/Палка" penalty under Penalties).
   - Blind bid (sight-unseen, double-or-nothing) on / off.
-  - Mizère / no-tricks contract on / off.
+  - Re-entry after pass (on / off — first-round passers may re-enter once).
+  - Contra / doubling by defenders (off / contra-only / contra + redouble).
+  - Forced-bid concession (off / on — and distribution: equal-split / each-defender-gets-full / pre-agreed-ratio).
+  - No contract without marriage (off / strict: 120+ requires a marriage in hand / capped: max bid = 120 + value of marriages held).
+  - Negative-score bidding restriction (off / on — players with a negative running total may only receive a forced 100).
+  - Named contract bids available — see **Special contracts** below.
 - [ ] **P0** **Marriages**
   - Hearts / Diamonds / Clubs / Spades values (defaults 100 / 80 / 60 / 40).
   - Half-marriage capture bonus on / off (and amount, default 20).
+  - Trump activation timing (next-trick / immediately).
+  - Marriage announcement timing (must-lead-K-or-Q / hand-announce-on-lead / pre-trick).
+  - Drowned-marriage rule (cannot-be-declared / declared-then-cancelled).
+  - Ace marriage / тузовый марьяж (off / on with value, default 200; sub-toggles: trick-required, first-Ace-led-sets-trump, no-trump-effect).
+  - One trump per deal (off / on — only the first declared marriage sets trump; later marriages still score but do not change trump).
 - [ ] **P0** **Trick play**
   - Must follow suit (always on — guarded constant).
   - Must overtake when following: strict / lenient.
@@ -197,21 +223,45 @@ Group toggles in `RuleConfig` so the UI in §3.5 can render them in clear sectio
   - Defender must overtrump declarer: on / off.
   - Lazy revoke (only punished if caught before next lead) on / off.
   - Partial trumping (allow discard when can't beat existing trump) on / off.
+  - Last-trick bonus (0 / 10 / 20 — points to winner of the 8th trick).
+  - Slam bonus when declarer wins all 8 tricks (off / fixed-amount: e.g. 60 or 120 / doubled-bid).
+  - Slam-against penalty when declarer takes 0 tricks (off / fixed-amount).
+  - Lead-trump-after-marriage required (off / on).
 - [ ] **P0** **Scoring**
-  - Round deal scores to nearest 5 (on by default).
+  - Rounding granularity (nearest-5 / nearest-10 / no-rounding). Marriage bonuses always exact.
   - Score declarer's actual deal points instead of bid on success: on / off.
+  - Defender contributions (independent / pooled-and-split — partnership mode only).
+  - Failed-contract distribution (lost / split-among-defenders / each-defender-gets-bid). Affects what happens to the bid amount when a contract fails.
+  - Declarer rounding before contract check (off / on — rounds the declarer's captured points up before comparing to the bid; turns 118 vs. a 120 bid into a make).
+- [ ] **P1** **Opening-game (Golden deal)**
+  - Golden deal (off / on with N deals, default = number of players).
+  - Marriages doubled during golden deals (on / off).
+  - Bidding above 120 allowed during golden deals (off / on).
+  - Blind play allowed during golden deals (on / off).
+  - Failure handling — when nobody makes 120 in a golden deal (continue / replay round / reset and start normal).
 - [ ] **P0** **Barrel**
-  - Threshold (default 880).
+  - Threshold (default 880; alternative 900).
+  - Intermediate "pit" lock-in (off / on at user-defined score).
   - Deal count on the barrel (1 / 3 / unlimited).
   - Fall-off penalty (−120 / 0 / −240).
-  - Collision rule (last-mounter survives / all fall off / first-mounter survives).
+  - Collision rule (last-mounter survives / all fall off / first-mounter survives / multiple-allowed).
+  - Barrel-jump penalty when failing an overshooting bid on the barrel (off / bid-amount).
+  - Reverse barrel at −880 (off / on — symmetric 3-deal countdown to lose; fall-back score user-defined).
 - [ ] **P0** **Endgame**
-  - Going-over-1000 rule (any-over-wins / exact-1000-only / continuation-at-1500).
+  - Target score (500 / 1000 / 1500 / 2500). Default 1000.
+  - Going-over-target rule (any-over-wins / exact-target-only / continuation-at-target+500).
   - Tiebreaker (declarer wins / highest score / continuation).
+  - Dump truck / самосвал at exact ±555 (off / +555 only / both signs / configurable score).
+- [ ] **P1** **Special contracts** (named bids alternative to numeric bids)
+  - Mizère / no-tricks (off / on with fixed value, default 120).
+  - Slam contract (off / on with fixed value: 240 / 300 / doubled-highest-bid).
+  - Open-hand contract (off / on with doubled scoring).
 - [ ] **P1** **Penalties**
   - Revoke penalty (full bid to opponents / flat 120 / configurable amount).
-  - Talon-look penalty (default 120).
-  - Misdeal handling (redeal by same dealer / pass deal clockwise).
+  - Talon-look penalty (default 120 / forfeit deal).
+  - Showing-hand penalty (off / fixed amount, default 20 / full bid).
+  - Zero-tricks "Бoлт / Палка" penalty (off / on — bolt counter threshold default 3, penalty default −120; sub-toggles: consecutive-only or cumulative, declarer-exempt, doubled-during-golden-deals). **Distinct** from the forced dealer bid above.
+  - Cross / крест (off / on — alternative to immediate bid loss; cross threshold default 2, penalty default −120; defenders may receive bolts instead of points).
 
 ### 3.3 Built-in default templates
 

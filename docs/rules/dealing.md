@@ -41,6 +41,24 @@ quicker. Agree before the first hand which pattern you use.
   penalty. Some tables move the deal one position clockwise as a soft
   penalty.
 
+## Redeal triggers
+
+Before the auction begins, a player who was dealt a hopeless hand may be
+entitled to a redeal. Two are near-universal:
+
+- **Four nines.** A player dealt **all four nines** may demand a redeal
+  — at most tables this is a *mandatory* right, since holding all four
+  nines means a useless hand (zero card-points, no possible marriage).
+- **Three nines.** A player dealt **three nines** may **optionally**
+  request a redeal. Less universal than the four-nine rule but very
+  common.
+
+Variations also exist for "weak hands" (no marriage, no Ace, no card
+above 10), and for misdeal handling. See
+[House Rules](../variations/house-rules.md#dealing--redeal-house-rules)
+for the configurable details — different tables enforce different
+combinations of these.
+
 ## After the deal
 
 The auction begins immediately. **Forehand** (left of the dealer) is the

@@ -9,36 +9,148 @@ Beyond the regional variants, almost every regular Thousand table has its
 own pet rules. This page collects the **most common** ones — agree which
 ones are in play **before** the first deal.
 
+## Dealing & redeal house rules
+
+### 4-nine mandatory redeal
+
+A player dealt **all four nines** in their starting hand may **demand a
+redeal** before the auction begins. Almost universally enforced because
+holding all four nines means a useless hand (zero card-points and no
+chance of any marriage). Some tables make it **mandatory for the
+dealer** to redeal even if the player would prefer to play.
+
+### 3-nine optional redeal
+
+A player dealt **three nines** may **optionally request a redeal**. Less
+universal than the 4-nine rule but very common, especially with novice
+players. Some tables require the dealer to grant the request; others let
+the dealer decline once.
+
+### Weak-hand redeal
+
+A "weak hand" entitles the player to request a redeal in some tables.
+Definitions vary widely:
+
+- **Strict**: no marriage and no Ace and no card above 10.
+- **Loose**: no marriage and no Ace.
+- **Counted**: total card-point value in hand below a threshold (e.g. < 14).
+
+### Four-jack redeal
+
+A player dealt **all four Jacks** may request a redeal — analogous to
+the four-nine rule but rarer. Some tables also allow the **declarer**
+to demand a redeal if the **talon contains three Jacks** (covered also
+under [Bad talon redeal](#bad-talon-redeal)).
+
+### Misdeal handling
+
+- **Standard**: same dealer redeals without penalty.
+- **Soft penalty**: deal moves clockwise.
+- **Flat penalty**: dealer pays a small fixed penalty (e.g. 20 points)
+  and redeals.
+
+### All-pass handling (no forced-bid rule)
+
+When no one bids and **neither the forced-opening rule nor the
+"bolt"** is in effect, the deal is dead. Tables disagree on what
+happens next:
+
+- **Standard**: redeal by the same dealer, no scoring.
+- **Pass-out**: deal moves clockwise without scoring.
+- **"Распасы" (reverse-scoring)**: the deal is played without trump or
+  bidding, and the player who **wins the fewest tricks** scores their
+  card-points (or, in some traditions, the player with the **most**
+  tricks loses theirs). A way to make every deal count.
+
 ## Bidding house rules
 
 ### Forced opening at 100
 
-Forehand **must** open at 100; they cannot pass on their first turn. Speeds
-up the auction; eliminates the "everyone passes" non-deal.
+Forehand **must** open at 100; they cannot pass on their first turn.
+Speeds up the auction; eliminates the "everyone passes" non-deal.
 
 ### Maximum first-round bid
 
 Some tables cap the first-round (pre-talon) bid at **120**; others allow
 up to **150** if the bidder has very strong cards. Confirm before play.
 
-### "Bolt" (forced bid for the dealer)
+### Forced dealer bid (Бовт / Bolt)
 
-If everyone passes, the dealer is forced into a 100 contract. (Standard in
-Ukrainian play; optional elsewhere.)
+If everyone passes, the dealer is forced into a 100 contract. Sometimes
+called *бовт* or *болт*. Standard in Ukrainian play; optional elsewhere.
+
+:::caution Same word, two rules
+The Russian word *болт* (and its synonym *палка*) is **also** used for
+the **zero-tricks penalty** under
+[Penalty house rules](#zero-tricks-penalty-болт--палка) — a completely
+different rule. Always agree which "bolt" your table means.
+:::
 
 ### "Dark" / blind bid
 
-A player may make their first bid **before looking at their hand** (called
-*в тёмную* / *ciemny* / *blind*). Successful blind bids score **double**;
-failed blind bids cost double. High-risk, mostly social.
+A player may make their first bid **before looking at their hand**
+(*в тёмную* / *ciemny* / *blind*). Successful blind bids score
+**double**; failed blind bids cost double. High-risk, mostly social.
+
+### Re-entry after pass
+
+In standard rules, **passing is permanent**. Some house rules permit a
+player who passed in the first round to re-enter once on a later round —
+useful when forehand opens cautiously, the others pass, and forehand
+ends up alone on a low contract.
+
+### Contra (defender doubling)
+
+A defender may **double** the declarer's bid before play begins,
+asserting they will defeat the contract. The declarer may **redouble**
+("rekontra") in response. The bid value at stake is multiplied
+accordingly. Common in some Polish tables; rare in Russian play.
+
+### No contract without marriage
+
+Some tables forbid bidding **120 or higher** unless the bidder has a
+marriage in their starting hand. A stricter variant caps the maximum
+bid at **120 plus the value of marriages already held** — a hand with
+no marriage may bid only 100, a hand with the spades marriage may bid
+up to 160, and so on.
+
+### Negative-score bidding restriction
+
+A player with a **negative running score** may be barred from active
+bidding. They may only receive the minimum forced 100 contract if the
+other players pass. Used at tables that don't want a falling player to
+escape the hole by gambling on big bids.
+
+### Forced-bid concession
+
+When a player has been **forced into the minimum 100 contract** — by
+the forced-opening rule, by the "bolt", or by being the last bidder
+left in a stalled auction — and looks at a hopeless hand, some tables
+allow them to **concede before play** rather than play out a guaranteed
+loss.
+
+The bid amount is deducted from the conceder's score and **distributed
+to the other players**. Distribution variants:
+
+- **Equal split**: each non-conceder gets the bid divided equally
+  (e.g. 100 split among two defenders → +50 each).
+- **Each gets full**: every other player receives the **full bid
+  amount** (a stiffer penalty for the conceder; rare).
+- **Pre-agreed ratio**: house-defined split.
+
+Sometimes called *сдаться без вскрытия* (concede without opening) when
+done before turning the talon over. Distinct from
+[pass-the-talon](#pass-the-talon) — that's available to *any* declarer
+after seeing the talon; forced-bid concession is reserved for players
+who didn't want the bid in the first place.
 
 ## Talon house rules
 
 ### Pass-the-talon
 
 A declarer disgusted with the talon may **concede the deal** before
-playing, paying their bid as a penalty. Common at relaxed tables; rare in
-serious play.
+playing, paying their bid as a penalty. Common at relaxed tables; rare
+in serious play.
 
 ### Public talon
 
@@ -46,11 +158,120 @@ Some house rules require the talon to be **flipped face-up before the
 auction begins**. This makes the auction much sharper and less dependent
 on luck. (Reduces strategic depth — most tables don't use this.)
 
+### Talon flip after first auction round
+
+A halfway compromise: the talon stays closed during the first round of
+bidding; if the auction continues to a second round, the talon is
+flipped. Lets first-round bids stay sharp while preserving talon mystery
+for serious bids.
+
 ### "Buyback"
 
 The declarer may **discard their entire hand** in exchange for a fresh
 deal at a 50-point penalty. Almost never seen in serious play; sometimes
 used in family games.
+
+### Hidden talon on 100
+
+If the declarer wins the auction at the **minimum 100** simply because
+everyone else passed, the talon is **not shown to the defenders** —
+only the declarer sees it. Some tables extend this to any forced 100
+contract (bolt or forced-opening). Compensates for being stuck with a
+contract you didn't want.
+
+### Bad talon redeal
+
+After winning the auction and revealing the talon, the declarer may
+demand a redeal if the talon is worthless. Common triggers (any one
+qualifies, depending on the table):
+
+- talon contains **fewer than 5 card-points**;
+- talon contains **two nines**;
+- talon contains **three Jacks**.
+
+Some tables allow this only on a minimum 100 contract; others let any
+declarer request it before the pass-cards step.
+
+### Talon re-buy
+
+After the talon is revealed, **another player may "buy it away"** from
+the auction winner by naming a higher fixed contract — typically 120,
+240, or any value above the current bid. This creates a **second
+auction** with full talon information and changes who plays the
+contract.
+
+### Open discard
+
+After taking the talon, the declarer's **discards** to each opponent
+may be made **face-up** rather than face-down. The defenders gain
+information about what the declarer chose to throw away, reducing
+talon luck. Mostly a tournament or analysis rule.
+
+## Marriage house rules
+
+### "Spades equals clubs"
+
+Some tables score **♠ marriage at 60** (matching ♣) on the grounds that
+40 points isn't worth declaring. Mostly a Ukrainian table tradition.
+
+### Half-marriage capture bonus
+
+A defender who captures **both halves** of a marriage (the K and the Q
+of the same suit, in tricks) scores a small bonus — typically **20
+points**.
+
+### Trump activation timing
+
+Standard rule: when a marriage is declared, **trump becomes that suit
+from the next trick onward**.
+
+Variant: trump takes effect **immediately** on the same trick — the led
+K or Q is already trump and outranks any non-trump card already played
+to the trick. Changes the strategy of timing marriages.
+
+### Marriage announcement timing
+
+- **Standard**: declared by **leading the K or Q** while on lead. The
+  bonus posts immediately.
+- **Hand-announcement variant**: a player on lead may **announce a
+  marriage from the hand without leading either K or Q**, then lead a
+  different card. Trump still switches to the marriage suit. Rare;
+  changes strategy substantially.
+- **Pre-trick variant**: marriages must be announced **before the first
+  trick of the deal** in some traditions. Rare.
+
+### Drowned marriage
+
+If a player holds half a marriage (K or Q of some suit) and an opponent
+captures the other half in a trick **before** the marriage is declared,
+the marriage is *drowned*:
+
+- **Standard**: the marriage simply cannot be declared; no bonus, no
+  trump change.
+- **Cancellation variant**: if the marriage was declared earlier and
+  later "drowned" by capture, the bonus is retroactively cancelled.
+  Almost never used — confusing scoring.
+
+### Ace marriage / Тузовый марьяж
+
+A player holding **all four Aces** may declare an **ace marriage**,
+typically worth **+200 points**. Variants:
+
+- **Trick required**: the player must already have taken at least one
+  trick before declaring.
+- **First-lead allowed**: declaration is legal on the very first lead
+  of the deal.
+- **First-Ace-led sets trump**: the suit of the first Ace led after
+  declaration becomes trump (ace marriage replaces the usual K-Q
+  marriage as the trump trigger).
+- **No trump effect**: the ace marriage scores points but does not
+  change the trump suit.
+
+### One trump per deal
+
+Only the **first declared marriage** sets trump. Later marriages still
+**score their bonus**, but they **do not change the trump suit**. Used
+at tables that find mid-deal trump-flipping confusing.
 
 ## Trick-play house rules
 
@@ -66,17 +287,103 @@ Misplays (failure to follow / overtake / trump) are punished only when
 **caught and called** before the next trick is led. After the next lead
 the misplay stands. Useful for casual play.
 
-## Marriage house rules
+### Last-trick bonus
 
-### "Spades equals clubs"
+The winner of the **final (8th) trick** earns a small bonus — typically
+**+10 points** — added to that side's deal score. Common at many Russian
+and Polish tables; reduces the dominance of the marriage.
 
-Some tables score **♠ marriage at 60** (matching ♣) on the grounds that
-40 points isn't worth declaring. Mostly a Ukrainian table tradition.
+### Slam bonus
 
-### Half-marriage capture bonus
+If the declarer wins **all 8 tricks** of the deal:
 
-A defender who captures **both halves** of a marriage (the K and the Q of
-the same suit, in tricks) scores a small bonus — typically **20 points**.
+- **Off**: no bonus, just the card-points and any marriages.
+- **Fixed bonus**: a flat +X points (commonly +60 or +120).
+- **Doubled bid**: the contract value is doubled on success.
+
+A defender side analogously may get a **slam-against** bonus if the
+declarer takes **zero tricks** (typically only relevant for mizère
+contracts).
+
+### Lead-trump-after-marriage
+
+After declaring a marriage, the declarer **must lead trump on the next
+trick** (not just the K or Q of the marriage). Some tables enforce this
+as a strategy lock; most do not.
+
+## Scoring house rules
+
+### Rounding granularity
+
+- **Standard**: card-point totals rounded to nearest **5**; marriage
+  bonuses are exact.
+- **Coarse**: round to nearest **10** — popular in fast tables.
+- **Exact**: no rounding at all — popular in tournament play.
+
+### Score actual points on success
+
+- **Standard**: declarer scores the **bid value** on success (any extra
+  points captured do not count).
+- **Actual-points variant**: declarer scores the **larger of bid or
+  actual deal points** on success. Reduces over-bidding pressure.
+
+### Defender contributions
+
+- **Standard**: each defender independently scores the points they
+  captured (cards + own marriages).
+- **Pooled variant**: the two defenders' captured points are summed and
+  split equally. Almost never used outside partnership variants.
+
+### Declarer rounding before contract check
+
+Some tables **round the declarer's captured points before** comparing
+to the bid. A captured 118 against a 120 bid rounds up to 120 and
+**makes the contract**. Forgiving to near-misses; reduces over-bidding
+caution.
+
+### Failed-contract distribution
+
+When the declarer **fails their contract**, the bid amount is deducted
+from their running total. Where the points "go" varies:
+
+- **Standard**: the points are simply lost — the declarer's individual
+  loss; defenders are unaffected.
+- **Split among defenders**: the bid is divided equally among the
+  defenders and added to their scores.
+- **Each defender gets the full bid**: a much stiffer penalty.
+- **Mirrors forced-bid concession**: if the failed contract was a
+  forced bid, the same distribution rule applies. (Most consistent
+  choice.)
+
+Significantly changes the risk profile of bidding. The standard rule
+keeps Thousand a "race to 1000"; the distribution variants make it more
+of a zero-sum chase.
+
+## Opening-game house rules
+
+### Golden deal / Золотой кон
+
+During the **first N deals** (usually equal to the number of players,
+so 3 in a 3-player game) every player in turn must play a **mandatory
+120 contract**. The deal scores, penalties and bolts are commonly
+**doubled**.
+
+Variants:
+
+- **Marriages doubled**: marriage values count double during golden
+  deals (most common).
+- **Marriages not doubled**: only card-points and contract penalties
+  double.
+- **If nobody makes 120**: scores reset and the normal game begins,
+  *or* the golden round is replayed, *or* the game proceeds with the
+  failures recorded.
+- **Bidding allowed**: some tables let players bid above 120 during
+  golden deals; others lock the bid at exactly 120.
+- **Blind play allowed**: some tables forbid blind bids during the
+  golden round.
+
+A high-stakes opening that quickly punishes weak hands and rewards
+strong ones.
 
 ## Barrel house rules
 
@@ -98,27 +405,155 @@ the same suit, in tricks) scores a small bonus — typically **20 points**.
 - **Mild**: barrel resets, no penalty (return to 880).
 - **Harsh**: −240 (back to 640).
 
+### Barrel-jump penalty
+
+Bidding **far above** the 120 needed (e.g. 200) while on the barrel and
+failing incurs an extra penalty in some tables — typically the bid
+amount instead of the standard −120. Discourages "hero" bids.
+
+### Multiple players on the barrel
+
+Standard rules force a [collision](#barrel-collisions) when a second
+player reaches the barrel. A relaxed variant allows **two or more
+players to sit on the barrel at the same time**, each running their own
+3-deal countdown independently. First to make 120 wins; the others can
+still fall off normally.
+
+### Alternative barrel threshold
+
+Some tables move the barrel from **880 to 900**, or add an
+**intermediate "pit" score** (e.g. an at-700 lock-in) that players must
+clear before approaching the barrel. Effects vary heavily — define
+explicitly before play.
+
+### Reverse barrel
+
+A symmetric variant for failing players: at **−880**, a player enters a
+**reverse barrel**. They have 3 deals to reach −1000 (which would lose
+the game outright); if they fail to do so, they **fall back** to a
+pre-agreed score such as −760 or −500. Rare; mostly a cruel
+add-on for long sessions.
+
 ## Endgame house rules
 
-### Going over 1000
+### Target score
 
-If a player exceeds 1000 in a single deal:
+The default goal is **1000 points**, but tables disagree:
 
-- **Standard**: the player wins immediately at whatever the actual score
-  is.
-- **Exact rule**: a player must reach **exactly 1000** to win. Exceeding
-  1000 caps at 999 and the deal continues.
+- **Standard**: first to **1000** wins. Game length: roughly 6–10
+  deals at a typical pace.
+- **Short**: first to **500** for a quick game (kid-friendly).
+- **Long**: first to **1500** for serious players.
+- **Tournament**: first to **2500** — significantly longer; usually
+  paired with stricter scoring rules.
+
+### Going over the target
+
+If a player exceeds the target in a single deal:
+
+- **Standard**: the player wins immediately at whatever the actual
+  score is.
+- **Exact rule**: a player must reach **exactly the target** to win.
+  Exceeding it caps at `target − 1` and the deal continues.
 
 ### Tiebreakers
 
-If two players cross 1000 in the same deal:
+If two players cross the target in the same deal:
 
 - **Standard**: the declarer wins ties.
 - **High score**: highest running total wins.
-- **Continuation**: continue play with the threshold raised to **1500**.
+- **Continuation**: continue play with the threshold raised by **+500**.
+
+### Dump truck / Самосвал
+
+If a player's running score lands **exactly on +555** (or, in some
+versions, on **−555** as well), their score is **reset to zero**. Pure
+kitchen-table folklore but widely known and frequently played.
+
+- **Positive only**: only +555 triggers the reset (most common).
+- **Both signs**: +555 and −555 both trigger.
+- **Other landmarks**: some tables apply the same rule to other
+  arbitrary scores (e.g. ±111).
+
+## Special contracts
+
+In addition to a numeric bid, some traditions allow **named contract
+bids** that change the scoring rules of a single deal.
+
+### Mizère / Минимум
+
+Declarer commits to taking **zero tricks** in a no-trump deal. Fixed
+contract value (commonly 120). Defenders try to force tricks on
+declarer. Already noted under [Russian variant](./russian.md);
+widespread informally.
+
+### Slam contract
+
+Declarer commits to taking **all 8 tricks**. Common contract values:
+**240**, **300**, or simply double the highest numeric bid. Failing
+loses the slam value as a penalty.
+
+### Open hand
+
+Declarer plays the **entire deal face-up** — all opponents see the
+declarer's hand. Scoring is **doubled** on both success and failure.
+Almost exclusively a tournament curiosity.
+
+## Penalty house rules
+
+### Revoke penalty
+
+- **Standard**: declarer's full bid awarded to the opposing side.
+- **Flat**: 120 points awarded regardless of bid.
+- **Configurable**: a fixed house-defined amount.
+
+### Talon-look penalty
+
+Looking at the talon before the auction ends:
+
+- **Standard**: 120 points deducted from the offender; deal redealt.
+- **Stricter**: deal forfeited; opposing side awarded the bid.
+
+### Showing-hand penalty
+
+Deliberately or accidentally showing one's hand to an opponent:
+
+- **Standard**: small fixed penalty (typically 20 points).
+- **Strict**: full bid penalty.
+
+### Zero-tricks penalty (Болт / Палка)
+
+A player who takes **no tricks at all** in a deal earns a "bolt"
+(*болт*, also *палка* — "stick"). After accumulating a threshold of
+bolts (commonly **3**), the player receives a fixed penalty (commonly
+**−120**) and the bolt counter clears.
+
+Variants:
+
+- **Three consecutive bolts** (counter resets on any trick taken).
+- **Any 3 bolts during the game** (cumulative; never resets).
+- **Bolts doubled during golden deals** (when the
+  [Golden deal](#golden-deal--золотой-кон) rule is active).
+- **Declarer exempt** — only defenders can earn bolts (rare).
+
+:::caution Same word, different rule
+This is **not** the same as the [forced dealer
+bid](#forced-dealer-bid-бовт--bolt) — that's also called *болт* in
+some traditions but means a forced 100 contract, not a zero-tricks
+penalty.
+:::
+
+### Cross / Крест
+
+An alternative penalty path for a failed contract. Instead of the bid
+being deducted immediately, the failing declarer receives a **cross**;
+defenders may receive **bolts** instead of points. After accumulating
+**2 crosses**, the declarer receives a fixed penalty (commonly **−120**)
+and the cross counter clears. Local; rarely seen outside specific
+regional traditions.
 
 ---
 
-There is **no wrong choice** here — but mismatched expectations cause more
-arguments than any other element of Thousand. If a rule isn't on this
-page, **ask before you bid**.
+There is **no wrong choice** here — but mismatched expectations cause
+more arguments than any other element of Thousand. If a rule isn't on
+this page, **ask before you bid**.

@@ -18,6 +18,15 @@ also pass without bidding, the **dealer is forced to take the contract at
 100** — they cannot escape the auction. This prevents endless
 pass-everything-around stalling.
 
+:::note Two rules share the name "bolt"
+The Russian word *болт* (and its synonym *палка*) is used in some
+traditions for a **completely different rule**: a zero-tricks penalty
+documented under
+[House Rules → Zero-tricks penalty](./house-rules.md#zero-tricks-penalty-болт--палка).
+The Ukrainian forced-dealer-bid sense and the Russian zero-tricks-penalty
+sense are unrelated — confirm which one your table means before play.
+:::
+
 ### Four-player play in pairs
 
 A 4-player Ukrainian table is normally played in **fixed partnerships**
