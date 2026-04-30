@@ -1,0 +1,16 @@
+# Local clone of the love2d MCP bridge — checked out per-developer, not vendored.
+love2d-mcp/
+
+# macOS
+.DS_Store
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+
+# Node (in case we add JS tooling later)
+node_modules/
+
+# Lua bytecode
+*.luac

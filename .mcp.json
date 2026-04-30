@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "love2d": {
+      "command": "node",
+      "args": ["./love2d-mcp/build/index.js"]
+    }
+  }
+}
