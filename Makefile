@@ -2,7 +2,9 @@
 # busted are on PATH — install via your platform's package manager (e.g.
 # `brew install luacheck stylua` on macOS, plus `luarocks install busted`).
 
-.PHONY: help test lint format format-check check clean run
+.PHONY: help test lint format format-check check clean run package
+
+LOVE_FILE := thousand.love
 
 help:
 	@echo "Targets:"
@@ -12,6 +14,7 @@ help:
 	@echo "  format-check  fail if any .lua file would be reformatted"
 	@echo "  check         lint + format-check + test (CI parity)"
 	@echo "  run           launch the game with love ."
+	@echo "  package       build $(LOVE_FILE) for distribution"
 	@echo "  clean         remove generated artifacts"
 
 test:
@@ -30,6 +33,31 @@ check: lint format-check test
 
 run:
 	love .
+
+# Build a .love archive ready to drop into love-ios / love-android or
+# distribute on desktop. Excludes everything that should not ship in
+# the runtime: docs, the documentation site, tests, tooling configs,
+# the .git tree and any local third-party clones.
+package:
+	rm -f $(LOVE_FILE)
+	zip -r $(LOVE_FILE) . \
+		-x '.git/*' \
+		-x '.github/*' \
+		-x '.githooks/*' \
+		-x 'docs/*' \
+		-x 'docs-site/*' \
+		-x 'love2d-mcp/*' \
+		-x '.luarocks/*' \
+		-x 'tests/*' \
+		-x 'platform/*' \
+		-x 'Makefile' \
+		-x '.luacheckrc' \
+		-x '.busted' \
+		-x 'stylua.toml' \
+		-x '.gitignore' \
+		-x '.mcp.json' \
+		-x 'README.md' \
+		-x '$(LOVE_FILE)'
 
 clean:
 	rm -f *.love
