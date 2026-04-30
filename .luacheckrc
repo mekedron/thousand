@@ -3,8 +3,17 @@
 
 std = "luajit"
 
--- LÖVE injects `love` as a global; it is the only global the engine adds.
-read_globals = { "love" }
+-- LÖVE injects `love` as a global, and the project assigns its entry-point
+-- callbacks (love.load, love.draw, love.update, …) — so `love` is a writable
+-- global, not a read-only one.
+globals = { "love" }
+
+-- Third-party clone of the love2d-mcp bridge — ignored at the repo root via
+-- .gitignore, but if a developer clones it locally, do not lint it.
+exclude_files = {
+    "love2d-mcp/",
+    "docs-site/",
+}
 
 -- Tests run under busted, which injects describe/it/before_each/after_each/setup/teardown
 -- and the assert/spy/stub/mock helpers.

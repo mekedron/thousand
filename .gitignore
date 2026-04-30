@@ -14,3 +14,9 @@ node_modules/
 
 # Lua bytecode
 *.luac
+
+# Local LuaRocks install tree (developer-installed busted, luacheck, …)
+.luarocks/
+
+# Packaged game artifact produced by `make package` / CI
+*.love
