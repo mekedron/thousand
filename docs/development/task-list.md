@@ -143,7 +143,7 @@ change (talon size, bid increments, marriage values, barrel rules, ...).
   - Successful declarer adds the bid to running total.
   - Failed declarer subtracts the bid from running total.
   - Defenders independently add their captured deal scores.
-- [ ] Implement barrel and game-end scoring.
+- [x] Implement barrel and game-end scoring.
   - At 880, score freezes and the player has 3 deals to make 120 and win.
   - Falling off the barrel applies −120 and returns the player to 760.
   - Reaching 1000 wins.

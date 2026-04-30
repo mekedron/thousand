@@ -38,6 +38,9 @@ describe("core.scoring", function()
         it("exposes the documented public surface", function()
             assert.is_function(scoring.score_deal)
             assert.is_function(scoring.is_scoring)
+            assert.is_function(scoring.advance_game)
+            assert.is_function(scoring.is_game)
+            assert.is_function(scoring.initial_barrel_state)
             assert.is_number(scoring.SCHEMA_VERSION)
         end)
     end)
@@ -484,6 +487,654 @@ describe("core.scoring", function()
             assert.are.equal(115, s.deltas[2])
             assert.are.equal(10, s.deltas[3])
             assert.are.equal(100, s.running_totals[1])
+        end)
+    end)
+
+    -- Defaults shared across advance_game tests. The default barrel state
+    -- has every player off barrel so individual tests can override the
+    -- slice they care about, just like the score_deal defaults.
+    local function default_advance_opts(overrides)
+        local opts = {
+            declarer = 1,
+            deal_index = 1,
+            deltas = { 0, 0, 0 },
+            running_totals_before = { 0, 0, 0 },
+            barrel_state_before = scoring.initial_barrel_state(config),
+        }
+        if overrides then
+            for k, v in pairs(overrides) do
+                opts[k] = v
+            end
+        end
+        return opts
+    end
+
+    local function advance_ok(opts)
+        local result = scoring.advance_game(config, opts)
+        assert.is_true(
+            result.ok,
+            "fixture: advance_game must succeed (got "
+                .. (result.error and result.error.code or "?")
+                .. ")"
+        )
+        return result.game
+    end
+
+    describe("initial_barrel_state()", function()
+        it("returns one entry per player, all off barrel", function()
+            local state = scoring.initial_barrel_state(config)
+            assert.are.equal(config.players.count, #state)
+            for i = 1, config.players.count do
+                assert.is_false(state[i].on_barrel)
+                assert.is_nil(state[i].mounted_on_deal)
+                assert.is_nil(state[i].deals_remaining)
+            end
+        end)
+
+        it("rejects a non-RuleConfig", function()
+            assert.has_error(function()
+                scoring.initial_barrel_state({})
+            end)
+        end)
+    end)
+
+    describe("advance_game() validation", function()
+        it("rejects a non-RuleConfig", function()
+            for _, bad in ipairs({ 42, "config", {}, true }) do
+                local result = scoring.advance_game(bad, default_advance_opts())
+                assert.is_false(result.ok)
+                assert.are.equal("not_a_rule_config", result.error.code)
+            end
+            local nil_result = scoring.advance_game(nil, default_advance_opts())
+            assert.is_false(nil_result.ok)
+            assert.are.equal("not_a_rule_config", nil_result.error.code)
+        end)
+
+        it("rejects a non-table opts argument", function()
+            for _, bad in ipairs({ 42, "opts", true }) do
+                local result = scoring.advance_game(config, bad)
+                assert.is_false(result.ok)
+                assert.are.equal("bad_opts", result.error.code)
+            end
+            local nil_result = scoring.advance_game(config, nil)
+            assert.is_false(nil_result.ok)
+            assert.are.equal("bad_opts", nil_result.error.code)
+        end)
+
+        it("rejects a declarer outside the 1..N range", function()
+            for _, bad in ipairs({ 0, 4, 1.5, "1", true, {} }) do
+                local result =
+                    scoring.advance_game(config, default_advance_opts({ declarer = bad }))
+                assert.is_false(result.ok)
+                assert.are.equal("bad_declarer", result.error.code)
+            end
+        end)
+
+        it("rejects a non-positive-integer deal_index", function()
+            for _, bad in ipairs({ 0, -1, 1.5, "1", true, {} }) do
+                local result =
+                    scoring.advance_game(config, default_advance_opts({ deal_index = bad }))
+                assert.is_false(result.ok)
+                assert.are.equal("bad_deal_index", result.error.code)
+            end
+        end)
+
+        it("rejects deltas of the wrong shape", function()
+            local r1 = scoring.advance_game(config, default_advance_opts({ deltas = { 0, 0 } }))
+            assert.is_false(r1.ok)
+            assert.are.equal("bad_deltas", r1.error.code)
+
+            local r2 = scoring.advance_game(config, default_advance_opts({ deltas = "bad" }))
+            assert.is_false(r2.ok)
+            assert.are.equal("bad_deltas", r2.error.code)
+
+            local r3 =
+                scoring.advance_game(config, default_advance_opts({ deltas = { 0, "x", 0 } }))
+            assert.is_false(r3.ok)
+            assert.are.equal("bad_deltas", r3.error.code)
+        end)
+
+        it("rejects running_totals_before of the wrong shape", function()
+            local r1 =
+                scoring.advance_game(config, default_advance_opts({ running_totals_before = {} }))
+            assert.is_false(r1.ok)
+            assert.are.equal("bad_running_totals_before", r1.error.code)
+
+            local r2 = scoring.advance_game(
+                config,
+                default_advance_opts({ running_totals_before = "bad" })
+            )
+            assert.is_false(r2.ok)
+            assert.are.equal("bad_running_totals_before", r2.error.code)
+        end)
+
+        it("rejects barrel_state_before of the wrong length", function()
+            local result = scoring.advance_game(
+                config,
+                default_advance_opts({
+                    barrel_state_before = {
+                        { on_barrel = false },
+                        { on_barrel = false },
+                    },
+                })
+            )
+            assert.is_false(result.ok)
+            assert.are.equal("bad_barrel_state_before", result.error.code)
+        end)
+
+        it("rejects barrel_state_before entries that are not tables", function()
+            local result = scoring.advance_game(
+                config,
+                default_advance_opts({
+                    barrel_state_before = { { on_barrel = false }, "bad", { on_barrel = false } },
+                })
+            )
+            assert.is_false(result.ok)
+            assert.are.equal("bad_barrel_state_before", result.error.code)
+        end)
+
+        it("rejects barrel_state_before entries with non-boolean on_barrel", function()
+            local result = scoring.advance_game(
+                config,
+                default_advance_opts({
+                    barrel_state_before = {
+                        { on_barrel = false },
+                        { on_barrel = "yes" },
+                        { on_barrel = false },
+                    },
+                })
+            )
+            assert.is_false(result.ok)
+            assert.are.equal("bad_barrel_state_before", result.error.code)
+        end)
+
+        it("rejects on-barrel entries missing mounted_on_deal", function()
+            local result = scoring.advance_game(
+                config,
+                default_advance_opts({
+                    barrel_state_before = {
+                        { on_barrel = true, deals_remaining = 3 },
+                        { on_barrel = false },
+                        { on_barrel = false },
+                    },
+                })
+            )
+            assert.is_false(result.ok)
+            assert.are.equal("bad_barrel_state_before", result.error.code)
+        end)
+
+        it("rejects on-barrel entries with bad deals_remaining", function()
+            local result = scoring.advance_game(
+                config,
+                default_advance_opts({
+                    deal_index = 5,
+                    barrel_state_before = {
+                        { on_barrel = true, mounted_on_deal = 4, deals_remaining = 0 },
+                        { on_barrel = false },
+                        { on_barrel = false },
+                    },
+                })
+            )
+            assert.is_false(result.ok)
+            assert.are.equal("bad_barrel_state_before", result.error.code)
+        end)
+    end)
+
+    describe("advance_game() normal advancement", function()
+        it("adds deltas to running totals when nobody is near the barrel", function()
+            local g = advance_ok(default_advance_opts({
+                deltas = { 60, 30, 25 },
+                running_totals_before = { 100, 200, 50 },
+            }))
+            assert.are.same({ 160, 230, 75 }, g.running_totals)
+            for i = 1, 3 do
+                assert.is_false(g.barrel_state[i].on_barrel)
+            end
+            assert.is_nil(g.winner)
+        end)
+
+        it("can drive a non-barrel running total negative", function()
+            local g = advance_ok(default_advance_opts({
+                deltas = { -100, 30, 25 },
+                running_totals_before = { 50, 0, 0 },
+            }))
+            assert.are.equal(-50, g.running_totals[1])
+            assert.is_false(g.barrel_state[1].on_barrel)
+        end)
+    end)
+
+    describe("advance_game() mounting the barrel", function()
+        it("does not mount when the post-deal total stays below the threshold", function()
+            local g = advance_ok(default_advance_opts({
+                deltas = { 9, 0, 0 },
+                running_totals_before = { 870, 0, 0 },
+            }))
+            assert.are.equal(879, g.running_totals[1])
+            assert.is_false(g.barrel_state[1].on_barrel)
+        end)
+
+        it("mounts the barrel when the post-deal total reaches the threshold exactly", function()
+            local g = advance_ok(default_advance_opts({
+                deltas = { 10, 0, 0 },
+                running_totals_before = { 870, 0, 0 },
+                deal_index = 7,
+            }))
+            assert.are.equal(880, g.running_totals[1])
+            assert.is_true(g.barrel_state[1].on_barrel)
+            assert.are.equal(7, g.barrel_state[1].mounted_on_deal)
+            assert.are.equal(config.barrel.deal_count, g.barrel_state[1].deals_remaining)
+        end)
+
+        it(
+            "snaps the running total to the threshold even when the deal would have overshot",
+            function()
+                local g = advance_ok(default_advance_opts({
+                    deltas = { 70, 0, 0 },
+                    running_totals_before = { 850, 0, 0 },
+                    deal_index = 4,
+                }))
+                assert.are.equal(880, g.running_totals[1])
+                assert.is_true(g.barrel_state[1].on_barrel)
+                assert.are.equal(4, g.barrel_state[1].mounted_on_deal)
+            end
+        )
+
+        it("does not mount or win when the deal jumps directly past the target", function()
+            -- Player at 800, delta 250 → 1050 ≥ target. Skip the barrel
+            -- entirely and win on the spot.
+            local g = advance_ok(default_advance_opts({
+                deltas = { 250, 0, 0 },
+                running_totals_before = { 800, 0, 0 },
+                deal_index = 6,
+            }))
+            assert.are.equal(1050, g.running_totals[1])
+            assert.is_false(g.barrel_state[1].on_barrel)
+            assert.are.equal(1, g.winner)
+        end)
+    end)
+
+    describe("advance_game() while on barrel", function()
+        it(
+            "freezes the running total and decrements deals_remaining when delta is below 120",
+            function()
+                local g = advance_ok(default_advance_opts({
+                    deltas = { 50, 0, 0 },
+                    running_totals_before = { 880, 0, 0 },
+                    deal_index = 6,
+                    barrel_state_before = {
+                        { on_barrel = true, mounted_on_deal = 5, deals_remaining = 3 },
+                        { on_barrel = false },
+                        { on_barrel = false },
+                    },
+                }))
+                assert.are.equal(880, g.running_totals[1])
+                assert.is_true(g.barrel_state[1].on_barrel)
+                assert.are.equal(5, g.barrel_state[1].mounted_on_deal)
+                assert.are.equal(2, g.barrel_state[1].deals_remaining)
+            end
+        )
+
+        it("ignores a negative delta — score stays frozen at the threshold", function()
+            local g = advance_ok(default_advance_opts({
+                deltas = { -100, 30, 25 },
+                running_totals_before = { 880, 0, 0 },
+                deal_index = 7,
+                barrel_state_before = {
+                    { on_barrel = true, mounted_on_deal = 5, deals_remaining = 2 },
+                    { on_barrel = false },
+                    { on_barrel = false },
+                },
+            }))
+            assert.are.equal(880, g.running_totals[1])
+            assert.is_true(g.barrel_state[1].on_barrel)
+            assert.are.equal(1, g.barrel_state[1].deals_remaining)
+        end)
+
+        it("wins when delta on barrel is exactly 120", function()
+            local g = advance_ok(default_advance_opts({
+                deltas = { 120, 0, 0 },
+                running_totals_before = { 880, 0, 0 },
+                deal_index = 6,
+                barrel_state_before = {
+                    { on_barrel = true, mounted_on_deal = 5, deals_remaining = 3 },
+                    { on_barrel = false },
+                    { on_barrel = false },
+                },
+            }))
+            assert.are.equal(config.endgame.target_score, g.running_totals[1])
+            assert.is_false(g.barrel_state[1].on_barrel)
+            assert.are.equal(1, g.winner)
+        end)
+
+        it("wins and caps the running total at the target when delta exceeds 120", function()
+            -- Defender on barrel could in theory score cards + a hearts
+            -- marriage in one deal (e.g. 60 cards + 100 = 160). The score
+            -- was frozen at 880, so the win lands at exactly 1000 — not
+            -- 880 + 160.
+            local g = advance_ok(default_advance_opts({
+                deltas = { 0, 160, 0 },
+                running_totals_before = { 0, 880, 0 },
+                deal_index = 8,
+                barrel_state_before = {
+                    { on_barrel = false },
+                    { on_barrel = true, mounted_on_deal = 7, deals_remaining = 3 },
+                    { on_barrel = false },
+                },
+            }))
+            assert.are.equal(config.endgame.target_score, g.running_totals[2])
+            assert.is_false(g.barrel_state[2].on_barrel)
+            assert.are.equal(2, g.winner)
+        end)
+
+        it("falls off when deals_remaining reaches zero on a low-delta deal", function()
+            local g = advance_ok(default_advance_opts({
+                deltas = { 50, 30, 25 },
+                running_totals_before = { 880, 100, 100 },
+                deal_index = 8,
+                barrel_state_before = {
+                    { on_barrel = true, mounted_on_deal = 5, deals_remaining = 1 },
+                    { on_barrel = false },
+                    { on_barrel = false },
+                },
+            }))
+            assert.are.equal(
+                config.barrel.threshold + config.barrel.fall_off_penalty,
+                g.running_totals[1]
+            )
+            assert.are.equal(760, g.running_totals[1])
+            assert.is_false(g.barrel_state[1].on_barrel)
+            assert.is_nil(g.barrel_state[1].mounted_on_deal)
+            assert.is_nil(g.barrel_state[1].deals_remaining)
+            assert.is_nil(g.winner)
+        end)
+
+        it("walks a full barrel run without any winning deal", function()
+            -- Deal 5: mount.
+            local g1 = advance_ok(default_advance_opts({
+                deltas = { 30, 0, 0 },
+                running_totals_before = { 870, 0, 0 },
+                deal_index = 5,
+            }))
+            assert.are.equal(880, g1.running_totals[1])
+            assert.is_true(g1.barrel_state[1].on_barrel)
+            assert.are.equal(3, g1.barrel_state[1].deals_remaining)
+
+            -- Deal 6: still on barrel.
+            local g2 = advance_ok({
+                declarer = 2,
+                deal_index = 6,
+                deltas = { 50, 0, 0 },
+                running_totals_before = g1.running_totals,
+                barrel_state_before = g1.barrel_state,
+            })
+            assert.are.equal(880, g2.running_totals[1])
+            assert.are.equal(2, g2.barrel_state[1].deals_remaining)
+
+            -- Deal 7: still on barrel.
+            local g3 = advance_ok({
+                declarer = 3,
+                deal_index = 7,
+                deltas = { 0, 0, 0 },
+                running_totals_before = g2.running_totals,
+                barrel_state_before = g2.barrel_state,
+            })
+            assert.are.equal(880, g3.running_totals[1])
+            assert.are.equal(1, g3.barrel_state[1].deals_remaining)
+
+            -- Deal 8: falls off.
+            local g4 = advance_ok({
+                declarer = 1,
+                deal_index = 8,
+                deltas = { 50, 0, 0 },
+                running_totals_before = g3.running_totals,
+                barrel_state_before = g3.barrel_state,
+            })
+            assert.are.equal(760, g4.running_totals[1])
+            assert.is_false(g4.barrel_state[1].on_barrel)
+            assert.is_nil(g4.winner)
+        end)
+    end)
+
+    describe("advance_game() collision rule", function()
+        it("knocks the earlier mounter off when a second player mounts the next deal", function()
+            -- Player 1 was already on barrel from deal 5 with 3 deals
+            -- remaining. Player 2 mounts in deal 6. After the deal, only
+            -- player 2 stays on; player 1 falls off to 760.
+            local g = advance_ok(default_advance_opts({
+                declarer = 3,
+                deal_index = 6,
+                deltas = { 0, 30, 0 },
+                running_totals_before = { 880, 870, 0 },
+                barrel_state_before = {
+                    { on_barrel = true, mounted_on_deal = 5, deals_remaining = 3 },
+                    { on_barrel = false },
+                    { on_barrel = false },
+                },
+            }))
+            assert.is_false(g.barrel_state[1].on_barrel)
+            assert.are.equal(760, g.running_totals[1])
+            assert.is_true(g.barrel_state[2].on_barrel)
+            assert.are.equal(880, g.running_totals[2])
+            assert.are.equal(6, g.barrel_state[2].mounted_on_deal)
+        end)
+
+        it("breaks a same-deal mount tie in favour of the declarer", function()
+            -- Players 1 and 2 both mount in deal 4. Player 2 is declarer
+            -- → player 2 stays on; player 1 falls off.
+            local g = advance_ok(default_advance_opts({
+                declarer = 2,
+                deal_index = 4,
+                deltas = { 30, 30, 0 },
+                running_totals_before = { 870, 870, 0 },
+            }))
+            assert.is_false(g.barrel_state[1].on_barrel)
+            assert.are.equal(760, g.running_totals[1])
+            assert.is_true(g.barrel_state[2].on_barrel)
+            assert.are.equal(880, g.running_totals[2])
+        end)
+
+        it(
+            "breaks a same-deal mount tie by lowest player index when no candidate is declarer",
+            function()
+                -- Players 2 and 3 both mount in deal 4; declarer is
+                -- player 1. Lowest-indexed candidate (2) survives.
+                local g = advance_ok(default_advance_opts({
+                    declarer = 1,
+                    deal_index = 4,
+                    deltas = { 0, 30, 30 },
+                    running_totals_before = { 0, 870, 870 },
+                }))
+                assert.is_true(g.barrel_state[2].on_barrel)
+                assert.are.equal(880, g.running_totals[2])
+                assert.is_false(g.barrel_state[3].on_barrel)
+                assert.are.equal(760, g.running_totals[3])
+            end
+        )
+
+        it("leaves the lone barrel survivor untouched when nobody else mounts", function()
+            local g = advance_ok(default_advance_opts({
+                declarer = 1,
+                deal_index = 6,
+                deltas = { 50, 30, 25 },
+                running_totals_before = { 880, 200, 100 },
+                barrel_state_before = {
+                    { on_barrel = true, mounted_on_deal = 5, deals_remaining = 3 },
+                    { on_barrel = false },
+                    { on_barrel = false },
+                },
+            }))
+            assert.is_true(g.barrel_state[1].on_barrel)
+            assert.are.equal(880, g.running_totals[1])
+            assert.are.equal(2, g.barrel_state[1].deals_remaining)
+            assert.are.equal(230, g.running_totals[2])
+            assert.are.equal(125, g.running_totals[3])
+        end)
+    end)
+
+    describe("advance_game() winner determination", function()
+        it("does not declare a winner during normal play", function()
+            local g = advance_ok(default_advance_opts({
+                deltas = { 60, 30, 25 },
+                running_totals_before = { 100, 200, 50 },
+            }))
+            assert.is_nil(g.winner)
+        end)
+
+        it("declares a winner when a single player crosses the target", function()
+            local g = advance_ok(default_advance_opts({
+                declarer = 2,
+                deltas = { 30, 100, 25 },
+                running_totals_before = { 200, 920, 50 },
+                deal_index = 9,
+            }))
+            assert.are.equal(2, g.winner)
+            assert.are.equal(1020, g.running_totals[2])
+        end)
+
+        it("declares the declarer the winner on a same-deal tie at the target", function()
+            -- Both player 1 (declarer) and player 2 (defender) finish
+            -- exactly at 1000 after the deal. Declarer wins.
+            local g = advance_ok(default_advance_opts({
+                declarer = 1,
+                deltas = { 100, 100, 25 },
+                running_totals_before = { 900, 900, 50 },
+                deal_index = 9,
+            }))
+            assert.are.equal(1, g.winner)
+        end)
+
+        it("breaks a non-declarer tie at the target by highest total then lowest index", function()
+            -- Players 2 and 3 both cross 1000; declarer is 1 and did not.
+            -- Player 3 has the higher post-deal total → wins.
+            local g = advance_ok(default_advance_opts({
+                declarer = 1,
+                deltas = { -100, 100, 130 },
+                running_totals_before = { 200, 900, 900 },
+                deal_index = 9,
+            }))
+            assert.are.equal(3, g.winner)
+        end)
+
+        it(
+            "falls back to the lowest player index when target-crossing totals are exactly tied",
+            function()
+                -- Both player 2 and player 3 land at exactly 1010, declarer
+                -- is player 1 and did not cross. Lowest-indexed of the
+                -- target-crossers (2) wins.
+                local g = advance_ok(default_advance_opts({
+                    declarer = 1,
+                    deltas = { -100, 110, 110 },
+                    running_totals_before = { 200, 900, 900 },
+                    deal_index = 9,
+                }))
+                assert.are.equal(2, g.winner)
+            end
+        )
+
+        it(
+            "hands a higher-total non-barrel crosser the win over an on-barrel target-hitter",
+            function()
+                -- Player 1 was on barrel and scores 130 → wins at the
+                -- target (capped at 1000). Player 2 was a defender at
+                -- 800 and lands at 1100 in the same deal. Declarer is
+                -- player 1, but there is no tie — the higher total
+                -- wins outright. Declarer-wins-ties only kicks in when
+                -- the totals match.
+                local g = advance_ok(default_advance_opts({
+                    declarer = 1,
+                    deltas = { 130, 300, 0 },
+                    running_totals_before = { 880, 800, 0 },
+                    deal_index = 8,
+                    barrel_state_before = {
+                        { on_barrel = true, mounted_on_deal = 6, deals_remaining = 3 },
+                        { on_barrel = false },
+                        { on_barrel = false },
+                    },
+                }))
+                assert.are.equal(2, g.winner)
+                assert.are.equal(config.endgame.target_score, g.running_totals[1])
+                assert.are.equal(1100, g.running_totals[2])
+            end
+        )
+
+        it("breaks an on-barrel/non-barrel tie at the target in the declarer's favour", function()
+            -- Player 1 (declarer) on barrel scores 120 → wins at the
+            -- target (1000, capped from frozen 880). Player 2 was
+            -- at 800 and lands at exactly 1000 in the same deal.
+            -- Tie at 1000 → declarer wins.
+            local g = advance_ok(default_advance_opts({
+                declarer = 1,
+                deltas = { 120, 200, 0 },
+                running_totals_before = { 880, 800, 0 },
+                deal_index = 8,
+                barrel_state_before = {
+                    { on_barrel = true, mounted_on_deal = 6, deals_remaining = 3 },
+                    { on_barrel = false },
+                    { on_barrel = false },
+                },
+            }))
+            assert.are.equal(1, g.winner)
+            assert.are.equal(config.endgame.target_score, g.running_totals[1])
+            assert.are.equal(1000, g.running_totals[2])
+        end)
+    end)
+
+    describe("advance_game() result shape", function()
+        it("tags the state so is_game recognises it", function()
+            local g = advance_ok(default_advance_opts())
+            assert.is_true(scoring.is_game(g))
+        end)
+
+        it("rejects plain tables for is_game", function()
+            assert.is_false(scoring.is_game(nil))
+            assert.is_false(scoring.is_game(42))
+            assert.is_false(scoring.is_game("game"))
+            assert.is_false(scoring.is_game({}))
+            assert.is_false(scoring.is_game({ running_totals = {} }))
+        end)
+
+        it("stamps the schema version", function()
+            local g = advance_ok(default_advance_opts())
+            assert.are.equal(scoring.SCHEMA_VERSION, g.schema_version)
+        end)
+
+        it("retains config, declarer and deal_index for later reads", function()
+            local g = advance_ok(default_advance_opts({ declarer = 2, deal_index = 7 }))
+            assert.are.equal(config, g.config)
+            assert.are.equal(2, g.declarer)
+            assert.are.equal(7, g.deal_index)
+        end)
+    end)
+
+    describe("advance_game() immutability", function()
+        it("does not mutate the input opts lists", function()
+            local opts = default_advance_opts({
+                deltas = { 30, 25, 60 },
+                running_totals_before = { 200, 100, 50 },
+                barrel_state_before = {
+                    { on_barrel = true, mounted_on_deal = 5, deals_remaining = 2 },
+                    { on_barrel = false },
+                    { on_barrel = false },
+                },
+                running_totals_before_snapshot = nil,
+            })
+            advance_ok(opts)
+            assert.are.same({ 30, 25, 60 }, opts.deltas)
+            assert.are.same({ 200, 100, 50 }, opts.running_totals_before)
+            assert.is_true(opts.barrel_state_before[1].on_barrel)
+            assert.are.equal(5, opts.barrel_state_before[1].mounted_on_deal)
+            assert.are.equal(2, opts.barrel_state_before[1].deals_remaining)
+        end)
+
+        it("returns lists independent of the input lists", function()
+            local opts = default_advance_opts({
+                deltas = { 30, 25, 60 },
+                running_totals_before = { 200, 100, 50 },
+            })
+            local g = advance_ok(opts)
+            assert.are_not.equal(opts.running_totals_before, g.running_totals)
+            assert.are_not.equal(opts.barrel_state_before, g.barrel_state)
+            assert.are_not.equal(opts.barrel_state_before[1], g.barrel_state[1])
         end)
     end)
 end)
