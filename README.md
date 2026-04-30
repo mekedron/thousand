@@ -54,6 +54,18 @@ brew install luacheck stylua   # macOS
 sudo apt install luacheck      # Linux; stylua via cargo / GitHub releases
 ```
 
+## Pre-commit hook (recommended)
+
+Wire git up to run `make check` before every commit:
+
+```sh
+make install-hooks
+```
+
+This points `core.hooksPath` at [`.githooks/`](./.githooks). Skip with
+`git commit --no-verify` if you really must — but the same checks run
+in CI on every push, so a red main is just delayed, not avoided.
+
 ## Build a `.love` for distribution
 
 ```sh

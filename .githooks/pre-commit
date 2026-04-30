@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Pre-commit hook for Thousand. Runs lint + format-check + tests so a bad
+# commit never reaches origin/main. Install once with `make install-hooks`
+# (which points git at .githooks/).
+#
+# Skip with `git commit --no-verify`, but only do that if you have a
+# concrete reason — CI runs the same checks and a red main blocks
+# everyone.
+
+set -euo pipefail
+
+if ! command -v luacheck >/dev/null 2>&1; then
+    echo "pre-commit: luacheck not on PATH — install it via your package manager." >&2
+    exit 1
+fi
+if ! command -v stylua >/dev/null 2>&1; then
+    echo "pre-commit: stylua not on PATH — install it via your package manager." >&2
+    exit 1
+fi
+if ! command -v busted >/dev/null 2>&1; then
+    echo "pre-commit: busted not on PATH — install it with luarocks install busted." >&2
+    exit 1
+fi
+
+exec make check

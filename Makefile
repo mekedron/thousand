@@ -2,7 +2,7 @@
 # busted are on PATH — install via your platform's package manager (e.g.
 # `brew install luacheck stylua` on macOS, plus `luarocks install busted`).
 
-.PHONY: help test lint format format-check check clean run package
+.PHONY: help test lint format format-check check clean run package install-hooks
 
 LOVE_FILE := thousand.love
 
@@ -15,6 +15,7 @@ help:
 	@echo "  check         lint + format-check + test (CI parity)"
 	@echo "  run           launch the game with love ."
 	@echo "  package       build $(LOVE_FILE) for distribution"
+	@echo "  install-hooks point git at .githooks/ so pre-commit runs check"
 	@echo "  clean         remove generated artifacts"
 
 test:
@@ -58,6 +59,12 @@ package:
 		-x '.mcp.json' \
 		-x 'README.md' \
 		-x '$(LOVE_FILE)'
+
+# Wire git up to use the repo's pre-commit hook. Idempotent — re-running
+# is a no-op. Removes the wiring with `git config --unset core.hooksPath`.
+install-hooks:
+	git config core.hooksPath .githooks
+	@echo "Git hooks installed: .githooks/pre-commit will run on every commit."
 
 clean:
 	rm -f *.love
