@@ -106,7 +106,7 @@ change (talon size, bid increments, marriage values, barrel rules, ...).
 
 ### 1.5 Marriages and trump
 
-- [ ] Implement marriage detection, declaration, bonuses, and trump state.
+- [x] Implement marriage detection, declaration, bonuses, and trump state.
   - A marriage is K + Q of the same suit in one hand.
   - Marriage values are ♥=100, ♦=80, ♣=60, ♠=40.
   - A marriage is declared by leading the K or Q while on lead.
