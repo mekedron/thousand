@@ -37,6 +37,28 @@ If `busted` is not on PATH, install it via LuaRocks:
 luarocks install busted
 ```
 
+## Coverage
+
+The engine targets at least **80% line coverage** across `core/`, gated
+in CI on every push. Run the report locally with:
+
+```sh
+make coverage
+```
+
+This re-runs the busted suite under
+[luacov](https://lunarmodules.github.io/luacov/), parses
+`luacov.report.out`, and exits non-zero if any `core/*.lua` file is
+missing from the report or if total `core/` coverage is below 80%.
+
+If `luacov` is not installed locally, `make coverage` prints an install
+hint and exits cleanly — the hard gate lives in CI. Install via
+LuaRocks:
+
+```sh
+luarocks install luacov
+```
+
 ## Lint and format
 
 ```sh

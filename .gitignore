@@ -20,3 +20,9 @@ node_modules/
 
 # Packaged game artifact produced by `make package` / CI
 *.love
+
+# LuaCov artifacts produced by `make coverage`. The threshold gate
+# reads luacov.report.out at runtime; both files are ephemeral and
+# never committed.
+luacov.stats.out
+luacov.report.out

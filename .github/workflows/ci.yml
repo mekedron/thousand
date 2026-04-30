@@ -30,10 +30,11 @@ jobs:
       - name: Set up LuaRocks
         uses: leafo/gh-actions-luarocks@v4
 
-      - name: Install luacheck and busted
+      - name: Install luacheck, busted and luacov
         run: |
           luarocks install luacheck
           luarocks install busted
+          luarocks install luacov
 
       - name: Run luacheck
         run: luacheck .
@@ -50,3 +51,6 @@ jobs:
 
       - name: Run busted
         run: busted
+
+      - name: Run coverage with 80% gate
+        run: make coverage

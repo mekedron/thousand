@@ -152,7 +152,7 @@ change (talon size, bid increments, marriage values, barrel rules, ...).
 
 ### 1.8 Engine tests
 
-- [ ] Build the core rules test suite.
+- [x] Build the core rules test suite.
   - Every public function in `core/` has unit coverage.
   - A scripted full deal asserts final scores.
   - Public APIs cannot reach a rule-violating state in scripted or

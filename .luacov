@@ -1,0 +1,38 @@
+-- LuaCov configuration for the Thousand engine.
+--
+-- Only `core/` files count toward the 80% gate enforced by
+-- `tools/coverage_gate.lua`. Everything else (tests, third-party
+-- rocks, app/ui/platform stubs, the boot files) is excluded so the
+-- threshold reflects engine quality, not test or scaffolding.
+--
+-- See https://lunarmodules.github.io/luacov/doc/config.html for the
+-- full set of options.
+
+return {
+    statsfile = "luacov.stats.out",
+    reportfile = "luacov.report.out",
+    deletestats = true,
+    runreport = false,
+    include = { "^core[/.]" },
+    exclude = {
+        "^tests[/.]",
+        "^assets[/.]",
+        "^app[/.]",
+        "^ui[/.]",
+        "^platform[/.]",
+        "^conf$",
+        "^main$",
+        "^%.luarocks[/.]",
+        "luacov",
+        "busted",
+        "luassert",
+        "say",
+        "term",
+        "cliargs",
+        "dkjson",
+        "datafile",
+        "mediator",
+        "system",
+        "pl%.",
+    },
+}
