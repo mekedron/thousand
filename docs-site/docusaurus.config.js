@@ -56,6 +56,13 @@ const config = {
           sidebarPath: './sidebars.js',
           editUrl:
             'https://github.com/mekedron/thousand/tree/main/docs/',
+          // Custom admonition keywords on top of the built-in
+          // note/tip/info/warning/danger. Styling lives in
+          // src/css/custom.css under .theme-admonition-<keyword>.
+          admonitions: {
+            keywords: ['strategy', 'variant', 'example'],
+            extendDefaults: true,
+          },
         },
         // No blog — this site is documentation only.
         blog: false,

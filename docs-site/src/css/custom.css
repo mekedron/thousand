@@ -28,3 +28,23 @@
   --ifm-color-primary-lightest: #4fddbf;
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
 }
+
+/* Custom admonition types declared in docusaurus.config.js. Without
+   these overrides, custom keywords inherit the default `note` palette. */
+.theme-admonition-strategy {
+  --ifm-alert-background-color: rgba(149, 76, 233, 0.1);
+  --ifm-alert-background-color-highlight: rgba(149, 76, 233, 0.15);
+  --ifm-alert-border-color: rgb(149, 76, 233);
+}
+
+.theme-admonition-variant {
+  --ifm-alert-background-color: rgba(54, 162, 235, 0.1);
+  --ifm-alert-background-color-highlight: rgba(54, 162, 235, 0.15);
+  --ifm-alert-border-color: rgb(54, 162, 235);
+}
+
+.theme-admonition-example {
+  --ifm-alert-background-color: rgba(255, 159, 64, 0.1);
+  --ifm-alert-background-color-highlight: rgba(255, 159, 64, 0.15);
+  --ifm-alert-border-color: rgb(255, 159, 64);
+}
