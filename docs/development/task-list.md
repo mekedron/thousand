@@ -70,7 +70,7 @@ change (talon size, bid increments, marriage values, barrel rules, ...).
   - Trick rank order is A > 10 > K > Q > J > 9.
   - These values are read from the canonical Phase 1 `RuleConfig`, not
     duplicated as unrelated constants.
-- [ ] Build the deterministic 24-card deck module.
+- [x] Build the deterministic 24-card deck module.
   - Deck builder returns exactly one card for every suit/rank pair.
   - Total deck card points equal 120.
   - Shuffle is seedable and reproducible in tests.
