@@ -521,6 +521,34 @@ release.
 - [ ] **P1** Versioning scheme: semver in `conf.lua`, surfaced in the settings "About" screen.
 - [ ] **P2** Auto-update channel for desktop (or a clear "check for updates" link).
 
+### 8.4 Education mode
+
+Thousand is complicated by modern card-game standards — bidding, the
+talon, marriages, must-trump and the barrel are all unfamiliar concepts
+to many players. Education mode is the dedicated learning path for
+people who want to **study** the game rather than just play it.
+
+Distinct from the single-deal tutorial in §4.1, which gets a first-time
+user into a real game. Education mode is a **multi-lesson course**,
+accessible from the main menu, that teaches the game from scratch.
+
+- [ ] **P1** Main-menu entry "Learn to play" → Education mode hub.
+- [ ] **P1** Lesson list: a sequence of self-contained lessons (~3–5 minutes each), building from cards → bidding → talon → marriages → tricks → scoring → barrel. Roughly 7 lessons.
+- [ ] **P1** Each lesson is **interactive** — scripted hands the learner plays through with hint balloons explaining each step. No purely-text lessons.
+- [ ] **P1** Lesson 1: deck & card rank. The 24 cards, rank order (A > 10 > K > Q > J > 9), point values.
+- [ ] **P1** Lesson 2: bidding. Walks through an auction with explainers on each bid decision.
+- [ ] **P1** Lesson 3: the talon, the pass, and the raise.
+- [ ] **P1** Lesson 4: marriages and trump flips.
+- [ ] **P1** Lesson 5: trick-taking under must-follow / must-beat / must-trump.
+- [ ] **P1** Lesson 6: scoring a deal and the barrel.
+- [ ] **P1** Lesson 7: variations primer — what templates are, how rules differ between Russian / Polish / Ukrainian / 2-player / 4-player.
+- [ ] **P1** Glossary scene — searchable list of terms (бовт, прикуп, marriage, talon, barrel, mizère, …) with short definitions; accessible from anywhere via a `?` icon.
+- [ ] **P1** Progress tracking — per-lesson completion state; resume mid-lesson.
+- [ ] **P1** All lesson copy keyed via `t()` and translated alongside the rest of the app in §8.1.
+- [ ] **P2** Practice mode — a one-deal sandbox where the AI offers gentle suggestions to a learner.
+- [ ] **P2** Quick-reference popover accessible during a real game (rules cheat-sheet, not just during lessons).
+- [ ] **P2** Per-lesson completion badges in a progress view (no gamification beyond a checkmark).
+
 ---
 
 ## Cross-phase / ongoing

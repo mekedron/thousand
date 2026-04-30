@@ -21,7 +21,7 @@ actionable items.
 | 5 | **iOS port — cross-platform prototype** 🎯 | The base game runs on **macOS, Linux and iOS** from one codebase. Hot-seat only; AI deferred. |
 | 6 | **AI opponents (algorithmic)** | Single human vs. two algorithmic AI seats at one difficulty. Silent AI — no LLM yet. AI is legal under every built-in `RuleConfig`. |
 | 7 | **AI characters & psychology** | Built-in and user-saved character presets. User-configured OpenAI-compatible LLM endpoint produces in-character chat. *Inviolable invariant: the algorithm picks every move; the LLM only writes dialogue.* |
-| 8 | **Release readiness** | Russian, Polish and Ukrainian translations shipped. Save-game, crash reporting, store assets, signed builds for all three v1 targets. |
+| 8 | **Release readiness** | Russian, Polish and Ukrainian translations shipped. Save-game, crash reporting, store assets, signed builds for all three v1 targets, multi-lesson education mode. |
 
 🎯 Phase 5 is the **product owner's prototype checkpoint**: confirm the
 base game is real on every v1 target before any AI work starts.
