@@ -2,7 +2,7 @@
 # busted are on PATH — install via your platform's package manager (e.g.
 # `brew install luacheck stylua` on macOS, plus `luarocks install busted`).
 
-.PHONY: help test lint format format-check check clean run package install-hooks
+.PHONY: help test lint format format-check check clean run package install-hooks check-i18n
 
 LOVE_FILE := thousand.love
 
@@ -12,7 +12,8 @@ help:
 	@echo "  lint          run luacheck across the project"
 	@echo "  format        rewrite all .lua files with stylua"
 	@echo "  format-check  fail if any .lua file would be reformatted"
-	@echo "  check         lint + format-check + test (CI parity)"
+	@echo "  check         lint + format-check + check-i18n + test (CI parity)"
+	@echo "  check-i18n    flag hard-coded UI strings outside locale tables"
 	@echo "  run           launch the game with love ."
 	@echo "  package       build $(LOVE_FILE) for distribution"
 	@echo "  install-hooks point git at .githooks/ so pre-commit runs check"
@@ -30,7 +31,10 @@ format:
 format-check:
 	stylua --check .
 
-check: lint format-check test
+check: lint format-check check-i18n test
+
+check-i18n:
+	./tools/check_i18n.sh
 
 run:
 	love .

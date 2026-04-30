@@ -45,5 +45,8 @@ jobs:
           version: latest
           args: --check .
 
+      - name: Run i18n hard-coded-string check
+        run: ./tools/check_i18n.sh
+
       - name: Run busted
         run: busted

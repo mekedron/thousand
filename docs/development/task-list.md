@@ -39,7 +39,7 @@ from day one.
 - [x] **P1** GitHub Actions: produce a `.love` artifact on every push to `main`.
 - [x] **P1** Project `README.md` at the repo root: how to run, how to test, how to package.
 - [x] **P2** Pre-commit hook running lint + tests locally.
-- [ ] **P2** A simple CI check that flags hard-coded user-visible strings outside locale tables.
+- [x] **P2** A simple CI check that flags hard-coded user-visible strings outside locale tables.
 
 ---
 
