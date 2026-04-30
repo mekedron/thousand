@@ -17,7 +17,7 @@ bearings.
 3. Talon      → Declarer reveals the 3 cards and takes them
 4. Pass       → Declarer passes 1 card to each opponent
 5. Raise      → Declarer may raise their bid based on the new hand
-6. Tricks     → 7 tricks played, with marriages declared on the lead
+6. Tricks     → 8 tricks played, with marriages declared on the lead
 7. Score      → Card points + marriage bonuses recorded; check for 1000
 ```
 

@@ -128,7 +128,7 @@ change (talon size, bid increments, marriage values, barrel rules, ...).
   - Trick winner leads next.
   - A deal is exactly 8 tricks.
   - Every illegal play is logged with the rule it broke.
-- [ ] Fix trick-count inconsistency in `docs/rules/setup.md`.
+- [x] Fix trick-count inconsistency in `docs/rules/setup.md`.
   - The overview at line 21 says "7 tricks played"; every other rules
     page and this task list establish 8 tricks per deal (each player
     holds 8 cards after the talon pass).
