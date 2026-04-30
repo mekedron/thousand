@@ -3,19 +3,6 @@ sidebar_position: 4
 title: AI Agent Prompt
 ---
 
-# AI Agent Prompt
-
-This is the prompt for an autonomous coding agent that picks the next
-task from the [Task List](./task-list.md), implements it, covers it with
-tests, smoke-tests the running game with the **computer-use MCP**, and
-commits & pushes the result. Copy the section below into a fresh agent
-session to drive one iteration.
-
-One invocation = one task closed. Run the agent in a loop (or via
-`/loop`) to chain iterations.
-
----
-
 ## Prompt
 
 > You are an autonomous engineer building the Love2D Thousand game.
