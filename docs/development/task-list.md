@@ -35,7 +35,7 @@ from day one.
 - [x] **P0** Add a unit-test runner that works on plain `lua` from the command line (e.g. busted) and a `make test` / shell script entry point.
 - [x] **P0** GitHub Actions: run lint + tests on every push.
 - [x] **P0** **i18n module**: a `t(key, …)` lookup against `assets/i18n/<locale>.lua`. Active locale lives in settings. Stub locale tables for `en`, `ru`, `pl`, `uk` (initially identical to `en`; populated in Phase 8).
-- [ ] **P0** **Locale fallback**: if a key is missing in the active locale, fall back to `en` and log once per missing key.
+- [x] **P0** **Locale fallback**: if a key is missing in the active locale, fall back to `en` and log once per missing key.
 - [ ] **P1** GitHub Actions: produce a `.love` artifact on every push to `main`.
 - [ ] **P1** Project `README.md` at the repo root: how to run, how to test, how to package.
 - [ ] **P2** Pre-commit hook running lint + tests locally.

@@ -6,15 +6,21 @@
 --
 -- Interpolation: i18n.t("hello", { name = "Alice" }) substitutes %{name}.
 --
--- Phase 0 returns the bare key when the active locale is missing it. The
--- en-fallback + log-once behaviour is added in the next task.
+-- Fallback: when a key is missing in the active locale, t() returns the en
+-- value if one exists, and logs the gap once per (locale, key) pair so a
+-- translator can see what still needs work without flooding the console.
 
 local i18n = {}
 
--- Module-level state. `loaded` caches locale tables so the gsub-heavy
--- t() path avoids re-resolving require() each call.
+local FALLBACK_LOCALE = "en"
+
+-- Module-level state.
 local loaded = {}
-local active_locale = "en"
+local active_locale = FALLBACK_LOCALE
+local missing_logged = {}
+local logger = function(msg)
+    print(msg)
+end
 
 local function load_locale(code)
     if loaded[code] ~= nil then
@@ -25,7 +31,7 @@ local function load_locale(code)
         loaded[code] = result
         return result
     end
-    loaded[code] = false -- cache the negative so repeated lookups are cheap
+    loaded[code] = false
     return nil
 end
 
@@ -44,6 +50,15 @@ local function interpolate(s, params)
     )
 end
 
+local function log_missing_once(key, locale)
+    local id = locale .. "\0" .. key
+    if missing_logged[id] then
+        return
+    end
+    missing_logged[id] = true
+    logger(string.format("[i18n] missing key %q in locale %q", key, locale))
+end
+
 function i18n.set_locale(code)
     assert(type(code) == "string", "locale code must be a string")
     if not load_locale(code) then
@@ -58,22 +73,58 @@ end
 
 function i18n.t(key, params)
     assert(type(key) == "string", "translation key must be a string")
-    local tbl = load_locale(active_locale)
-    if tbl then
-        local val = tbl[key]
+    local active = load_locale(active_locale)
+    if active then
+        local val = active[key]
         if type(val) == "string" then
             return interpolate(val, params)
         end
     end
+    -- Active locale doesn't have the key. Log the gap and try en.
+    log_missing_once(key, active_locale)
+    if active_locale ~= FALLBACK_LOCALE then
+        local fallback = load_locale(FALLBACK_LOCALE)
+        if fallback then
+            local val = fallback[key]
+            if type(val) == "string" then
+                return interpolate(val, params)
+            end
+        end
+        log_missing_once(key, FALLBACK_LOCALE)
+    end
     return key
 end
 
--- Test-only escape hatch: drops the locale cache and resets active locale.
--- Not part of the runtime API; kept under an underscore so it stays out of
--- normal autocomplete and grep-able audits.
+-- Test-only escape hatch: drops all module state. Not part of the runtime API.
 function i18n._reset()
     loaded = {}
-    active_locale = "en"
+    active_locale = FALLBACK_LOCALE
+    missing_logged = {}
+    logger = function(msg)
+        print(msg)
+    end
+end
+
+-- Test-only: install a custom logger so specs can capture missing-key
+-- diagnostics without spamming the test runner.
+function i18n._set_logger(fn)
+    if fn == nil then
+        logger = function(msg)
+            print(msg)
+        end
+    else
+        assert(type(fn) == "function", "logger must be a function")
+        logger = fn
+    end
+end
+
+-- Test-only: inject a locale table directly into the cache so a spec can
+-- exercise fallback paths without depending on the production stub
+-- contents (which currently mirror en exactly).
+function i18n._set_locale_table(code, tbl)
+    assert(type(code) == "string", "locale code must be a string")
+    assert(tbl == nil or type(tbl) == "table", "locale table must be nil or table")
+    loaded[code] = tbl or false
 end
 
 return i18n
