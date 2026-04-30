@@ -1,0 +1,10 @@
+{
+  "label": "Equipment & Setup",
+  "position": 2,
+  "link": {
+    "type": "generated-index",
+    "title": "Equipment & Setup",
+    "description": "Everything you need at the table before the first deal: the deck, the card ranking, and the roles players can hold during a hand.",
+    "slug": "/equipment"
+  }
+}
