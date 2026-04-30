@@ -85,7 +85,7 @@ change (talon size, bid increments, marriage values, barrel rules, ...).
 
 ### 1.3 Auction / bidding
 
-- [ ] Implement the auction state machine.
+- [x] Implement the auction state machine.
   - Auction starts at forehand and advances clockwise.
   - Opening minimum is 100; pre-talon maximum is 120.
   - Bid increments are 5 below 200 and 10 from 200 onward.
