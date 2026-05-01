@@ -354,7 +354,7 @@ variant** — only data.
   - `Four-player A` has dealer play, no talon, and 6 cards each.
   - `Four-player B` has dealer sit out and otherwise standard 3-player
     rules.
-- [ ] Add scripted engine tests for every built-in template.
+- [x] Add scripted engine tests for every built-in template.
   - Built-in templates use only implemented selectable toggles.
   - Each template can complete a full scripted deal.
   - Template-specific edge rules are asserted.
@@ -558,6 +558,17 @@ reference, and ships scripted engine tests covering every value.
     penalty; the penalty value lives in a new sibling field.
   - All five fields flip to selectable.
   - Penalty engine tests cover every variant value.
+- [ ] Extend the built-in template engine tests to full scripted deals.
+  - `Polish Tysiąc` plays a scripted deal under `talon.size = 2` once
+    the talon-variants gameplay task lifts the dealer's
+    `unsupported_talon_size` guard.
+  - `Two-player A` and `Two-player B` each play a scripted deal once
+    the players-and-seating gameplay task lifts the dealer's
+    `unsupported_player_count` guard for `count = 2`.
+  - `Four-player A` and `Four-player B` each play a scripted deal
+    once the same task lifts the guard for `count = 4`.
+  - Tests live alongside `tests/spec/core/builtins_spec.lua` and
+    replace the existing typed-error pins.
 
 ---
 
