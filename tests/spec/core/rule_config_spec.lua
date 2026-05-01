@@ -1356,10 +1356,11 @@ describe("core.rule_config", function()
             end
             assert.is_true(allowed["off"])
             assert.is_true(allowed["optional"])
+            assert.is_true(allowed["mandatory"])
         end)
 
         it("accepts every allowed value through try_new", function()
-            for _, ok_value in ipairs({ "off", "optional" }) do
+            for _, ok_value in ipairs({ "off", "optional", "mandatory" }) do
                 local t = valid_table()
                 t.dealing.three_nine_redeal = ok_value
                 local res = rule_config.try_new(t)
@@ -1370,21 +1371,21 @@ describe("core.rule_config", function()
 
         it("rejects an unknown value with value_not_allowed", function()
             local t = valid_table()
-            t.dealing.three_nine_redeal = "mandatory"
+            t.dealing.three_nine_redeal = "always"
             local res = rule_config.try_new(t)
             assert.is_false(res.ok)
             assert.are.equal("value_not_allowed", res.error.code)
             assert.are.equal("dealing.three_nine_redeal", res.error.path)
         end)
 
-        it("survives a JSON round trip at optional", function()
+        it("survives a JSON round trip at mandatory", function()
             local t = valid_table()
-            t.dealing.three_nine_redeal = "optional"
+            t.dealing.three_nine_redeal = "mandatory"
             local config_in = rule_config.new(t)
             local s = rule_config.to_json(config_in)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("optional", res.config.dealing.three_nine_redeal)
+            assert.are.equal("mandatory", res.config.dealing.three_nine_redeal)
         end)
     end)
 
@@ -1400,11 +1401,12 @@ describe("core.rule_config", function()
                 allowed[v] = true
             end
             assert.is_true(allowed["off"])
-            assert.is_true(allowed["on"])
+            assert.is_true(allowed["optional"])
+            assert.is_true(allowed["mandatory"])
         end)
 
         it("accepts every allowed value through try_new", function()
-            for _, ok_value in ipairs({ "off", "on" }) do
+            for _, ok_value in ipairs({ "off", "optional", "mandatory" }) do
                 local t = valid_table()
                 t.dealing.four_jack_redeal = ok_value
                 local res = rule_config.try_new(t)
@@ -1415,21 +1417,21 @@ describe("core.rule_config", function()
 
         it("rejects an unknown value with value_not_allowed", function()
             local t = valid_table()
-            t.dealing.four_jack_redeal = "mandatory"
+            t.dealing.four_jack_redeal = "on"
             local res = rule_config.try_new(t)
             assert.is_false(res.ok)
             assert.are.equal("value_not_allowed", res.error.code)
             assert.are.equal("dealing.four_jack_redeal", res.error.path)
         end)
 
-        it("survives a JSON round trip at on", function()
+        it("survives a JSON round trip at mandatory", function()
             local t = valid_table()
-            t.dealing.four_jack_redeal = "on"
+            t.dealing.four_jack_redeal = "mandatory"
             local config_in = rule_config.new(t)
             local s = rule_config.to_json(config_in)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("on", res.config.dealing.four_jack_redeal)
+            assert.are.equal("mandatory", res.config.dealing.four_jack_redeal)
         end)
     end)
 

@@ -198,21 +198,25 @@ local SCHEMA = {
                 default = "off",
                 status = "selectable",
             },
-            -- A player dealt three 9s may optionally request a redeal.
-            -- See house-rules.md "3-nine optional redeal".
+            -- A player dealt three 9s may request a redeal. "optional"
+            -- offers the entitled player a choice; "mandatory" forces
+            -- the table to redeal even if the player would prefer to
+            -- play. See house-rules.md "3-nine optional redeal".
             three_nine_redeal = {
                 kind = "leaf",
                 lua_type = "string",
-                allowed = { "off", "optional" },
+                allowed = { "off", "optional", "mandatory" },
                 default = "off",
                 status = "selectable",
             },
             -- A player dealt all four Jacks may request a redeal.
-            -- See house-rules.md "Four-jack redeal".
+            -- "optional" offers the entitled player a choice;
+            -- "mandatory" forces the table to redeal. See
+            -- house-rules.md "Four-jack redeal".
             four_jack_redeal = {
                 kind = "leaf",
                 lua_type = "string",
-                allowed = { "off", "on" },
+                allowed = { "off", "optional", "mandatory" },
                 default = "off",
                 status = "selectable",
             },

@@ -355,17 +355,31 @@ describe("core.redeal", function()
             assert.is_nil(redeal.entitled_offer(hands, config))
         end)
 
-        it("flags four_jack when enabled and a hand holds all four Jacks", function()
-            local config = config_with_dealing({ four_jack_redeal = "on" })
+        it("flags four_jack optional when a hand holds all four Jacks", function()
+            local config = config_with_dealing({ four_jack_redeal = "optional" })
             local hands = deal_three(NEUTRAL_HAND, NEUTRAL_HAND, FOUR_JACKS)
             local offer = redeal.entitled_offer(hands, config)
             assert.are.same({ seat = 3, kind = "four_jack", forced = false }, offer)
         end)
 
+        it("flags four_jack mandatory as forced", function()
+            local config = config_with_dealing({ four_jack_redeal = "mandatory" })
+            local hands = deal_three(NEUTRAL_HAND, FOUR_JACKS, NEUTRAL_HAND)
+            local offer = redeal.entitled_offer(hands, config)
+            assert.are.same({ seat = 2, kind = "four_jack", forced = true }, offer)
+        end)
+
+        it("flags three_nine mandatory as forced", function()
+            local config = config_with_dealing({ three_nine_redeal = "mandatory" })
+            local hands = deal_three(NEUTRAL_HAND, THREE_NINES_PLUS_K, NEUTRAL_HAND)
+            local offer = redeal.entitled_offer(hands, config)
+            assert.are.same({ seat = 2, kind = "three_nine", forced = true }, offer)
+        end)
+
         it("prefers four_nine mandatory over four_jack when both fire", function()
             local config = config_with_dealing({
                 four_nine_redeal = "mandatory",
-                four_jack_redeal = "on",
+                four_jack_redeal = "optional",
             })
             local hands = deal_three(FOUR_JACKS, FOUR_NINES, NEUTRAL_HAND)
             local offer = redeal.entitled_offer(hands, config)
@@ -374,12 +388,25 @@ describe("core.redeal", function()
 
         it("prefers four_jack over three_nine when both fire", function()
             local config = config_with_dealing({
-                four_jack_redeal = "on",
+                four_jack_redeal = "optional",
                 three_nine_redeal = "optional",
             })
             local hands = deal_three(THREE_NINES_PLUS_K, FOUR_JACKS, NEUTRAL_HAND)
             local offer = redeal.entitled_offer(hands, config)
             assert.are.same({ seat = 2, kind = "four_jack", forced = false }, offer)
+        end)
+
+        it("a mandatory rule of any kind beats every optional rule", function()
+            -- four_nine optional + four_jack mandatory: four_jack wins
+            -- because mandatory beats optional, even though four_nine is
+            -- the higher kind.
+            local config = config_with_dealing({
+                four_nine_redeal = "optional",
+                four_jack_redeal = "mandatory",
+            })
+            local hands = deal_three(FOUR_NINES, FOUR_JACKS, NEUTRAL_HAND)
+            local offer = redeal.entitled_offer(hands, config)
+            assert.are.same({ seat = 2, kind = "four_jack", forced = true }, offer)
         end)
 
         it("flags three_nine when enabled and a hand has exactly three 9s", function()
@@ -434,7 +461,7 @@ describe("core.redeal", function()
         end)
 
         it("walks all four seats under a 4-player config", function()
-            local config = config_with_dealing({ four_jack_redeal = "on" })
+            local config = config_with_dealing({ four_jack_redeal = "optional" })
             -- Override player count and add a fourth seat.
             local blob = rule_config.to_json(config)
             local res = rule_config.from_json(blob)

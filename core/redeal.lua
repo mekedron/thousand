@@ -122,12 +122,18 @@ function M.is_weak_hand(hand, mode, threshold, config)
 end
 
 -- Walk seats 1..count and return the highest-priority redeal entitlement,
--- if any. Priority follows the house-rules precedence:
---   1. four_nine_redeal == "mandatory"   → forced = true
---   2. four_nine_redeal == "optional"    → forced = false
---   3. four_jack_redeal == "on"          → forced = false
---   4. three_nine_redeal == "optional"   → forced = false
---   5. weak_hand_redeal  != "off"        → forced = false
+-- if any. Mandatory entitlements always beat optional ones — a table
+-- that hard-codes "redeal on 4 jacks" should not yield to an optional
+-- 4-nine offer the entitled player might decline. Within each tier the
+-- existing kind hierarchy holds (4-nine > 4-jack > 3-nine):
+--
+--   1. four_nine_redeal  == "mandatory" → forced = true,  kind="four_nine"
+--   2. four_jack_redeal  == "mandatory" → forced = true,  kind="four_jack"
+--   3. three_nine_redeal == "mandatory" → forced = true,  kind="three_nine"
+--   4. four_nine_redeal  == "optional"  → forced = false, kind="four_nine"
+--   5. four_jack_redeal  == "optional"  → forced = false, kind="four_jack"
+--   6. three_nine_redeal == "optional"  → forced = false, kind="three_nine"
+--   7. weak_hand_redeal  != "off"       → forced = false, kind="weak_hand"
 --
 -- Returns nil if no seat is entitled, or
 --   { seat = N, kind = "four_nine"|"four_jack"|"three_nine"|"weak_hand",
@@ -145,45 +151,63 @@ function M.entitled_offer(hands, config)
     local weak_hand_mode = d.weak_hand_redeal
     local weak_hand_threshold = d.weak_hand_threshold
 
-    -- Pass 1: highest priority — four nines (mandatory beats optional).
-    for seat = 1, count do
-        local hand = hands[seat]
-        if hand and M.has_four_nines(hand) then
-            if four_nine_mode == "mandatory" then
-                return { seat = seat, kind = "four_nine", forced = true }
-            elseif four_nine_mode == "optional" then
-                return { seat = seat, kind = "four_nine", forced = false }
-            end
-        end
-    end
-
-    -- Pass 2: four jacks.
-    if four_jack_mode == "on" then
+    local function find_seat_with(predicate)
         for seat = 1, count do
             local hand = hands[seat]
-            if hand and M.has_four_jacks(hand) then
-                return { seat = seat, kind = "four_jack", forced = false }
+            if hand and predicate(hand) then
+                return seat
             end
+        end
+        return nil
+    end
+
+    -- Tier 1: every mandatory rule, in kind order.
+    if four_nine_mode == "mandatory" then
+        local seat = find_seat_with(M.has_four_nines)
+        if seat then
+            return { seat = seat, kind = "four_nine", forced = true }
+        end
+    end
+    if four_jack_mode == "mandatory" then
+        local seat = find_seat_with(M.has_four_jacks)
+        if seat then
+            return { seat = seat, kind = "four_jack", forced = true }
+        end
+    end
+    if three_nine_mode == "mandatory" then
+        local seat = find_seat_with(M.has_three_nines)
+        if seat then
+            return { seat = seat, kind = "three_nine", forced = true }
         end
     end
 
-    -- Pass 3: three nines (only when four-nine path did not fire).
+    -- Tier 2: every optional rule, in kind order.
+    if four_nine_mode == "optional" then
+        local seat = find_seat_with(M.has_four_nines)
+        if seat then
+            return { seat = seat, kind = "four_nine", forced = false }
+        end
+    end
+    if four_jack_mode == "optional" then
+        local seat = find_seat_with(M.has_four_jacks)
+        if seat then
+            return { seat = seat, kind = "four_jack", forced = false }
+        end
+    end
     if three_nine_mode == "optional" then
-        for seat = 1, count do
-            local hand = hands[seat]
-            if hand and M.has_three_nines(hand) then
-                return { seat = seat, kind = "three_nine", forced = false }
-            end
+        local seat = find_seat_with(M.has_three_nines)
+        if seat then
+            return { seat = seat, kind = "three_nine", forced = false }
         end
     end
 
-    -- Pass 4: weak hand.
+    -- Tier 3: weak hand has no mandatory variant in the rule docs.
     if weak_hand_mode and weak_hand_mode ~= "off" then
-        for seat = 1, count do
-            local hand = hands[seat]
-            if hand and M.is_weak_hand(hand, weak_hand_mode, weak_hand_threshold, config) then
-                return { seat = seat, kind = "weak_hand", forced = false }
-            end
+        local seat = find_seat_with(function(hand)
+            return M.is_weak_hand(hand, weak_hand_mode, weak_hand_threshold, config)
+        end)
+        if seat then
+            return { seat = seat, kind = "weak_hand", forced = false }
         end
     end
 
