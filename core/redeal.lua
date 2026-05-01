@@ -19,6 +19,20 @@
 --
 -- The module exports the per-test predicates so tests can probe each
 -- branch without going through `entitled_offer`.
+--
+-- Note for the future Phase 4 AI player layer (`app/ai/`):
+-- when an AI seat is entitled to an *optional* redeal (4-nine optional,
+-- 4-jack optional, 3-nine optional, weak-hand any non-off mode), the
+-- AI must decide whether to accept by calling `Session:accept_redeal`
+-- or `Session:decline_redeal`. The session does not auto-decline on
+-- the AI's behalf — it sits in the `awaiting_redeal_decision` phase
+-- until the seated agent (human via the table-scene modal, or AI via
+-- its decision routine) resolves the offer. Mandatory entitlements
+-- are auto-applied by `evaluate_entitlement_with_forced_loop` in the
+-- session and never need an AI decision. The bot's heuristic for the
+-- optional cases (e.g., "decline if you hold the spades marriage,
+-- accept otherwise") lives in `app/ai/`, not here — this module's
+-- only job is to surface *who* is entitled and *why*.
 
 local card_module = require("core.card")
 

@@ -997,10 +997,22 @@ function Session:play(player, card)
 end
 
 -- Redeal / misdeal API -------------------------------------------------
+--
+-- The session never auto-decides an optional redeal offer on the
+-- player's behalf — accept_redeal / decline_redeal are caller-driven.
+-- The Phase 2 hot-seat scene drives them through the redeal modal in
+-- `ui/scenes/table.lua`; the future Phase 4 AI player layer
+-- (`app/ai/`) will call them from its decision routine when an AI
+-- seat is the entitled player. The decision heuristic ("hold this
+-- weak hand or take the redeal?") belongs to `app/ai/`, not here.
+-- Mandatory entitlements (e.g. four_nine_redeal = "mandatory") are
+-- already auto-applied by `evaluate_entitlement_with_forced_loop`
+-- and never reach a decision routine — they show up in
+-- `redeal_log()` after the fact for the banner.
 
 -- The current open redeal offer. nil unless an optional 4-nine /
 -- 4-jack / 3-nine / weak-hand entitlement is waiting on the player's
--- accept-or-decline call. Forced 4-nine redeals are auto-applied and
+-- accept-or-decline call. Mandatory entitlements are auto-applied and
 -- recorded in `redeal_log()` instead of being surfaced here.
 function Session:redeal_offer()
     return self._redeal_offer

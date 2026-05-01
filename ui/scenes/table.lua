@@ -2036,7 +2036,7 @@ function M:keypressed(key)
         end
         return
     end
-    if self._modal == "marriage" then
+    if self._modal == "marriage" then -- i18n-ok: modal enum
         if key == "tab" then -- i18n-ok
             self._modal_focus:advance(shift_held() and -1 or 1)
         elseif key == "left" or key == "up" then -- i18n-ok
@@ -2047,6 +2047,30 @@ function M:keypressed(key)
             self._modal_focus:activate()
         elseif key == "escape" then -- i18n-ok
             self:_close_marriage_modal()
+        end
+        return
+    end
+    if self._modal == "redeal" then -- i18n-ok: modal enum
+        -- Forced offers render no buttons — the session auto-applies
+        -- the redeal on the next frame. There's nothing to focus, so
+        -- key input is a no-op until the modal closes itself.
+        if not self._modal_focus then
+            return
+        end
+        if key == "tab" then -- i18n-ok
+            self._modal_focus:advance(shift_held() and -1 or 1)
+        elseif key == "left" or key == "up" then -- i18n-ok
+            self._modal_focus:advance(-1)
+        elseif key == "right" or key == "down" then -- i18n-ok
+            self._modal_focus:advance(1)
+        elseif key == "return" or key == "space" or key == "kpenter" then -- i18n-ok
+            self._modal_focus:activate()
+        elseif key == "escape" then -- i18n-ok
+            -- Treat Escape as Decline — the offer has to be resolved
+            -- before the auction can proceed, and Decline is the safe
+            -- "don't redeal, play this hand" branch.
+            self:_do_decline_redeal()
+            self:_close_redeal_modal()
         end
         return
     end
