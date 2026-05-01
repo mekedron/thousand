@@ -343,7 +343,7 @@ only for toggles marked selectable.
 Each built-in is a constant `RuleConfig` value. **No new code per
 variant** — only data.
 
-- [ ] Add built-in 3-player regional templates.
+- [x] Add built-in 3-player regional templates.
   - `Russian Thousand` is canonical and default at first launch.
   - `Polish Tysiąc` uses 2-card talon, 10-step increments only, and strict
     *przebijanie*.

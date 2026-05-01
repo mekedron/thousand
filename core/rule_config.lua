@@ -1796,120 +1796,189 @@ function M._invariants()
 end
 
 -- Canonical instance -----------------------------------------------------
+--
+-- The canonical-Russian blob lives in a builder function so each Phase 3.3
+-- regional / player-count variant can start from a fresh copy and overlay
+-- the handful of fields that distinguish it. Variants must never mutate the
+-- canonical instance: it is frozen, and shared sub-tables would alias the
+-- canonical config's sections.
 
-M.canonical_russian = M.new({
-    schema_version = 1,
-    cards = {
-        point_values = {
-            ["A"] = 11,
-            ["10"] = 10,
-            ["K"] = 4,
-            ["Q"] = 3,
-            ["J"] = 2,
-            ["9"] = 0,
+local function canonical_russian_blob()
+    return {
+        schema_version = 1,
+        cards = {
+            point_values = {
+                ["A"] = 11,
+                ["10"] = 10,
+                ["K"] = 4,
+                ["Q"] = 3,
+                ["J"] = 2,
+                ["9"] = 0,
+            },
+            trick_rank_order = { "9", "J", "Q", "K", "10", "A" },
         },
-        trick_rank_order = { "9", "J", "Q", "K", "10", "A" },
-    },
-    players = {
-        count = 3,
-        partnership_mode = "none",
-        four_player_config = "dealer_plays_no_talon",
-        two_player_config = "closed_talon_draw_stock",
-    },
-    dealing = {
-        four_nine_redeal = "off",
-        three_nine_redeal = "off",
-        four_jack_redeal = "off",
-        weak_hand_redeal = "off",
-        misdeal_handling = "standard",
-        all_pass_handling = "redeal",
-    },
-    talon = {
-        size = 3,
-        distribution = "declarer_takes_then_passes",
-        flip_after_first_round = "off",
-        pass_the_talon = "off",
-        buyback = "off",
-        hidden_on_minimum_100 = "off",
-        bad_talon_redeal = "off",
-        rebuy = "off",
-        open_discard = "off",
-    },
-    bidding = {
-        opening_min = 100,
-        pre_talon_max = 120,
-        increment_threshold = 200,
-        increment_below_200 = 5,
-        increment_from_200 = 10,
-        forced_opening = "off",
-        forced_dealer_bid = "off",
-        blind_bid = "off",
-        re_entry_after_pass = "off",
-        contra = "off",
-        forced_bid_concession = "off",
-        no_contract_without_marriage = "off",
-        negative_score_restriction = "off",
-        named_contracts = "off",
-    },
-    marriages = {
-        values = { hearts = 100, diamonds = 80, clubs = 60, spades = 40 },
-        half_marriage_capture_bonus = "off",
-        trump_activation_timing = "next_trick",
-        marriage_announcement_timing = "on_lead",
-        drowned_marriage = "off",
-        ace_marriage = "off",
-        one_trump_per_deal = "off",
-    },
-    tricks = {
-        must_follow = true,
-        must_beat = true,
-        must_trump = true,
-        must_overtrump = true,
-        must_overtake_strictness = "standard",
-        must_trump_strictness = "standard",
-        defender_must_overtrump_declarer = "off",
-        lazy_revoke = "off",
-        partial_trumping = "off",
-        last_trick_bonus = "off",
-        slam_bonus = "off",
-        slam_against_penalty = "off",
-        lead_trump_after_marriage = "off",
-    },
-    scoring = {
-        round_to_nearest = 5,
-        actual_points_on_success = "off",
-        defender_contributions = "standard",
-        failed_contract_distribution = "lost",
-        declarer_rounding_before_contract_check = "off",
-    },
-    opening_game = { golden_deal = "off" },
-    barrel = {
-        threshold = 880,
-        deal_count = 3,
-        fall_off_penalty = -120,
-        pit_lock_in = "off",
-        collision_rule = "last_mounter",
-        overshoot_penalty = "off",
-        reverse_barrel = "off",
-    },
-    endgame = {
-        target_score = 1000,
-        going_over_target = "win_immediately",
-        tiebreaker = "declarer_wins",
-        dump_truck = "off",
-    },
-    specials = {
-        mizere = "off",
-        slam_contract = "off",
-        open_hand = "off",
-    },
-    penalties = {
-        revoke = "standard",
-        talon_look = "standard",
-        showing_hand = "standard",
-        zero_tricks = "off",
-        cross = "off",
-    },
-})
+        players = {
+            count = 3,
+            partnership_mode = "none",
+            four_player_config = "dealer_plays_no_talon",
+            two_player_config = "closed_talon_draw_stock",
+        },
+        dealing = {
+            four_nine_redeal = "off",
+            three_nine_redeal = "off",
+            four_jack_redeal = "off",
+            weak_hand_redeal = "off",
+            misdeal_handling = "standard",
+            all_pass_handling = "redeal",
+        },
+        talon = {
+            size = 3,
+            distribution = "declarer_takes_then_passes",
+            flip_after_first_round = "off",
+            pass_the_talon = "off",
+            buyback = "off",
+            hidden_on_minimum_100 = "off",
+            bad_talon_redeal = "off",
+            rebuy = "off",
+            open_discard = "off",
+        },
+        bidding = {
+            opening_min = 100,
+            pre_talon_max = 120,
+            increment_threshold = 200,
+            increment_below_200 = 5,
+            increment_from_200 = 10,
+            forced_opening = "off",
+            forced_dealer_bid = "off",
+            blind_bid = "off",
+            re_entry_after_pass = "off",
+            contra = "off",
+            forced_bid_concession = "off",
+            no_contract_without_marriage = "off",
+            negative_score_restriction = "off",
+            named_contracts = "off",
+        },
+        marriages = {
+            values = { hearts = 100, diamonds = 80, clubs = 60, spades = 40 },
+            half_marriage_capture_bonus = "off",
+            trump_activation_timing = "next_trick",
+            marriage_announcement_timing = "on_lead",
+            drowned_marriage = "off",
+            ace_marriage = "off",
+            one_trump_per_deal = "off",
+        },
+        tricks = {
+            must_follow = true,
+            must_beat = true,
+            must_trump = true,
+            must_overtrump = true,
+            must_overtake_strictness = "standard",
+            must_trump_strictness = "standard",
+            defender_must_overtrump_declarer = "off",
+            lazy_revoke = "off",
+            partial_trumping = "off",
+            last_trick_bonus = "off",
+            slam_bonus = "off",
+            slam_against_penalty = "off",
+            lead_trump_after_marriage = "off",
+        },
+        scoring = {
+            round_to_nearest = 5,
+            actual_points_on_success = "off",
+            defender_contributions = "standard",
+            failed_contract_distribution = "lost",
+            declarer_rounding_before_contract_check = "off",
+        },
+        opening_game = { golden_deal = "off" },
+        barrel = {
+            threshold = 880,
+            deal_count = 3,
+            fall_off_penalty = -120,
+            pit_lock_in = "off",
+            collision_rule = "last_mounter",
+            overshoot_penalty = "off",
+            reverse_barrel = "off",
+        },
+        endgame = {
+            target_score = 1000,
+            going_over_target = "win_immediately",
+            tiebreaker = "declarer_wins",
+            dump_truck = "off",
+        },
+        specials = {
+            mizere = "off",
+            slam_contract = "off",
+            open_hand = "off",
+        },
+        penalties = {
+            revoke = "standard",
+            talon_look = "standard",
+            showing_hand = "standard",
+            zero_tricks = "off",
+            cross = "off",
+        },
+    }
+end
+
+local function with_overrides(blob, overrides)
+    for section, fields in pairs(overrides) do
+        local target = blob[section]
+        if type(target) ~= "table" then
+            error("rule_config builtins: unknown section '" .. tostring(section) .. "'", 2)
+        end
+        for key, value in pairs(fields) do
+            target[key] = value
+        end
+    end
+    return blob
+end
+
+M.canonical_russian = M.new(canonical_russian_blob())
+
+-- Built-in templates -----------------------------------------------------
+--
+-- Each entry is a constant `RuleConfig` value. Phase 3.3 ships these as
+-- data only — no engine code per variant. Where a variant's documented
+-- "characteristic" rule maps to a toggle still flagged `deferred` in
+-- Phase 3.2's schema (e.g. Polish strict *przebijanie*, Ukrainian *bolt*),
+-- the template stays at the schema's locked-in default and a comment
+-- names the Phase 3.6 task that flips the toggle to selectable. Engine
+-- support for the non-Russian shapes (dealing.lua's
+-- `unsupported_player_count` / `unsupported_talon_size` guards, the
+-- per-variant trick-play / barrel / bidding behaviour) also lands in
+-- Phase 3.6; see docs/development/task-list.md "3.6 Toggle gameplay".
+--
+-- The `russian` entry is an alias for `canonical_russian` so the picker
+-- and template registry can treat it like every other built-in without
+-- breaking the existing `canonical_russian` callsites (auto-save, the
+-- session bootstrap, every `core/` spec).
+
+M.builtins = {
+    russian = M.canonical_russian,
+
+    -- Polish Tysiąc (docs/variations/polish.md): 2-card talon (declarer
+    -- never picks it up; one card goes face-down to each opponent),
+    -- bidding climbs in 10-step increments throughout the auction (no
+    -- 5-step phase below 200). The schema-deferred Polish tells —
+    -- `talon.distribution = "pass_without_taking"` and
+    -- `tricks.must_overtake_strictness = "polish_strict"` — flip to
+    -- selectable in Phase 3.6.
+    polish = M.new(with_overrides(canonical_russian_blob(), {
+        talon = { size = 2 },
+        bidding = {
+            increment_below_200 = 10,
+            increment_from_200 = 10,
+        },
+    })),
+
+    -- Ukrainian Тисяча (docs/variations/ukrainian.md): tighter
+    -- two-deal barrel rather than the canonical three. The bolt rule
+    -- (`bidding.forced_dealer_bid = "on"`) is the other defining
+    -- Ukrainian house rule but still deferred in Phase 3.2's schema;
+    -- it lands in Phase 3.6's bidding-house-rules task.
+    ukrainian = M.new(with_overrides(canonical_russian_blob(), {
+        barrel = { deal_count = 2 },
+    })),
+}
 
 return M

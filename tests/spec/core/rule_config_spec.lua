@@ -411,6 +411,103 @@ describe("core.rule_config", function()
         end)
     end)
 
+    describe("builtins (3-player regional templates)", function()
+        it("exposes a builtins registry table", function()
+            assert.is_table(rule_config.builtins)
+        end)
+
+        describe("russian", function()
+            it("aliases canonical_russian", function()
+                assert.are.equal(rule_config.canonical_russian, rule_config.builtins.russian)
+            end)
+        end)
+
+        describe("polish", function()
+            local config = rule_config.builtins.polish
+
+            it("is a frozen RuleConfig", function()
+                assert.is_true(rule_config.is_rule_config(config))
+            end)
+
+            it("declares schema_version 1", function()
+                assert.are.equal(1, config.schema_version)
+            end)
+
+            it("uses the Polish 2-card talon", function()
+                assert.are.equal(2, config.talon.size)
+            end)
+
+            it("uses 10-step bid increments throughout the auction", function()
+                assert.are.equal(10, config.bidding.increment_below_200)
+                assert.are.equal(10, config.bidding.increment_from_200)
+            end)
+
+            it("keeps the canonical Russian shape elsewhere", function()
+                local canonical = rule_config.canonical_russian
+                assert.are.equal(canonical.players.count, config.players.count)
+                assert.are.equal(canonical.bidding.opening_min, config.bidding.opening_min)
+                assert.are.equal(canonical.bidding.pre_talon_max, config.bidding.pre_talon_max)
+                assert.are.equal(canonical.marriages.values.hearts, config.marriages.values.hearts)
+                assert.are.equal(canonical.marriages.values.spades, config.marriages.values.spades)
+                assert.are.equal(canonical.barrel.threshold, config.barrel.threshold)
+                assert.are.equal(canonical.barrel.deal_count, config.barrel.deal_count)
+                assert.are.equal(canonical.endgame.target_score, config.endgame.target_score)
+            end)
+
+            it("round-trips through JSON", function()
+                local round_trip = rule_config.from_json(rule_config.to_json(config))
+                assert.is_true(round_trip.ok)
+                assert.are.equal(2, round_trip.config.talon.size)
+                assert.are.equal(10, round_trip.config.bidding.increment_below_200)
+            end)
+        end)
+
+        describe("ukrainian", function()
+            local config = rule_config.builtins.ukrainian
+
+            it("is a frozen RuleConfig", function()
+                assert.is_true(rule_config.is_rule_config(config))
+            end)
+
+            it("declares schema_version 1", function()
+                assert.are.equal(1, config.schema_version)
+            end)
+
+            it("tightens the barrel to two deals", function()
+                assert.are.equal(2, config.barrel.deal_count)
+            end)
+
+            it("keeps the canonical Russian shape elsewhere", function()
+                local canonical = rule_config.canonical_russian
+                assert.are.equal(canonical.players.count, config.players.count)
+                assert.are.equal(canonical.talon.size, config.talon.size)
+                assert.are.equal(canonical.bidding.opening_min, config.bidding.opening_min)
+                assert.are.equal(
+                    canonical.bidding.increment_below_200,
+                    config.bidding.increment_below_200
+                )
+                assert.are.equal(canonical.barrel.threshold, config.barrel.threshold)
+                assert.are.equal(canonical.barrel.fall_off_penalty, config.barrel.fall_off_penalty)
+                assert.are.equal(canonical.endgame.target_score, config.endgame.target_score)
+            end)
+
+            it("round-trips through JSON", function()
+                local round_trip = rule_config.from_json(rule_config.to_json(config))
+                assert.is_true(round_trip.ok)
+                assert.are.equal(2, round_trip.config.barrel.deal_count)
+            end)
+        end)
+
+        it("is_rule_config recognises every regional builtin", function()
+            for id, config in pairs(rule_config.builtins) do
+                assert.is_true(
+                    rule_config.is_rule_config(config),
+                    "builtins." .. id .. " must be a RuleConfig"
+                )
+            end
+        end)
+    end)
+
     describe("is_rule_config", function()
         it("returns true for canonical_russian", function()
             assert.is_true(rule_config.is_rule_config(rule_config.canonical_russian))
