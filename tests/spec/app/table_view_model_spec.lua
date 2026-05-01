@@ -662,4 +662,111 @@ describe("app.table_view_model", function()
             assert.are.equal("raspassy_play", view.phase)
         end)
     end)
+
+    describe("talon-variants view fields", function()
+        local function canonical_with_talon(overrides)
+            overrides = overrides or {}
+            local t = {
+                size = 3,
+                distribution = "declarer_takes_then_passes",
+                flip_after_first_round = "off",
+                pass_the_talon = "off",
+                buyback = "off",
+                buyback_penalty = 50,
+                hidden_on_minimum_100 = "off",
+                bad_talon_redeal = "off",
+                bad_talon_threshold = 5,
+                rebuy = "off",
+                rebuy_contract_value = 240,
+                open_discard = "off",
+            }
+            for k, v in pairs(overrides) do
+                t[k] = v
+            end
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            local blob = {
+                schema_version = 1,
+                cards = res.config.cards,
+                players = res.config.players,
+                dealing = res.config.dealing,
+                talon = t,
+                bidding = res.config.bidding,
+                marriages = res.config.marriages,
+                tricks = res.config.tricks,
+                scoring = res.config.scoring,
+                opening_game = res.config.opening_game,
+                barrel = res.config.barrel,
+                endgame = res.config.endgame,
+                specials = res.config.specials,
+                penalties = res.config.penalties,
+            }
+            return rule_config.new(blob)
+        end
+
+        local function drive_to_revealed(cfg)
+            local s = Session.new({ config = cfg, seed = 42, dealer = 1 })
+            assert(s:bid(2, 100).ok)
+            assert(s:pass(3).ok)
+            assert(s:pass(1).ok)
+            return s
+        end
+
+        it("leaves rebuy_prompt nil when the rule is off", function()
+            local cfg = canonical_with_talon({ rebuy = "off" })
+            local s = drive_to_revealed(cfg)
+            local view = view_model.from_session(s)
+            assert.is_nil(view.rebuy_prompt)
+            assert.are.equal("talon", view.phase)
+        end)
+
+        it("populates rebuy_prompt with seat / contract / from_declarer", function()
+            local cfg = canonical_with_talon({ rebuy = "on" })
+            local s = drive_to_revealed(cfg)
+            local view = view_model.from_session(s)
+            assert.are.equal("awaiting_rebuy_decision", view.phase)
+            assert.is_table(view.rebuy_prompt)
+            -- Forehand (seat 2) wins; head defender clockwise = seat 3.
+            assert.are.equal(3, view.rebuy_prompt.seat)
+            assert.are.equal(240, view.rebuy_prompt.contract)
+            assert.are.equal(2, view.rebuy_prompt.from_declarer)
+            -- turn_player follows the head-of-queue defender.
+            assert.are.equal(3, view.turn_player)
+        end)
+
+        it("suppresses declarer_can_concede / declarer_can_buyback while rebuy is open", function()
+            local cfg = canonical_with_talon({
+                rebuy = "on",
+                pass_the_talon = "on",
+                buyback = "on",
+            })
+            local s = drive_to_revealed(cfg)
+            local view = view_model.from_session(s)
+            assert.is_table(view.talon_phase)
+            assert.is_falsy(view.talon_phase.declarer_can_concede)
+            assert.is_falsy(view.talon_phase.declarer_can_buyback)
+        end)
+
+        it(
+            "re-opens declarer_can_concede / declarer_can_buyback after all defenders pass",
+            function()
+                local cfg = canonical_with_talon({
+                    rebuy = "on",
+                    pass_the_talon = "on",
+                    buyback = "on",
+                    buyback_penalty = 60,
+                })
+                local s = drive_to_revealed(cfg)
+                -- 3-player layout: queue is [3, 1]; both decline.
+                assert(s:decline_rebuy(3).ok)
+                assert(s:decline_rebuy(1).ok)
+                local view = view_model.from_session(s)
+                assert.is_nil(view.rebuy_prompt)
+                assert.are.equal("talon", view.phase)
+                assert.is_true(view.talon_phase.declarer_can_concede)
+                assert.is_table(view.talon_phase.declarer_can_buyback)
+                assert.are.equal(60, view.talon_phase.declarer_can_buyback.penalty)
+            end
+        )
+    end)
 end)

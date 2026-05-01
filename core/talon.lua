@@ -609,4 +609,71 @@ function M.skip_raise(state)
     return { ok = true, talon = tag_as_talon(next_state) }
 end
 
+-- Phase 3.6 rebuy: another seat "buys the talon away" by claiming a
+-- fixed higher contract after the talon is revealed. The claimant
+-- becomes the new declarer at `contract_value`; the rest of the talon
+-- flow continues unchanged (`status` stays `"revealed"` so `take()` /
+-- `pass()` / `raise()` resume against the new declarer). The original
+-- auction declarer is preserved on the history entry so audit trails
+-- can reconstruct the swap.
+function M.rebuy(state, claimant, contract_value)
+    local talon_err = ensure_talon(state)
+    if talon_err then
+        return talon_err
+    end
+    local phase_err = ensure_status(state, "revealed", "rebuy")
+    if phase_err then
+        return phase_err
+    end
+    local count = state.config.players.count
+    local valid_seat = is_integer(claimant) and claimant >= 1 and claimant <= count
+    if not valid_seat then
+        return failure("bad_claimant", "claimant must be an integer in 1.." .. count, {
+            actual = claimant,
+            player_count = count,
+        })
+    end
+    if claimant == state.declarer then
+        return failure("bad_claimant", "declarer cannot rebuy their own talon", {
+            claimant = claimant,
+            declarer = state.declarer,
+        })
+    end
+    if state.sits_out and claimant == state.sits_out then
+        return failure("bad_claimant", "sitting-out seat cannot rebuy the talon", {
+            claimant = claimant,
+            sits_out = state.sits_out,
+        })
+    end
+    if not is_integer(contract_value) then
+        return failure("bad_contract_value", "contract_value must be an integer", {
+            actual = contract_value,
+        })
+    end
+    if contract_value < 100 or contract_value > 240 then
+        return failure("bad_contract_value", "contract_value must lie in [100, 240]", {
+            actual = contract_value,
+        })
+    end
+    if contract_value <= state.final_bid then
+        return failure(
+            "contract_not_higher",
+            "contract_value must be strictly higher than the current bid",
+            { contract_value = contract_value, current_bid = state.final_bid }
+        )
+    end
+
+    local previous_declarer = state.declarer
+    local next_state = clone_state(state)
+    next_state.declarer = claimant
+    next_state.final_bid = contract_value
+    next_state.history = append_history(state.history, {
+        action = "rebuy",
+        player = claimant,
+        target = previous_declarer,
+        amount = contract_value,
+    })
+    return { ok = true, talon = tag_as_talon(next_state) }
+end
+
 return M

@@ -119,6 +119,55 @@ local function reset_deal_state(self, dealer, seed_bump)
     self._pending_trump_apply = nil
 end
 
+-- Compute the clockwise queue of non-declarer seats eligible to claim
+-- the rebuy at this point in the talon phase. Drops the current
+-- declarer and the sits-out seat (4-player B). Returns an ordered list
+-- starting from `(declarer % count) + 1` and wrapping clockwise. Used
+-- by `maybe_open_rebuy_offer` only — relies on `_talon` being live.
+local function compute_rebuy_pending_seats(self)
+    local count = self._config.players.count
+    local declarer = self._talon.declarer
+    local sits_out = self._talon.sits_out
+    local seats = {}
+    local seat = (declarer % count) + 1
+    for _ = 1, count do
+        if seat ~= declarer and seat ~= sits_out then
+            seats[#seats + 1] = seat
+        end
+        seat = (seat % count) + 1
+    end
+    return seats
+end
+
+-- Open the rebuy offer when the rule fires and the queue is non-empty.
+-- Called from `on_auction_end` (after the bad-talon block clears) and
+-- from `decline_bad_talon_redeal`. Refuses to open when:
+--   * `talon.rebuy ~= "on"`,
+--   * no live talon at status "revealed",
+--   * the rebuy contract isn't strictly higher than the current bid,
+--   * the queue would be empty (every other seat sits out).
+local function maybe_open_rebuy_offer(self)
+    if self._config.talon.rebuy ~= "on" then
+        return
+    end
+    if not self._talon or self._talon.status ~= "revealed" then
+        return
+    end
+    local contract = self._config.talon.rebuy_contract_value
+    if contract <= self._talon.final_bid then
+        return
+    end
+    local seats = compute_rebuy_pending_seats(self)
+    if #seats == 0 then
+        return
+    end
+    self._rebuy_pending = {
+        seats = seats,
+        contract = contract,
+        original_declarer = self._talon.declarer,
+    }
+end
+
 -- Walk the entitlement detector and, for forced redeals, re-deal in
 -- place. Stops on the first non-forced offer (recorded as
 -- `_redeal_offer`) or when no offer is found. The 16-iteration cap is
@@ -215,9 +264,17 @@ function M.new(opts)
         --       (entry per accept/decline) for the table banner.
         --   _buyback_log:     list of buyback events in this deal
         --       (entry per `buyback_hand` call) for the table banner.
+        --   _rebuy_pending:   nil unless `talon.rebuy = "on"` and a
+        --       defender's rebuy decision is open. Shape:
+        --       { seats = { ... }, contract, original_declarer }; the
+        --       head of `seats` is the seat to act next.
+        --   _rebuy_log:       list of rebuy decisions in this deal
+        --       (entry per accept/decline) for audit and the banner.
         _bad_talon_offer = nil,
         _bad_talon_log = {},
         _buyback_log = {},
+        _rebuy_pending = nil,
+        _rebuy_log = {},
     }, Session)
     evaluate_entitlement_with_forced_loop(self)
     return self
@@ -263,6 +320,8 @@ function M.from_state(state)
         _bad_talon_offer = state.bad_talon_offer,
         _bad_talon_log = state.bad_talon_log or {},
         _buyback_log = state.buyback_log or {},
+        _rebuy_pending = state.rebuy_pending,
+        _rebuy_log = state.rebuy_log or {},
     }, Session)
     return self
 end
@@ -374,10 +433,10 @@ function Session:talon_passes_face_up()
 end
 
 -- "auction" / "awaiting_redeal_decision" / "talon" /
--- "awaiting_bad_talon_decision" / "tricks" / "raspassy_play" /
--- "deal_done" / "done". Derived from which engine objects the session
--- holds, so callers can't ask for a phase that contradicts the
--- underlying state.
+-- "awaiting_bad_talon_decision" / "awaiting_rebuy_decision" /
+-- "tricks" / "raspassy_play" / "deal_done" / "done". Derived from
+-- which engine objects the session holds, so callers can't ask for a
+-- phase that contradicts the underlying state.
 function Session:current_phase()
     if self._winner then
         return "done"
@@ -394,6 +453,9 @@ function Session:current_phase()
     if self._talon then
         if self._bad_talon_offer then
             return "awaiting_bad_talon_decision"
+        end
+        if self._rebuy_pending then
+            return "awaiting_rebuy_decision"
         end
         return "talon"
     end
@@ -412,6 +474,8 @@ function Session:current_turn()
         return self._auction and self._auction.turn or nil
     elseif phase == "talon" then
         return self._talon and self._talon.declarer or nil
+    elseif phase == "awaiting_rebuy_decision" then -- i18n-ok: phase enum
+        return self._rebuy_pending and self._rebuy_pending.seats[1] or nil
     elseif phase == "tricks" or phase == "raspassy_play" then -- i18n-ok: phase enums
         return self._tricks and self._tricks.next_to_play or nil
     end
@@ -788,6 +852,14 @@ local function on_auction_end(self)
             end
         end
     end
+
+    -- Phase 3.6 talon-variants: rebuy offer. Sequenced after the
+    -- bad-talon offer so a pending bad-talon decision blocks rebuy
+    -- until the declarer accepts (redeal, no rebuy) or declines
+    -- (rebuy opens — see decline_bad_talon_redeal).
+    if not self._bad_talon_offer then
+        maybe_open_rebuy_offer(self)
+    end
 end
 
 -- Talon → tricks transition. The declarer leads the first trick (the
@@ -967,13 +1039,25 @@ local function bad_talon_guard(self, action)
     return nil
 end
 
+local function rebuy_guard(self, action)
+    if self._rebuy_pending then
+        local msg = "resolve the pending rebuy offer first" -- i18n-ok
+        return failure("awaiting_rebuy_decision", msg, {
+            action = action,
+            seat = self._rebuy_pending.seats[1],
+        })
+    end
+    return nil
+end
+
 function Session:take_talon()
     if not self._talon then
         return failure("wrong_phase", "take_talon requires the talon phase", {
             phase = self:current_phase(),
         })
     end
-    local g = bad_talon_guard(self, "take_talon")
+    local g = bad_talon_guard(self, "take_talon") -- i18n-ok: action enum
+        or rebuy_guard(self, "take_talon") -- i18n-ok: action enum
     if g then
         return g
     end
@@ -991,7 +1075,8 @@ function Session:pass_talon(target_player, card)
             phase = self:current_phase(),
         })
     end
-    local g = bad_talon_guard(self, "pass_talon")
+    local g = bad_talon_guard(self, "pass_talon") -- i18n-ok: action enum
+        or rebuy_guard(self, "pass_talon") -- i18n-ok: action enum
     if g then
         return g
     end
@@ -1014,7 +1099,8 @@ function Session:discard_talon(card)
             phase = self:current_phase(),
         })
     end
-    local g = bad_talon_guard(self, "discard_talon")
+    local g = bad_talon_guard(self, "discard_talon") -- i18n-ok: action enum
+        or rebuy_guard(self, "discard_talon") -- i18n-ok: action enum
     if g then
         return g
     end
@@ -1032,7 +1118,8 @@ function Session:raise(amount)
             phase = self:current_phase(),
         })
     end
-    local g = bad_talon_guard(self, "raise")
+    local g = bad_talon_guard(self, "raise") -- i18n-ok: action enum
+        or rebuy_guard(self, "raise") -- i18n-ok: action enum
     if g then
         return g
     end
@@ -1051,7 +1138,8 @@ function Session:skip_raise()
             phase = self:current_phase(),
         })
     end
-    local g = bad_talon_guard(self, "skip_raise")
+    local g = bad_talon_guard(self, "skip_raise") -- i18n-ok: action enum
+        or rebuy_guard(self, "skip_raise") -- i18n-ok: action enum
     if g then
         return g
     end
@@ -1074,6 +1162,10 @@ function Session:concede_deal()
         return failure("wrong_phase", "concede_deal requires the talon phase", {
             phase = self:current_phase(),
         })
+    end
+    local rebuy_block = rebuy_guard(self, "concede_deal")
+    if rebuy_block then
+        return rebuy_block
     end
     if self._config.talon.pass_the_talon ~= "on" then
         local msg = "concede_deal requires talon.pass_the_talon = 'on'" -- i18n-ok
@@ -1133,6 +1225,10 @@ function Session:buyback_hand()
         return failure("wrong_phase", "buyback_hand requires the talon phase", {
             phase = self:current_phase(),
         })
+    end
+    local rebuy_block = rebuy_guard(self, "buyback_hand")
+    if rebuy_block then
+        return rebuy_block
     end
     if self._config.talon.buyback ~= "on" then
         return failure("buyback_disabled", "buyback_hand requires talon.buyback = 'on'", {
@@ -1219,6 +1315,82 @@ function Session:decline_bad_talon_redeal()
         dealer = self._dealer,
     }
     self._bad_talon_offer = nil
+    -- Rebuy is sequenced after the bad-talon decision: a decline lets
+    -- the rebuy offer fire, mirroring what happens at the end of
+    -- `on_auction_end` when no bad-talon offer was ever opened.
+    maybe_open_rebuy_offer(self)
+    return { ok = true }
+end
+
+-- Phase 3.6 rebuy: defenders may "buy the talon away" at the fixed
+-- `talon.rebuy_contract_value` after the talon is revealed. The
+-- session iterates over non-declarer seats clockwise; the first
+-- claimant wins. If everyone passes, control returns to the original
+-- declarer's pre-take menu.
+
+function Session:rebuy_offer_state()
+    return self._rebuy_pending
+end
+
+function Session:rebuy_log()
+    return self._rebuy_log
+end
+
+function Session:claim_rebuy(seat)
+    if not self._rebuy_pending then
+        return failure("no_rebuy_pending", "claim_rebuy needs an open offer", {
+            phase = self:current_phase(),
+        })
+    end
+    local head = self._rebuy_pending.seats[1]
+    if seat ~= head then
+        return failure("not_your_turn", "the rebuy offer is open for a different seat", {
+            seat = seat,
+            expected = head,
+        })
+    end
+    local contract = self._rebuy_pending.contract
+    local original_declarer = self._rebuy_pending.original_declarer
+    local result = talon_module.rebuy(self._talon, seat, contract)
+    if not result.ok then
+        return result
+    end
+    self._talon = result.talon
+    self._rebuy_log[#self._rebuy_log + 1] = {
+        seat = seat,
+        accepted = true,
+        contract = contract,
+        from_declarer = original_declarer,
+        dealer = self._dealer,
+    }
+    self._rebuy_pending = nil
+    return { ok = true }
+end
+
+function Session:decline_rebuy(seat)
+    if not self._rebuy_pending then
+        return failure("no_rebuy_pending", "decline_rebuy needs an open offer", {
+            phase = self:current_phase(),
+        })
+    end
+    local head = self._rebuy_pending.seats[1]
+    if seat ~= head then
+        return failure("not_your_turn", "the rebuy offer is open for a different seat", {
+            seat = seat,
+            expected = head,
+        })
+    end
+    self._rebuy_log[#self._rebuy_log + 1] = {
+        seat = seat,
+        accepted = false,
+        contract = self._rebuy_pending.contract,
+        from_declarer = self._rebuy_pending.original_declarer,
+        dealer = self._dealer,
+    }
+    table.remove(self._rebuy_pending.seats, 1)
+    if #self._rebuy_pending.seats == 0 then
+        self._rebuy_pending = nil
+    end
     return { ok = true }
 end
 
@@ -1474,7 +1646,9 @@ function Session:start_next_deal()
     self._misdeal_log = {}
     self._bad_talon_log = {}
     self._buyback_log = {}
+    self._rebuy_log = {}
     self._bad_talon_offer = nil
+    self._rebuy_pending = nil
     reset_deal_state(self, next_dealer, self._deal_index)
     evaluate_entitlement_with_forced_loop(self)
     return { ok = true }

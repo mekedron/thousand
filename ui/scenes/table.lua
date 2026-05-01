@@ -102,7 +102,7 @@ function M.new(manager)
         _panel_buttons = {},
         _panel_signature = nil,
         _modal_buttons = {},
-        _modal = nil, -- i18n-ok: nil | "marriage" | "redeal" | "bad_talon" enum
+        _modal = nil, -- i18n-ok: nil | "marriage" | "redeal" | "bad_talon" | "rebuy" enum
         _marriage_payload = nil,
         -- Redeal prompt modal state. _redeal_payload mirrors the
         -- view-model's redeal_prompt block while the modal is open;
@@ -115,6 +115,12 @@ function M.new(manager)
         -- signature (kind+declarer+points) is identity.
         _bad_talon_payload = nil,
         _bad_talon_signature = nil,
+        -- Rebuy prompt modal state. Mirrors the bad-talon-modal
+        -- pattern: payload tracks the head defender's offer details;
+        -- signature (seat+contract+from_declarer) is identity so
+        -- consecutive renders for the same head leave the modal alone.
+        _rebuy_payload = nil,
+        _rebuy_signature = nil,
         _toast = nil,
         _hand_card_rects = {},
         _opponent_seat_rects = {},
@@ -594,6 +600,24 @@ function M:_do_decline_bad_talon_redeal()
     self:_refresh_view_model()
 end
 
+function M:_do_claim_rebuy(seat)
+    local session = self:_session()
+    if not session then
+        return
+    end
+    self:_invoke(session:claim_rebuy(seat))
+    self:_refresh_view_model()
+end
+
+function M:_do_decline_rebuy(seat)
+    local session = self:_session()
+    if not session then
+        return
+    end
+    self:_invoke(session:decline_rebuy(seat))
+    self:_refresh_view_model()
+end
+
 function M:_do_play(player, card)
     local session = self:_session()
     if not session then
@@ -833,6 +857,81 @@ function M:_apply_bad_talon_modal_trigger(view)
         return
     end
     self:_open_bad_talon_modal(prompt)
+end
+
+local function rebuy_signature(prompt)
+    if not prompt then
+        return nil
+    end
+    -- i18n-ok: internal signature, joined with ":" and never rendered.
+    local parts = {
+        tostring(prompt.seat),
+        tostring(prompt.contract),
+        tostring(prompt.from_declarer),
+    }
+    return table.concat(parts, ":") -- i18n-ok: ":" is a separator, never rendered
+end
+
+function M:_open_rebuy_modal(prompt)
+    self._modal = "rebuy" -- i18n-ok
+    self._rebuy_payload = {
+        seat = prompt.seat,
+        contract = prompt.contract,
+        from_declarer = prompt.from_declarer,
+    }
+    self._rebuy_signature = rebuy_signature(prompt)
+    local seat = prompt.seat
+    local contract = prompt.contract
+    local accept = Button.new({
+        id = "rebuy_accept", -- i18n-ok
+        label_key = "scene.table.rebuy_prompt.accept",
+        label_params = { value = contract },
+        enabled = true,
+        on_press = function()
+            self:_do_claim_rebuy(seat)
+            self:_close_rebuy_modal()
+        end,
+    })
+    local decline = Button.new({
+        id = "rebuy_decline", -- i18n-ok
+        label_key = "scene.table.rebuy_prompt.decline",
+        enabled = true,
+        on_press = function()
+            self:_do_decline_rebuy(seat)
+            self:_close_rebuy_modal()
+        end,
+    })
+    self._modal_buttons = { accept, decline }
+    self._modal_focus = FocusGroup.new(self._modal_buttons)
+    -- Default focus on Decline — accepting commits the seat to a steep
+    -- fixed contract sight-half-unseen, so the safer branch is the
+    -- default keyboard target.
+    self._modal_focus:focus(decline)
+end
+
+function M:_close_rebuy_modal()
+    if self._modal == "rebuy" then
+        self._modal = nil
+    end
+    self._rebuy_payload = nil
+    self._rebuy_signature = nil
+    self._modal_buttons = {}
+    self._modal_focus = nil
+end
+
+function M:_apply_rebuy_modal_trigger(view)
+    local prompt = view and view.rebuy_prompt
+    if not prompt then
+        if self._modal == "rebuy" then
+            self:_close_rebuy_modal()
+        end
+        return
+    end
+    local sig = rebuy_signature(prompt)
+    if self._modal == "rebuy" and self._rebuy_signature == sig then
+        return
+    end
+    self:_open_rebuy_modal(prompt)
 end
 
 -- Privacy curtain ------------------------------------------------------
@@ -1869,6 +1968,46 @@ local function draw_bad_talon_modal(self, w, h)
     end
 end
 
+local function draw_rebuy_modal(self, w, h)
+    if self._modal ~= "rebuy" or not self._rebuy_payload then
+        return
+    end
+    love.graphics.setColor(MODAL_DIM)
+    love.graphics.rectangle("fill", 0, 0, w, h)
+
+    local panel_w, panel_h = 520, 240
+    local px = math.floor(w * 0.5 - panel_w * 0.5)
+    local py = math.floor(h * 0.5 - panel_h * 0.5)
+    love.graphics.setColor(MODAL_BG)
+    love.graphics.rectangle("fill", px, py, panel_w, panel_h)
+    love.graphics.setColor(1, 1, 1, 1)
+
+    local payload = self._rebuy_payload
+    love.graphics.print(t("scene.table.rebuy_prompt.title"), px + 32, py + 40)
+    love.graphics.print(
+        t("scene.table.rebuy_prompt.body", {
+            seat = payload.seat,
+            value = payload.contract,
+        }),
+        px + 32,
+        py + 80
+    )
+
+    if #self._modal_buttons == 0 then
+        return
+    end
+
+    local btn_w, btn_h, btn_gap = 220, 48, 24
+    local total_w = btn_w * 2 + btn_gap
+    local btn_y = py + panel_h - btn_h - 28
+    local left_x = px + math.floor(panel_w * 0.5 - total_w * 0.5)
+    self._modal_buttons[1]:set_rect(left_x, btn_y, btn_w, btn_h)
+    self._modal_buttons[2]:set_rect(left_x + btn_w + btn_gap, btn_y, btn_w, btn_h)
+    for _, b in ipairs(self._modal_buttons) do
+        b:draw()
+    end
+end
+
 local function draw_privacy_curtain(self, w, h)
     if not self._curtain or not self._curtain_button then
         return
@@ -1945,6 +2084,7 @@ function M:draw(w, h)
     self:_apply_curtain_trigger()
     self:_apply_redeal_modal_trigger(self._view_model)
     self:_apply_bad_talon_modal_trigger(self._view_model)
+    self:_apply_rebuy_modal_trigger(self._view_model)
     self:_rebuild_panel_if_needed(self._view_model)
 
     local regions = layout.table_regions(w, h, {
@@ -1984,6 +2124,7 @@ function M:draw(w, h)
     draw_marriage_modal(self, w, h)
     draw_redeal_modal(self, w, h)
     draw_bad_talon_modal(self, w, h)
+    draw_rebuy_modal(self, w, h)
     -- Privacy curtain renders last so its full-opacity backdrop sits
     -- above every other layer, including the marriage and redeal
     -- modals — those states are mutually exclusive in practice.
@@ -2003,7 +2144,12 @@ function M:_active_buttons()
         return { self._curtain_button }
     end
     local modal = self._modal -- i18n-ok: modal enum
-    if modal == "marriage" or modal == "redeal" or modal == "bad_talon" then -- i18n-ok
+    if
+        modal == "marriage" -- i18n-ok
+        or modal == "redeal" -- i18n-ok
+        or modal == "bad_talon" -- i18n-ok
+        or modal == "rebuy" -- i18n-ok
+    then
         return self._modal_buttons
     end
     local list = {}
@@ -2284,6 +2430,29 @@ function M:keypressed(key)
             -- "play this hand" branch.
             self:_do_decline_bad_talon_redeal()
             self:_close_bad_talon_modal()
+        end
+        return
+    end
+    if self._modal == "rebuy" then -- i18n-ok: modal enum
+        if not self._modal_focus then
+            return
+        end
+        if key == "tab" then -- i18n-ok
+            self._modal_focus:advance(shift_held() and -1 or 1)
+        elseif key == "left" or key == "up" then -- i18n-ok
+            self._modal_focus:advance(-1)
+        elseif key == "right" or key == "down" then -- i18n-ok
+            self._modal_focus:advance(1)
+        elseif key == "return" or key == "space" or key == "kpenter" then -- i18n-ok
+            self._modal_focus:activate()
+        elseif key == "escape" then -- i18n-ok
+            -- Escape passes the rebuy: the head defender's safe branch
+            -- is to decline rather than commit to a fixed-contract buy.
+            local seat = self._rebuy_payload and self._rebuy_payload.seat
+            if seat then
+                self:_do_decline_rebuy(seat)
+            end
+            self:_close_rebuy_modal()
         end
         return
     end

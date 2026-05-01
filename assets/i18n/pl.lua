@@ -97,6 +97,10 @@ return {
     ["scene.table.bad_talon_prompt.body"] = "Talon has only %{points} card points. Redeal?",
     ["scene.table.bad_talon_prompt.accept"] = "Redeal",
     ["scene.table.bad_talon_prompt.decline"] = "Play this hand",
+    ["scene.table.rebuy_prompt.title"] = "Buy talon at higher contract?",
+    ["scene.table.rebuy_prompt.body"] = "Player %{seat} may take the talon at %{value}.",
+    ["scene.table.rebuy_prompt.accept"] = "Buy at %{value}",
+    ["scene.table.rebuy_prompt.decline"] = "Pass",
     ["scene.table.buyback_banner"] = "Player %{declarer} bought back the hand (-%{penalty})",
     ["scene.table.deal_done.talon_conceded"] = "Player %{declarer} conceded at %{bid}",
 

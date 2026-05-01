@@ -483,4 +483,217 @@ describe("app.session talon variants", function()
             assert.is_true(s:talon_passes_face_up())
         end)
     end)
+
+    describe("rebuy", function()
+        it("does not surface an offer when the rule is off", function()
+            local cfg = canonical_with_talon({ rebuy = "off" })
+            local hands, talon = hands_with_rich_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s)
+            assert.are.equal("talon", s:current_phase())
+            assert.is_nil(s:rebuy_offer_state())
+        end)
+
+        it("opens the offer at the head defender clockwise from declarer", function()
+            local cfg = canonical_with_talon({ rebuy = "on" })
+            local hands, talon = hands_with_rich_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s, 100)
+            assert.are.equal("awaiting_rebuy_decision", s:current_phase())
+            local offer = s:rebuy_offer_state()
+            assert.is_not_nil(offer)
+            -- Forehand (seat 2) wins; queue clockwise is { 3, 1 }.
+            assert.are.same({ 3, 1 }, offer.seats)
+            assert.are.equal(240, offer.contract)
+            assert.are.equal(2, offer.original_declarer)
+            assert.are.equal(3, s:current_turn())
+        end)
+
+        it("happy path: head defender claims, becomes new declarer at fixed contract", function()
+            local cfg = canonical_with_talon({ rebuy = "on" })
+            local hands, talon = hands_with_rich_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s, 100)
+            assert(s:claim_rebuy(3).ok)
+            assert.is_nil(s:rebuy_offer_state())
+            assert.are.equal("talon", s:current_phase())
+            -- New declarer is seat 3 at the fixed rebuy contract.
+            assert.are.equal(3, s:current_leader())
+            assert.are.equal(240, s:current_bid())
+            -- Take/pass continues for the new declarer; sequencing intact.
+            assert(s:take_talon().ok)
+            assert.are.equal(10, #s:hands()[3])
+            -- Rebuy log records the swap.
+            local log = s:rebuy_log()
+            assert.are.equal(1, #log)
+            assert.is_true(log[1].accepted)
+            assert.are.equal(3, log[1].seat)
+            assert.are.equal(240, log[1].contract)
+            assert.are.equal(2, log[1].from_declarer)
+        end)
+
+        it("queue advances clockwise: defender 1 declines, defender 2 claims", function()
+            local cfg = canonical_with_talon({ rebuy = "on" })
+            local hands, talon = hands_with_rich_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s, 100)
+            -- Head is seat 3; decline advances to seat 1.
+            assert(s:decline_rebuy(3).ok)
+            assert.are.equal("awaiting_rebuy_decision", s:current_phase())
+            assert.are.equal(1, s:current_turn())
+            -- Seat 1 claims.
+            assert(s:claim_rebuy(1).ok)
+            assert.are.equal(1, s:current_leader())
+            assert.are.equal(240, s:current_bid())
+            -- Log captures both decisions in order.
+            local log = s:rebuy_log()
+            assert.are.equal(2, #log)
+            assert.is_false(log[1].accepted)
+            assert.are.equal(3, log[1].seat)
+            assert.is_true(log[2].accepted)
+            assert.are.equal(1, log[2].seat)
+        end)
+
+        it("all defenders pass — original declarer keeps the contract", function()
+            local cfg = canonical_with_talon({ rebuy = "on" })
+            local hands, talon = hands_with_rich_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s, 100)
+            assert(s:decline_rebuy(3).ok)
+            assert(s:decline_rebuy(1).ok)
+            -- Queue empties → fall through to standard talon menu.
+            assert.is_nil(s:rebuy_offer_state())
+            assert.are.equal("talon", s:current_phase())
+            assert.are.equal(2, s:current_leader())
+            assert.are.equal(100, s:current_bid())
+            assert(s:take_talon().ok)
+        end)
+
+        it("blocks declarer pre-take actions while the offer is open", function()
+            local cfg = canonical_with_talon({
+                rebuy = "on",
+                pass_the_talon = "on",
+                buyback = "on",
+            })
+            local hands, talon = hands_with_rich_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s, 100)
+            -- All four declarer-side mutators must reject with the
+            -- shared phase-error code.
+            for _, fn in ipairs({
+                function()
+                    return s:take_talon()
+                end,
+                function()
+                    return s:concede_deal()
+                end,
+                function()
+                    return s:buyback_hand()
+                end,
+                function()
+                    return s:skip_raise()
+                end,
+            }) do
+                local res = fn()
+                assert.is_false(res.ok)
+                assert.are.equal("awaiting_rebuy_decision", res.error.code)
+            end
+        end)
+
+        it("rejects claim_rebuy / decline_rebuy from the wrong seat", function()
+            local cfg = canonical_with_talon({ rebuy = "on" })
+            local hands, talon = hands_with_rich_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s, 100)
+            -- Head is seat 3; seat 1 cannot act yet.
+            for _, res in ipairs({ s:claim_rebuy(1), s:decline_rebuy(1) }) do
+                assert.is_false(res.ok)
+                assert.are.equal("not_your_turn", res.error.code)
+                assert.are.equal(3, res.error.expected)
+            end
+        end)
+
+        it("rejects claim_rebuy / decline_rebuy when no offer is pending", function()
+            local cfg = canonical_with_talon({ rebuy = "off" })
+            local hands, talon = hands_with_rich_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s, 100)
+            for _, res in ipairs({ s:claim_rebuy(3), s:decline_rebuy(3) }) do
+                assert.is_false(res.ok)
+                assert.are.equal("no_rebuy_pending", res.error.code)
+            end
+        end)
+
+        it("does not open when the contract is not strictly higher than the bid", function()
+            -- Non-canonical: rebuy contract 100 vs auction 105 → no offer.
+            local cfg = canonical_with_talon({
+                rebuy = "on",
+                rebuy_contract_value = 100,
+            })
+            local hands, talon = hands_with_rich_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s, 105)
+            assert.are.equal("talon", s:current_phase())
+            assert.is_nil(s:rebuy_offer_state())
+        end)
+
+        it("sequences after bad-talon: decline opens rebuy", function()
+            local cfg = canonical_with_talon({
+                rebuy = "on",
+                bad_talon_redeal = "any_contract",
+            })
+            local hands, talon = hands_with_low_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s, 100)
+            -- Bad-talon offer comes first; rebuy is dormant.
+            assert.are.equal("awaiting_bad_talon_decision", s:current_phase())
+            assert.is_nil(s:rebuy_offer_state())
+            assert(s:decline_bad_talon_redeal().ok)
+            -- After decline the rebuy queue opens.
+            assert.are.equal("awaiting_rebuy_decision", s:current_phase())
+            local offer = s:rebuy_offer_state()
+            assert.is_not_nil(offer)
+            assert.are.same({ 3, 1 }, offer.seats)
+        end)
+
+        it("sequences after bad-talon: accept short-circuits to redeal, no rebuy", function()
+            local cfg = canonical_with_talon({
+                rebuy = "on",
+                bad_talon_redeal = "any_contract",
+            })
+            local hands, talon = hands_with_low_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s, 100)
+            assert(s:accept_bad_talon_redeal().ok)
+            -- Redeal restarted the deal at the same dealer; no rebuy
+            -- offer should be open until the new auction crowns a
+            -- declarer and reaches the talon phase.
+            assert.are.equal("auction", s:current_phase())
+            assert.is_nil(s:rebuy_offer_state())
+        end)
+
+        it("clears _rebuy_log and _rebuy_pending across start_next_deal", function()
+            local cfg = canonical_with_talon({ rebuy = "on" })
+            local hands, talon = hands_with_rich_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s, 100)
+            assert(s:decline_rebuy(3).ok)
+            assert(s:decline_rebuy(1).ok)
+            assert.are.equal(2, #s:rebuy_log())
+            -- Concede to end the deal; pass_the_talon is off so the
+            -- defenders had to all decline above and the declarer now
+            -- needs an explicit deal-closer. Use take_talon → pass →
+            -- skip_raise → fast-forward not possible without a full
+            -- trick scenario, so simulate via deal_done shortcut: drive
+            -- a manual all-pass in the next deal instead. Easier: hit
+            -- start_next_deal directly after marking the deal done via
+            -- the all-pass redeal path.
+            -- Manually mark the deal as ended so start_next_deal can
+            -- hand off to the next deal.
+            s._deal_done = { reason = "scored", declarer = 2, deal_scores = { 0, 0, 0 } }
+            assert(s:start_next_deal().ok)
+            assert.are.equal(0, #s:rebuy_log())
+            assert.is_nil(s:rebuy_offer_state())
+        end)
+    end)
 end)

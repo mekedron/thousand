@@ -2065,12 +2065,12 @@ describe("core.rule_config", function()
     end)
 
     describe("talon.rebuy", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("talon.rebuy")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -2079,12 +2079,22 @@ describe("core.rule_config", function()
             assert.is_true(allowed["on"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts both allowed values through try_new", function()
+            for _, ok_value in ipairs({ "off", "on" }) do
+                local t = valid_table()
+                t.talon.rebuy = ok_value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value=" .. ok_value .. " should be accepted")
+                assert.are.equal(ok_value, res.config.talon.rebuy)
+            end
+        end)
+
+        it("rejects unknown values with value_not_allowed", function()
             local t = valid_table()
-            t.talon.rebuy = "on"
+            t.talon.rebuy = "maybe"
             local res = rule_config.try_new(t)
             assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("value_not_allowed", res.error.code)
             assert.are.equal("talon.rebuy", res.error.path)
         end)
 

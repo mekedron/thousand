@@ -173,7 +173,8 @@ local function build_talon_phase_block(session)
     local phase = session:current_phase()
     local talon_phase = "talon" -- i18n-ok: phase enum
     local bad_talon_phase = "awaiting_bad_talon_decision" -- i18n-ok: phase enum
-    if phase ~= talon_phase and phase ~= bad_talon_phase then
+    local rebuy_phase = "awaiting_rebuy_decision" -- i18n-ok: phase enum
+    if phase ~= talon_phase and phase ~= bad_talon_phase and phase ~= rebuy_phase then
         return nil
     end
     local talon = session._talon
@@ -197,9 +198,12 @@ local function build_talon_phase_block(session)
     end
     -- Phase 3.6 talon-variants: declarer can concede or buy back at the
     -- "revealed" status (before take). Both require the parent toggle
-    -- to be on and no bad-talon offer pending.
+    -- to be on and no bad-talon / rebuy offer pending — those are
+    -- prior-in-line decisions that block the declarer's pre-take menu.
     local config = session:config()
-    local pre_take = talon.status == "revealed" and not session:bad_talon_offer_state()
+    local pre_take = talon.status == "revealed"
+        and not session:bad_talon_offer_state()
+        and not session:rebuy_offer_state()
     local declarer_can_concede = pre_take and config.talon.pass_the_talon == "on"
     local declarer_can_buyback
     if pre_take and config.talon.buyback == "on" then
@@ -229,6 +233,22 @@ local function build_bad_talon_prompt_block(session)
         kind = offer.kind,
         declarer = offer.declarer,
         points = offer.points,
+    }
+end
+
+-- The active rebuy prompt, surfaced while the session is in
+-- `awaiting_rebuy_decision`. Mirrors `bad_talon_prompt`. The `seat` is
+-- the head-of-queue defender currently asked to accept or pass; the
+-- table scene addresses the modal to that seat.
+local function build_rebuy_prompt_block(session)
+    local offer = session:rebuy_offer_state()
+    if not offer then
+        return nil
+    end
+    return {
+        seat = offer.seats[1],
+        contract = offer.contract,
+        from_declarer = offer.original_declarer,
     }
 end
 
@@ -509,6 +529,7 @@ function M.from_session(session)
         raspassy_active = raspassy_active,
         bad_talon_prompt = build_bad_talon_prompt_block(session),
         buyback_banner = build_buyback_banner_block(session),
+        rebuy_prompt = build_rebuy_prompt_block(session),
     }
 end
 

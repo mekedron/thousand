@@ -428,22 +428,23 @@ local SCHEMA = {
             -- House-rule: another player may "buy the talon away" by
             -- naming a higher fixed contract after seeing the talon,
             -- creating a second auction with full talon information
-            -- (docs/variations/house-rules.md). Stays deferred until the
-            -- second-auction state machine lands; the sibling field
-            -- `rebuy_contract_value` is already in the schema so the
-            -- rebuy task only needs to flip status and wire gameplay.
+            -- (docs/variations/house-rules.md). Each non-declarer is
+            -- offered the rebuy in clockwise order; the first claim
+            -- wins and the claimant becomes the new declarer at the
+            -- fixed `rebuy_contract_value`. If everyone passes, the
+            -- original declarer keeps the contract.
             rebuy = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
             -- Fixed contract value charged to the player who buys the
-            -- talon away under `rebuy = "on"`. Inert until the rebuy
-            -- gameplay task lands; carried in the schema so saved
-            -- templates round-trip cleanly. Bounded in [100, 240] to
-            -- match the post-talon bid range.
+            -- talon away under `rebuy = "on"`. Bounded in [100, 240]
+            -- to match the post-talon bid range. Inert under
+            -- `rebuy = "off"`; carried in the schema so saved
+            -- templates round-trip cleanly.
             rebuy_contract_value = {
                 kind = "leaf",
                 lua_type = "number",

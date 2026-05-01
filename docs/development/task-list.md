@@ -464,7 +464,7 @@ ships scripted engine tests covering every value.
     `distribution` keep their current status; `rebuy` stays deferred.
   - Engine tests cover every variant value against scripted talon
     scenarios.
-- [ ] Implement talon rebuy.
+- [x] Implement talon rebuy.
   - `rebuy` `on` triggers a second auction at the
     `rebuy_contract_value` after talon reveal; the rebuyer becomes the
     new declarer.

@@ -247,4 +247,73 @@ describe("e2e: talon variants", function()
         assert.are.equal(1, #log)
         assert.is_false(log[1].accepted)
     end)
+
+    it("renders the rebuy modal under rebuy = on for the head defender", function()
+        local cfg = build_config({ rebuy = "on" })
+        local hands, talon = rich_layout()
+        local s = build_session_at_talon(cfg, hands, talon)
+        assert.are.equal("awaiting_rebuy_decision", s:current_phase())
+
+        local _, scene = build_table_scene_in_mock(s)
+        scene:draw(1024, 720)
+        dismiss_curtain_state(scene)
+
+        _G.love.graphics.clear_recording()
+        scene:draw(1024, 720)
+
+        local title = j:find_localised("scene.table.rebuy_prompt.title")
+        assert.is_not_nil(find_text(j, title), "rebuy modal title should be visible")
+
+        local body = j:find_localised("scene.table.rebuy_prompt.body", { seat = 3, value = 240 })
+        assert.is_not_nil(find_text(j, body), "rebuy modal body should be visible")
+
+        local accept = j:find_localised("scene.table.rebuy_prompt.accept", { value = 240 })
+        assert.is_not_nil(find_text(j, accept), "rebuy accept button should be visible")
+
+        local decline = j:find_localised("scene.table.rebuy_prompt.decline")
+        assert.is_not_nil(find_text(j, decline), "rebuy decline button should be visible")
+    end)
+
+    it("claim_rebuy transfers declarership and clears the modal", function()
+        local cfg = build_config({ rebuy = "on" })
+        local hands, talon = rich_layout()
+        local s = build_session_at_talon(cfg, hands, talon)
+        local _, scene = build_table_scene_in_mock(s)
+        scene:draw(1024, 720)
+        dismiss_curtain_state(scene)
+
+        scene:_do_claim_rebuy(3)
+        scene:_close_rebuy_modal()
+        scene:draw(1024, 720)
+
+        assert.are.equal("talon", s:current_phase())
+        assert.is_nil(s:rebuy_offer_state())
+        assert.are.equal(3, s:current_leader())
+        assert.are.equal(240, s:current_bid())
+        local log = s:rebuy_log()
+        assert.are.equal(1, #log)
+        assert.is_true(log[1].accepted)
+        assert.are.equal(3, log[1].seat)
+    end)
+
+    it("decline_rebuy advances the queue to the next defender", function()
+        local cfg = build_config({ rebuy = "on" })
+        local hands, talon = rich_layout()
+        local s = build_session_at_talon(cfg, hands, talon)
+        local _, scene = build_table_scene_in_mock(s)
+        scene:draw(1024, 720)
+        dismiss_curtain_state(scene)
+
+        scene:_do_decline_rebuy(3)
+        -- The view-model now points the modal at seat 1; the scene
+        -- re-opens the modal on the next draw via the trigger.
+        scene:draw(1024, 720)
+
+        assert.are.equal("awaiting_rebuy_decision", s:current_phase())
+        assert.are.equal(1, s:current_turn())
+        local log = s:rebuy_log()
+        assert.are.equal(1, #log)
+        assert.is_false(log[1].accepted)
+        assert.are.equal(3, log[1].seat)
+    end)
 end)

@@ -725,6 +725,154 @@ describe("core.talon", function()
         end)
     end)
 
+    describe("rebuy()", function()
+        it("happy path: claimant becomes declarer and final_bid jumps to contract", function()
+            local state = fresh_talon()
+            local declarer_before = state.declarer
+            -- Forehand (player 2) is declarer at 100; player 3 buys it
+            -- away at 240.
+            local result = talon.rebuy(state, 3, 240)
+            assert.is_true(result.ok)
+            local taken = result.talon
+            assert.are.equal("revealed", taken.status)
+            assert.are.equal(3, taken.declarer)
+            assert.are.equal(240, taken.final_bid)
+            -- original_bid preserves the auction-time outcome for audit.
+            assert.are.equal(100, taken.original_bid)
+            -- Hands and talon cards are untouched.
+            assert.are.equal(7, #taken.hands[1])
+            assert.are.equal(7, #taken.hands[2])
+            assert.are.equal(7, #taken.hands[3])
+            assert.are.equal(3, #taken.talon)
+            -- A history entry records the swap with the previous declarer.
+            local last = taken.history[#taken.history]
+            assert.are.equal("rebuy", last.action)
+            assert.are.equal(3, last.player)
+            assert.are.equal(declarer_before, last.target)
+            assert.are.equal(240, last.amount)
+        end)
+
+        it("happy path: after rebuy, take/pass/raise advance the new declarer", function()
+            local state = fresh_talon()
+            state = assert(talon.rebuy(state, 3, 240).talon)
+            -- Continue with the new declarer (3): take, then pass to 1
+            -- and 2, then skip the raise.
+            state = take(state)
+            assert.are.equal(10, #state.hands[3])
+            assert.are.equal(7, #state.hands[1])
+            assert.are.equal(7, #state.hands[2])
+            state = pass(state, 1, state.hands[3][1])
+            state = pass(state, 2, state.hands[3][1])
+            assert.are.equal("awaiting_raise", state.status)
+            local skip_result = talon.skip_raise(state)
+            assert.is_true(skip_result.ok)
+            assert.are.equal("done", skip_result.talon.status)
+            -- final_bid still 240 (skip_raise leaves it alone).
+            assert.are.equal(240, skip_result.talon.final_bid)
+        end)
+
+        it("happy path: post-rebuy raise validates against the new contract floor", function()
+            local state = fresh_talon()
+            state = assert(talon.rebuy(state, 3, 240).talon)
+            state = take(state)
+            state = pass(state, 1, state.hands[3][1])
+            state = pass(state, 2, state.hands[3][1])
+            assert.are.equal("awaiting_raise", state.status)
+            -- 250 is the next legal step at 240 (step = 10 above the
+            -- 200 pivot); 245 is not.
+            local r1 = talon.raise(state, 245)
+            assert.is_false(r1.ok)
+            assert.are.equal("bad_raise_increment", r1.error.code)
+            local r2 = talon.raise(state, 250)
+            assert.is_true(r2.ok)
+            assert.are.equal(250, r2.talon.final_bid)
+        end)
+
+        it("rejects rebuy on a non-talon", function()
+            for _, bad in ipairs({ 42, "talon", {}, true }) do
+                local result = talon.rebuy(bad, 3, 240)
+                assert.is_false(result.ok)
+                assert.are.equal("not_a_talon", result.error.code)
+            end
+            local nil_result = talon.rebuy(nil, 3, 240)
+            assert.is_false(nil_result.ok)
+            assert.are.equal("not_a_talon", nil_result.error.code)
+        end)
+
+        it("rejects rebuy when not in 'revealed' phase", function()
+            local state = take(fresh_talon())
+            local result = talon.rebuy(state, 3, 240)
+            assert.is_false(result.ok)
+            assert.are.equal("wrong_phase", result.error.code)
+            assert.are.equal("awaiting_pass", result.error.status)
+        end)
+
+        it("rejects the current declarer as claimant", function()
+            local state = fresh_talon()
+            local result = talon.rebuy(state, state.declarer, 240)
+            assert.is_false(result.ok)
+            assert.are.equal("bad_claimant", result.error.code)
+            assert.are.equal(state.declarer, result.error.declarer)
+        end)
+
+        it("rejects an out-of-range or non-integer claimant", function()
+            local state = fresh_talon()
+            for _, bad in ipairs({ 0, 4, -1, 1.5, "2", true, {} }) do
+                local result = talon.rebuy(state, bad, 240)
+                assert.is_false(result.ok)
+                assert.are.equal("bad_claimant", result.error.code)
+            end
+            local nil_result = talon.rebuy(state, nil, 240)
+            assert.is_false(nil_result.ok)
+            assert.are.equal("bad_claimant", nil_result.error.code)
+        end)
+
+        it("rejects a contract_value outside [100, 240]", function()
+            local state = fresh_talon()
+            for _, bad in ipairs({ 0, 50, 99, 241, 9999 }) do
+                local result = talon.rebuy(state, 3, bad)
+                assert.is_false(result.ok)
+                assert.are.equal("bad_contract_value", result.error.code)
+            end
+        end)
+
+        it("rejects a non-integer contract_value", function()
+            local state = fresh_talon()
+            for _, bad in ipairs({ 240.5, "240", true, {} }) do
+                local result = talon.rebuy(state, 3, bad)
+                assert.is_false(result.ok)
+                assert.are.equal("bad_contract_value", result.error.code)
+            end
+            local nil_result = talon.rebuy(state, 3, nil)
+            assert.is_false(nil_result.ok)
+            assert.are.equal("bad_contract_value", nil_result.error.code)
+        end)
+
+        it("rejects a contract_value not strictly higher than the current bid", function()
+            -- Forehand wins at 120; a 120 rebuy is not "higher" and a
+            -- 100 rebuy is below — both rejected.
+            local a = finalized_auction({ final_bid = 120 })
+            local hands, talon_cards = build_dealable_set()
+            local state = assert(talon.new(config, a, hands, talon_cards).talon)
+            for _, bad in ipairs({ 100, 105, 115, 120 }) do
+                local result = talon.rebuy(state, 3, bad)
+                assert.is_false(result.ok, "value=" .. bad .. " should be rejected")
+                assert.are.equal("contract_not_higher", result.error.code)
+                assert.are.equal(120, result.error.current_bid)
+            end
+            -- 125 is strictly higher → accepted.
+            local ok_result = talon.rebuy(state, 3, 125)
+            assert.is_true(ok_result.ok)
+        end)
+
+        it("does not mutate the input state", function()
+            local state = fresh_talon()
+            local before = snapshot(state)
+            local _ = talon.rebuy(state, 3, 240)
+            assert.same(before, snapshot(state))
+        end)
+    end)
+
     describe("is_talon()", function()
         it("recognises talon states", function()
             assert.is_true(talon.is_talon(fresh_talon()))
