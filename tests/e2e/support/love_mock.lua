@@ -64,13 +64,27 @@ end
 
 -- Graphics namespace ---------------------------------------------------
 
-local function new_graphics()
+local function new_graphics(get_dims)
     local recording = {}
     local color = { 1, 1, 1, 1 }
     local stack = { { x = 0, y = 0 } }
     local unstubbed = {}
 
     local g = {}
+
+    function g.getWidth()
+        local w, _ = get_dims()
+        return w
+    end
+
+    function g.getHeight()
+        local _, h = get_dims()
+        return h
+    end
+
+    function g.getDimensions()
+        return get_dims()
+    end
 
     local function top()
         return stack[#stack]
@@ -271,20 +285,21 @@ local function new_timer()
     })
 end
 
-local function new_window(width, height)
-    local w, h = width, height
+local function new_window(get_dims, set_dims)
     return permissive({
         getDimensions = function()
-            return w, h
+            return get_dims()
         end,
         getWidth = function()
+            local w, _ = get_dims()
             return w
         end,
         getHeight = function()
+            local _, h = get_dims()
             return h
         end,
         setMode = function(new_w, new_h)
-            w, h = new_w, new_h
+            set_dims(new_w, new_h)
             return true
         end,
     })
@@ -321,16 +336,25 @@ Mock.__index = Mock
 
 function M.new(opts)
     opts = opts or {}
+    local w, h = opts.width or 800, opts.height or 600
+    local function get_dims()
+        return w, h
+    end
+    local function set_dims(new_w, new_h)
+        w, h = new_w, new_h
+    end
+
     local self = setmetatable({}, Mock)
-    self.graphics = new_graphics()
+    self.graphics = new_graphics(get_dims)
     self.keyboard = new_keyboard()
     self.mouse = new_mouse()
     self.timer = new_timer()
-    self.window = new_window(opts.width or 800, opts.height or 600)
+    self.window = new_window(get_dims, set_dims)
     self.event = new_event()
     self.filesystem = new_filesystem()
     self._installed = false
     self._prior_love = nil
+    self._set_dims = set_dims
     return self
 end
 
@@ -353,6 +377,12 @@ function Mock:restore()
 end
 
 function Mock:dispatch(event, ...)
+    if event == "resize" then
+        local nw, nh = ...
+        if nw and nh then
+            self._set_dims(nw, nh)
+        end
+    end
     local fn = rawget(self, event)
     if type(fn) == "function" then
         return fn(...)

@@ -178,9 +178,13 @@ Goal: three humans pass a desktop around and play a real game to 1000.
 The first table UI is already touch-ready and reflowable so iOS is a
 porting pass later, not a UI rewrite.
 
-- [ ] Build the scene skeleton and game navigation.
+- [x] Build the scene skeleton and game navigation.
   - Main menu, table, and end-of-game scenes exist.
   - New-game and abandon-game controls are available from the menu.
+  - Buttons render hover, focus, pressed, and disabled visual states; menus
+    are fully keyboard-navigable (Tab/arrows + Enter/Space + Esc).
+  - Table scene exposes a visible `Menu` button so the back-out path works
+    on touch devices, not just via Esc.
 - [ ] Build touch-ready input and reflowable table foundations.
   - Mouse and touch use the same action paths.
   - No required interaction depends on hover.

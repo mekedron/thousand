@@ -58,8 +58,20 @@ function M.start(opts)
     -- previous mock. main.lua at the repo root resolves through the
     -- default package.path entry `./?.lua` because busted runs from
     -- the project root.
+    --
+    -- ui/ scenes are created per-journey too: the scene_manager module
+    -- itself is stateless (M.new() returns a fresh table) but main.lua
+    -- builds its manager via require, and the menu / table / end_of_game
+    -- modules need a fresh instance bound to the new manager. Forcing
+    -- main to re-execute on each start handles this transparently.
     package.loaded.main = nil
     require("main")
+
+    -- Mirror LÖVE's boot sequence: love.load fires once before the first
+    -- frame. The scene manager registers and activates its initial scene
+    -- here; without it, journey:step() would draw against an empty
+    -- manager.
+    mock:dispatch("load")
 
     local self = setmetatable({}, Journey)
     self._mock = mock
@@ -70,14 +82,36 @@ end
 
 function Journey:step(dt)
     dt = dt or 0.016
+    -- Each step represents one rendered frame: the recording shows only the
+    -- ops produced by this update + draw cycle so journey assertions can
+    -- speak about "what's on screen now" without filtering out history.
+    self._mock.graphics.clear_recording()
     self._mock:dispatch("update", dt)
     self._mock:dispatch("draw")
 end
 
 function Journey:click(x, y, button)
     button = button or 1
+    -- Mirror real interaction: hover, press, release at the same coords.
+    -- Buttons key their hit-test off contains(x, y) rather than the hover
+    -- flag, so the move is for visual-state coverage, not click correctness.
+    self._mock:dispatch("mousemoved", x, y, 0, 0)
     self._mock:dispatch("mousepressed", x, y, button)
     self._mock:dispatch("mousereleased", x, y, button)
+end
+
+function Journey:hover(x, y)
+    self._mock:dispatch("mousemoved", x, y, 0, 0)
+end
+
+function Journey:release(x, y, button)
+    button = button or 1
+    self._mock:dispatch("mousereleased", x, y, button)
+end
+
+function Journey:press(x, y, button)
+    button = button or 1
+    self._mock:dispatch("mousepressed", x, y, button)
 end
 
 function Journey:click_text(needle)

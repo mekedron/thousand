@@ -1,12 +1,10 @@
--- First sanity-check journey for the e2e harness. Passes against the
--- placeholder main.lua that only clears to green felt; designed to grow
--- into a real menu-then-table journey when the scene skeleton lands.
+-- First sanity-check journey: main.lua loads against the mock, and the
+-- main menu scene renders its localised labels on frame 1. Deeper menu
+-- behaviour (button clicks, navigation, modal flow) lives in
+-- menu_navigation_spec.lua so this journey stays minimal — its job is
+-- "the entry-point wiring is sane", not full-coverage menu testing.
 
 local journey = require("tests.e2e.support.journey")
-
-local function near(actual, expected, eps)
-    return math.abs(actual - expected) < (eps or 1e-3)
-end
 
 describe("e2e: launch journey", function()
     local j
@@ -26,34 +24,30 @@ describe("e2e: launch journey", function()
         assert.is_table(j:draws())
     end)
 
-    it("renders the green-felt placeholder on the first frame", function()
+    it("renders the main menu's localised title on the first frame", function()
         j:step()
-        local clear = j:screen().clear
-        assert.is_not_nil(clear, "expected love.graphics.clear() to have been called on frame 1")
-        assert.is_true(near(clear[1], 0.07), "expected r=0.07 got " .. tostring(clear[1]))
-        assert.is_true(near(clear[2], 0.18), "expected g=0.18 got " .. tostring(clear[2]))
-        assert.is_true(near(clear[3], 0.10), "expected b=0.10 got " .. tostring(clear[3]))
+        local title = j:find_localised("scene.menu.title")
+        assert.is_not_nil(j:find_text(title), "expected menu title to be drawn on frame 1")
     end)
 
-    it("survives input dispatch through the placeholder draw loop", function()
+    it("draws the New Game label on the menu's first frame", function()
         j:step()
-        j:click(640, 360)
+        local label = j:find_localised("scene.menu.new_game")
+        assert.is_not_nil(j:find_text(label), "expected New Game label on the menu")
+    end)
+
+    it("survives input dispatch through the menu draw loop", function()
+        j:step()
+        j:click(1, 1)
         j:press_key("escape")
         j:resize(1024, 768)
         j:step()
-        -- No scene-state assertions yet — main.lua has no scenes.
-        -- Once the menu lands, this block becomes:
-        --   j:click_text(j:find_localised("menu.new_game"))
-        --   j:step()
-        --   assert.is_truthy(j:find_text(j:find_localised("scene.table.title")))
-        --   j:press_key("escape")
-        --   j:step()
-        --   assert.is_truthy(j:find_text(j:find_localised("menu.new_game")))
+        assert.is_table(j:draws())
     end)
 
     it("can resolve a localised string through the harness", function()
-        local s = j:find_localised("menu.new_game")
+        local s = j:find_localised("scene.menu.new_game")
         assert.is_string(s)
-        assert.are.not_equal("menu.new_game", s)
+        assert.are.not_equal("scene.menu.new_game", s)
     end)
 end)

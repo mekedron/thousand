@@ -43,7 +43,7 @@ describe("app.i18n", function()
     describe("t()", function()
         it("looks up a key in the active locale", function()
             assert.are.equal("Thousand", i18n.t("app.title"))
-            assert.are.equal("New Game", i18n.t("menu.new_game"))
+            assert.are.equal("New Game", i18n.t("scene.menu.new_game"))
         end)
 
         it("looks up the same key under each bundled locale", function()

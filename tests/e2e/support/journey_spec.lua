@@ -150,7 +150,7 @@ describe("journey", function()
     describe("find_localised", function()
         it("resolves a key in the active locale", function()
             local j = journey.start({ locale = "en" })
-            assert.are.equal("New Game", j:find_localised("menu.new_game"))
+            assert.are.equal("New Game", j:find_localised("scene.menu.new_game"))
             j:stop()
         end)
 
