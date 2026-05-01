@@ -512,6 +512,75 @@ describe("core.talon", function()
             local _ = talon.raise(state, 110)
             assert.same(before, snapshot(state))
         end)
+
+        it("uses the configured increment_threshold for the step pivot", function()
+            -- Custom config: pivot at 150 instead of 200, otherwise canonical.
+            local custom = rule_config.new({
+                schema_version = 1,
+                cards = {
+                    point_values = {
+                        ["A"] = 11,
+                        ["10"] = 10,
+                        ["K"] = 4,
+                        ["Q"] = 3,
+                        ["J"] = 2,
+                        ["9"] = 0,
+                    },
+                    trick_rank_order = { "9", "J", "Q", "K", "10", "A" },
+                },
+                players = { count = 3 },
+                talon = { size = 3 },
+                bidding = {
+                    opening_min = 100,
+                    pre_talon_max = 120,
+                    increment_threshold = 150,
+                    increment_below_200 = 5,
+                    increment_from_200 = 10,
+                },
+                marriages = {
+                    values = { hearts = 100, diamonds = 80, clubs = 60, spades = 40 },
+                },
+                tricks = {
+                    must_follow = true,
+                    must_beat = true,
+                    must_trump = true,
+                    must_overtrump = true,
+                },
+                scoring = { round_to_nearest = 5 },
+                barrel = { threshold = 880, deal_count = 3, fall_off_penalty = -120 },
+                endgame = { target_score = 1000 },
+            })
+
+            -- Drive a finalized auction under the custom config: forehand
+            -- opens at 100, the other two pass.
+            local a = assert(auction.new(custom, 1).auction)
+            a = assert(auction.bid(a, a.forehand, 100).auction)
+            while a.status == "in_progress" do
+                a = assert(auction.pass(a, a.turn).auction)
+            end
+
+            local hands, talon_cards = build_dealable_set()
+            local state = assert(talon.new(custom, a, hands, talon_cards).talon)
+            state = take(state)
+            local declarer = state.declarer
+            local t1 = (declarer % 3) + 1
+            local t2 = (declarer + 1) % 3 + 1
+            state = pass(state, t1, state.hands[declarer][1])
+            state = pass(state, t2, state.hands[declarer][1])
+            assert.are.equal("awaiting_raise", state.status)
+
+            -- 145 is still below the 150 pivot → step = 5; 145 % 5 = 0 → legal.
+            assert.is_true(talon.raise(state, 145).ok)
+
+            -- 150 is at the pivot → step = 10; 150 % 10 = 0 → legal.
+            assert.is_true(talon.raise(state, 150).ok)
+
+            -- 155 is above pivot → step = 10; 155 % 10 = 5 → rejected.
+            local rejected = talon.raise(state, 155)
+            assert.is_false(rejected.ok)
+            assert.are.equal("bad_raise_increment", rejected.error.code)
+            assert.are.equal(10, rejected.error.step)
+        end)
     end)
 
     describe("skip_raise()", function()

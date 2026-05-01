@@ -44,6 +44,7 @@
 --     mutated. The output's per-player lists are independent copies.
 
 local rule_config = require("core.rule_config")
+local card = require("core.card")
 
 local M = {}
 
@@ -163,6 +164,16 @@ function M.score_deal(config, opts)
         return totals_err
     end
 
+    -- The deck-total cap follows from the active config: every card in
+    -- the 24-card pack is captured exactly once across all sides, so the
+    -- ceiling is `#SUITS × Σ(point_values)`. Canonical Russian → 120;
+    -- a variant that bumps K from 4 to 5 → 124.
+    local rank_total = 0
+    for _, rank in ipairs(config.cards.trick_rank_order) do
+        rank_total = rank_total + config.cards.point_values[rank]
+    end
+    local deck_point_total = rank_total * #card.SUITS
+
     local captured_sum = 0
     for i = 1, player_count do
         if opts.captured_points[i] < 0 then
@@ -174,11 +185,11 @@ function M.score_deal(config, opts)
         end
         captured_sum = captured_sum + opts.captured_points[i]
     end
-    if captured_sum > 120 then
+    if captured_sum > deck_point_total then
         return failure(
             "captured_points_exceed_deck",
-            "captured card points sum must not exceed 120 across all sides",
-            { actual = captured_sum, max = 120 }
+            "captured card points sum must not exceed the deck total",
+            { actual = captured_sum, max = deck_point_total }
         )
     end
 

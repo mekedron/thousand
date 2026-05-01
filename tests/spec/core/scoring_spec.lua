@@ -168,6 +168,81 @@ describe("core.scoring", function()
             local total = s.captured_points[1] + s.captured_points[2] + s.captured_points[3]
             assert.are.equal(110, total)
         end)
+
+        it("accepts captured_points summing to exactly 120 (canonical deck total)", function()
+            -- Pins the boundary: the cap derived from canonical
+            -- point_values × 4 suits is exactly 120.
+            local s = score_ok(default_opts({ captured_points = { 120, 0, 0 } }))
+            assert.are.equal(120, s.captured_points[1])
+        end)
+
+        it("rejects 121 with max=120 under the canonical config", function()
+            local result =
+                scoring.score_deal(config, default_opts({ captured_points = { 121, 0, 0 } }))
+            assert.is_false(result.ok)
+            assert.are.equal("captured_points_exceed_deck", result.error.code)
+            assert.are.equal(121, result.error.actual)
+            assert.are.equal(120, result.error.max)
+        end)
+
+        it("derives the cap from config.cards.point_values when a variant changes them", function()
+            -- Variant: K is worth 5 instead of 4. Per-suit total is
+            -- 11+10+5+3+2+0 = 31; deck total = 31 × 4 = 124.
+            local variant = rule_config.new({
+                schema_version = 1,
+                cards = {
+                    point_values = {
+                        ["A"] = 11,
+                        ["10"] = 10,
+                        ["K"] = 5,
+                        ["Q"] = 3,
+                        ["J"] = 2,
+                        ["9"] = 0,
+                    },
+                    trick_rank_order = { "9", "J", "Q", "K", "10", "A" },
+                },
+                players = { count = 3 },
+                talon = { size = 3 },
+                bidding = {
+                    opening_min = 100,
+                    pre_talon_max = 120,
+                    increment_threshold = 200,
+                    increment_below_200 = 5,
+                    increment_from_200 = 10,
+                },
+                marriages = {
+                    values = { hearts = 100, diamonds = 80, clubs = 60, spades = 40 },
+                },
+                tricks = {
+                    must_follow = true,
+                    must_beat = true,
+                    must_trump = true,
+                    must_overtrump = true,
+                },
+                scoring = { round_to_nearest = 5 },
+                barrel = { threshold = 880, deal_count = 3, fall_off_penalty = -120 },
+                endgame = { target_score = 1000 },
+            })
+
+            local accepted = scoring.score_deal(
+                variant,
+                default_opts({
+                    captured_points = { 124, 0, 0 },
+                })
+            )
+            assert.is_true(accepted.ok)
+
+            local rejected = scoring.score_deal(
+                variant,
+                default_opts({
+                    captured_points = { 125, 0, 0 },
+                })
+            )
+            assert.is_false(rejected.ok)
+            assert.are.equal("captured_points_exceed_deck", rejected.error.code)
+            assert.are.equal(125, rejected.error.actual)
+            assert.are.equal(124, rejected.error.max)
+        end)
     end)
 
     describe("score_deal() rounding", function()

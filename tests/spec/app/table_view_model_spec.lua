@@ -331,4 +331,64 @@ describe("app.table_view_model", function()
         -- Engine's list still untouched.
         assert.are_not.equal(view.hands[1].cards, engine_hands[1])
     end)
+
+    describe("allowed_bid_amounts follows config.bidding.increment_threshold", function()
+        -- Helper: clone canonical Russian and override one bidding field.
+        local function with_bidding(overrides)
+            local bidding = {
+                opening_min = 100,
+                pre_talon_max = 120,
+                increment_threshold = 200,
+                increment_below_200 = 5,
+                increment_from_200 = 10,
+            }
+            for k, v in pairs(overrides) do
+                bidding[k] = v
+            end
+            return rule_config.new({
+                schema_version = 1,
+                cards = {
+                    point_values = {
+                        ["A"] = 11,
+                        ["10"] = 10,
+                        ["K"] = 4,
+                        ["Q"] = 3,
+                        ["J"] = 2,
+                        ["9"] = 0,
+                    },
+                    trick_rank_order = { "9", "J", "Q", "K", "10", "A" },
+                },
+                players = { count = 3 },
+                talon = { size = 3 },
+                bidding = bidding,
+                marriages = {
+                    values = { hearts = 100, diamonds = 80, clubs = 60, spades = 40 },
+                },
+                tricks = {
+                    must_follow = true,
+                    must_beat = true,
+                    must_trump = true,
+                    must_overtrump = true,
+                },
+                scoring = { round_to_nearest = 5 },
+                barrel = { threshold = 880, deal_count = 3, fall_off_penalty = -120 },
+                endgame = { target_score = 1000 },
+            })
+        end
+
+        it("under canonical Russian the opening ladder is 100, 105, 110, 115, 120", function()
+            local s = Session.new({ seed = 7 })
+            local view = view_model.from_session(s)
+            assert.same({ 100, 105, 110, 115, 120 }, view.auction.allowed_bid_amounts)
+        end)
+
+        it("with threshold = 110 the ladder pivots early and skips 115", function()
+            -- Pivot drops to 110, step jumps to 10 from there. With
+            -- pre_talon_max still 120, the panel renders 100, 105, 110, 120.
+            local custom = with_bidding({ increment_threshold = 110 })
+            local s = Session.new({ seed = 7, config = custom })
+            local view = view_model.from_session(s)
+            assert.same({ 100, 105, 110, 120 }, view.auction.allowed_bid_amounts)
+        end)
+    end)
 end)

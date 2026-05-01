@@ -22,6 +22,7 @@ local function valid_table()
         bidding = {
             opening_min = 100,
             pre_talon_max = 120,
+            increment_threshold = 200,
             increment_below_200 = 5,
             increment_from_200 = 10,
         },
@@ -203,6 +204,7 @@ describe("core.rule_config", function()
         it("encodes the canonical bidding rules", function()
             assert.are.equal(100, config.bidding.opening_min)
             assert.are.equal(120, config.bidding.pre_talon_max)
+            assert.are.equal(200, config.bidding.increment_threshold)
             assert.are.equal(5, config.bidding.increment_below_200)
             assert.are.equal(10, config.bidding.increment_from_200)
         end)
@@ -298,6 +300,7 @@ describe("core.rule_config", function()
                     {
                         "opening_min",
                         "pre_talon_max",
+                        "increment_threshold",
                         "increment_below_200",
                         "increment_from_200",
                     },
@@ -486,6 +489,46 @@ describe("core.rule_config", function()
             assert.has_error(function()
                 rule_config.to_json({})
             end)
+        end)
+    end)
+
+    describe("bidding.increment_threshold", function()
+        it("exposes a leaf descriptor with the canonical default", function()
+            local d = rule_config.schema_for("bidding.increment_threshold")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(200, d.default)
+            assert.are.equal(1, d.min)
+            assert.are.equal("implemented", d.status)
+        end)
+
+        it("rejects a non-number value with type_mismatch", function()
+            local t = valid_table()
+            t.bidding.increment_threshold = "200"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("type_mismatch", res.error.code)
+            assert.are.equal("bidding.increment_threshold", res.error.path)
+        end)
+
+        it("rejects a value below min with value_out_of_range", function()
+            local t = valid_table()
+            t.bidding.increment_threshold = 0
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("value_out_of_range", res.error.code)
+            assert.are.equal("bidding.increment_threshold", res.error.path)
+            assert.are.equal(0, res.error.value)
+        end)
+
+        it("survives a JSON round trip with a non-canonical value", function()
+            local t = valid_table()
+            t.bidding.increment_threshold = 150
+            local config_in = rule_config.new(t)
+            local s = rule_config.to_json(config_in)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal(150, res.config.bidding.increment_threshold)
         end)
     end)
 

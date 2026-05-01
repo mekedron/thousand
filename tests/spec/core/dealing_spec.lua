@@ -26,6 +26,7 @@ local function valid_config_table()
         bidding = {
             opening_min = 100,
             pre_talon_max = 120,
+            increment_threshold = 200,
             increment_below_200 = 5,
             increment_from_200 = 10,
         },

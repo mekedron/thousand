@@ -248,7 +248,7 @@ accidentally depend on it.
   - Every field records whether it is implemented, selectable, or deferred.
   - `RuleConfig` round-trips through JSON for persistence and saved games.
   - Incompatible combinations are rejected with clear, localisable errors.
-- [ ] Refactor the core engine so every variable rule reads from
+- [x] Refactor the core engine so every variable rule reads from
   `RuleConfig`.
   - No hard-coded constants remain for rules that variants can change.
   - Engine tests pass under every built-in template added in this phase.

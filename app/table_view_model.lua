@@ -93,7 +93,7 @@ local function compute_allowed_bids(config, current_bid)
         start = bidding.opening_min
     else
         local step
-        if current_bid + 1 < 200 then
+        if current_bid + 1 < bidding.increment_threshold then
             step = bidding.increment_below_200
         else
             step = bidding.increment_from_200
@@ -104,7 +104,7 @@ local function compute_allowed_bids(config, current_bid)
     while amount <= bidding.pre_talon_max do
         result[#result + 1] = amount
         local step
-        if amount < 200 then
+        if amount < bidding.increment_threshold then
             step = bidding.increment_below_200
         else
             step = bidding.increment_from_200
@@ -127,7 +127,7 @@ local function compute_allowed_raises(config, current_bid)
     local amount = current_bid
     while amount < POST_TALON_RAISE_CAP do
         local step
-        if amount < 200 then
+        if amount < bidding.increment_threshold then
             step = bidding.increment_below_200
         else
             step = bidding.increment_from_200

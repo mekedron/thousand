@@ -217,7 +217,7 @@ local function validate_bid_amount(state, amount)
     end
 
     local step
-    if amount < 200 then
+    if amount < bidding.increment_threshold then
         step = bidding.increment_below_200
     else
         step = bidding.increment_from_200

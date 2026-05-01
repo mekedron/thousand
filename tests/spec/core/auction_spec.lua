@@ -428,4 +428,109 @@ describe("core.auction", function()
             assert.are.equal(0, a.pass_count)
         end)
     end)
+
+    describe("configurable increment_threshold", function()
+        -- Build a config matching canonical Russian except the threshold
+        -- pivots at 150 instead of 200. Below the threshold, step is 5;
+        -- at-or-above, step is 10. Bids approaching the pre_talon_max of
+        -- 120 stay below the threshold and so the user-visible behaviour
+        -- inside the [opening_min, pre_talon_max] window is unchanged
+        -- (5-step increments) — the test instead asserts that the
+        -- engine consults the config rather than the literal 200, by
+        -- pinning the step shape directly via the `step` echo on the
+        -- `bad_bid_increment` failure envelope.
+        local function with_threshold(threshold)
+            return rule_config.new({
+                schema_version = 1,
+                cards = {
+                    point_values = {
+                        ["A"] = 11,
+                        ["10"] = 10,
+                        ["K"] = 4,
+                        ["Q"] = 3,
+                        ["J"] = 2,
+                        ["9"] = 0,
+                    },
+                    trick_rank_order = { "9", "J", "Q", "K", "10", "A" },
+                },
+                players = { count = 3 },
+                talon = { size = 3 },
+                bidding = {
+                    opening_min = 100,
+                    pre_talon_max = 145,
+                    increment_threshold = threshold,
+                    increment_below_200 = 5,
+                    increment_from_200 = 10,
+                },
+                marriages = {
+                    values = { hearts = 100, diamonds = 80, clubs = 60, spades = 40 },
+                },
+                tricks = {
+                    must_follow = true,
+                    must_beat = true,
+                    must_trump = true,
+                    must_overtrump = true,
+                },
+                scoring = { round_to_nearest = 5 },
+                barrel = { threshold = 880, deal_count = 3, fall_off_penalty = -120 },
+                endgame = { target_score = 1000 },
+            })
+        end
+
+        it("uses below-threshold step for bids below the configured pivot", function()
+            local cfg = with_threshold(150)
+            local a = auction.new(cfg, 1).auction
+            -- 145 is below the 150 pivot → step = 5; 145 % 5 == 0 → legal.
+            local res = auction.bid(a, 2, 145)
+            assert.is_true(res.ok)
+        end)
+
+        it("uses from-threshold step for bids at-or-above the configured pivot", function()
+            -- A high pre_talon_max so we can probe at-or-above-threshold bids.
+            local cfg_open = rule_config.new({
+                schema_version = 1,
+                cards = {
+                    point_values = {
+                        ["A"] = 11,
+                        ["10"] = 10,
+                        ["K"] = 4,
+                        ["Q"] = 3,
+                        ["J"] = 2,
+                        ["9"] = 0,
+                    },
+                    trick_rank_order = { "9", "J", "Q", "K", "10", "A" },
+                },
+                players = { count = 3 },
+                talon = { size = 3 },
+                bidding = {
+                    opening_min = 100,
+                    pre_talon_max = 200,
+                    increment_threshold = 150,
+                    increment_below_200 = 5,
+                    increment_from_200 = 10,
+                },
+                marriages = {
+                    values = { hearts = 100, diamonds = 80, clubs = 60, spades = 40 },
+                },
+                tricks = {
+                    must_follow = true,
+                    must_beat = true,
+                    must_trump = true,
+                    must_overtrump = true,
+                },
+                scoring = { round_to_nearest = 5 },
+                barrel = { threshold = 880, deal_count = 3, fall_off_penalty = -120 },
+                endgame = { target_score = 1000 },
+            })
+            local a = auction.new(cfg_open, 1).auction
+            -- At threshold = 150, step = 10 → 155 is illegal, 160 is legal.
+            local rejected = auction.bid(a, 2, 155)
+            assert.is_false(rejected.ok)
+            assert.are.equal("bad_bid_increment", rejected.error.code)
+            assert.are.equal(10, rejected.error.step)
+
+            local accepted = auction.bid(a, 2, 160)
+            assert.is_true(accepted.ok)
+        end)
+    end)
 end)

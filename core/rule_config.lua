@@ -141,6 +141,7 @@ local SCHEMA = {
         field_order = {
             "opening_min",
             "pre_talon_max",
+            "increment_threshold",
             "increment_below_200",
             "increment_from_200",
         },
@@ -157,6 +158,18 @@ local SCHEMA = {
                 lua_type = "number",
                 min = 10,
                 default = 120,
+                status = "implemented",
+            },
+            -- The bid amount at which the increment switches from
+            -- `increment_below_200` to `increment_from_200`. The field
+            -- names keep their canonical-Russian shorthand so existing
+            -- code stays readable; the threshold itself moves with the
+            -- variant (e.g. 250 in some house-rule sets).
+            increment_threshold = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 1,
+                default = 200,
                 status = "implemented",
             },
             increment_below_200 = {
@@ -798,6 +811,7 @@ M.canonical_russian = M.new({
     bidding = {
         opening_min = 100,
         pre_talon_max = 120,
+        increment_threshold = 200,
         increment_below_200 = 5,
         increment_from_200 = 10,
     },
