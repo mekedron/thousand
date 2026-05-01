@@ -128,4 +128,113 @@ describe("ui.layout", function()
             assert.is_true(r.scoreboard.y >= layout.SAFE_MARGIN + 64)
         end)
     end)
+
+    describe("hand_card_rects()", function()
+        local hand_region = { x = 100, y = 500, w = 800, h = 140 }
+
+        it("returns one rect per card, in the order they were given", function()
+            local rects = layout.hand_card_rects(hand_region, 7)
+            assert.are.equal(7, #rects)
+        end)
+
+        it("places every rect entirely inside the hand region", function()
+            local rects = layout.hand_card_rects(hand_region, 8)
+            for i, r in ipairs(rects) do
+                assert.is_true(r.x >= hand_region.x, "rect " .. i .. " x")
+                assert.is_true(r.y >= hand_region.y, "rect " .. i .. " y")
+                assert.is_true(
+                    r.x + r.w <= hand_region.x + hand_region.w,
+                    "rect " .. i .. " right edge"
+                )
+                assert.is_true(
+                    r.y + r.h <= hand_region.y + hand_region.h,
+                    "rect " .. i .. " bottom edge"
+                )
+            end
+        end)
+
+        it("keeps every rect at or above MIN_HIT_TARGET on both axes", function()
+            local rects = layout.hand_card_rects(hand_region, 10)
+            for i, r in ipairs(rects) do
+                assert.is_true(r.w >= layout.MIN_HIT_TARGET, "rect " .. i .. " w")
+                assert.is_true(r.h >= layout.MIN_HIT_TARGET, "rect " .. i .. " h")
+            end
+        end)
+
+        it("returns an empty list for zero cards", function()
+            assert.are.same({}, layout.hand_card_rects(hand_region, 0))
+        end)
+
+        it("returns rects whose .x increases monotonically", function()
+            local rects = layout.hand_card_rects(hand_region, 7)
+            for i = 2, #rects do
+                assert.is_true(rects[i].x > rects[i - 1].x, "rect " .. i .. " left of previous")
+            end
+        end)
+
+        it("uses floored integer coordinates", function()
+            local rects = layout.hand_card_rects({ x = 11, y = 13, w = 333, h = 99 }, 6)
+            for _, r in ipairs(rects) do
+                assert.are.equal(math.floor(r.x), r.x)
+                assert.are.equal(math.floor(r.y), r.y)
+                assert.are.equal(math.floor(r.w), r.w)
+                assert.are.equal(math.floor(r.h), r.h)
+            end
+        end)
+    end)
+
+    describe("talon_card_rects()", function()
+        local centre_region = { x = 50, y = 200, w = 600, h = 200 }
+
+        it("returns one rect per card up to count", function()
+            local rects = layout.talon_card_rects(centre_region, 3)
+            assert.are.equal(3, #rects)
+        end)
+
+        it("returns an empty list for zero cards", function()
+            assert.are.same({}, layout.talon_card_rects(centre_region, 0))
+        end)
+
+        it("places every rect inside the centre region", function()
+            local rects = layout.talon_card_rects(centre_region, 3)
+            for i, r in ipairs(rects) do
+                assert.is_true(r.x >= centre_region.x, "rect " .. i .. " x")
+                assert.is_true(r.y >= centre_region.y, "rect " .. i .. " y")
+                assert.is_true(
+                    r.x + r.w <= centre_region.x + centre_region.w,
+                    "rect " .. i .. " right edge"
+                )
+            end
+        end)
+    end)
+
+    describe("opponent_seat_rects()", function()
+        local opponents_region = { x = 16, y = 16, w = 800, h = 120 }
+
+        it("returns one rect per opponent seat", function()
+            local rects = layout.opponent_seat_rects(opponents_region, 2)
+            assert.are.equal(2, #rects)
+        end)
+
+        it("returns an empty list for zero opponents", function()
+            assert.are.same({}, layout.opponent_seat_rects(opponents_region, 0))
+        end)
+
+        it("packs rects horizontally across the region", function()
+            local rects = layout.opponent_seat_rects(opponents_region, 2)
+            assert.is_true(rects[2].x > rects[1].x)
+            for _, r in ipairs(rects) do
+                assert.is_true(r.x >= opponents_region.x)
+                assert.is_true(r.x + r.w <= opponents_region.x + opponents_region.w + 1)
+            end
+        end)
+
+        it("keeps every rect at or above MIN_HIT_TARGET on both axes", function()
+            local rects = layout.opponent_seat_rects(opponents_region, 2)
+            for _, r in ipairs(rects) do
+                assert.is_true(r.w >= layout.MIN_HIT_TARGET)
+                assert.is_true(r.h >= layout.MIN_HIT_TARGET)
+            end
+        end)
+    end)
 end)

@@ -143,4 +143,114 @@ function M.table_regions(outer_w, outer_h, opts)
     }
 end
 
+-- Hand-region card geometry --------------------------------------------
+--
+-- The active player's hand needs per-card rectangles so the table scene
+-- can hit-test taps and the rendering loop can stay generic. The
+-- helpers below are pure — they mirror the sizing the scene already
+-- runs but expose it as data rather than as inlined draw maths.
+
+local CARD_GAP = 6
+local LABEL_BAND = 28
+
+-- Compute per-card rectangles for the active player's hand. The hand
+-- region's leftmost padding mirrors what the table scene already uses
+-- (8 px on each side). Cards are sized to fill the hand region while
+-- staying at or above MIN_HIT_TARGET on both axes; if the hand has too
+-- many cards to fit at the touch-safe minimum width, the rects extend
+-- past the right edge — the scene clamps the visible region but the
+-- hit-test math stays correct.
+function M.hand_card_rects(hand_region, count, opts)
+    if count <= 0 then
+        return {}
+    end
+    opts = opts or {}
+    local gap = opts.gap or CARD_GAP
+    local label_band = opts.label_band or LABEL_BAND
+    local available_w = hand_region.w - 16
+    local card_w = math.floor((available_w - (count - 1) * gap) / count)
+    if card_w < M.MIN_HIT_TARGET then
+        card_w = M.MIN_HIT_TARGET
+    end
+    local max_h = hand_region.h - label_band - 8
+    local card_h = math.min(max_h, math.floor(card_w * 1.4))
+    if card_h < M.MIN_HIT_TARGET then
+        card_h = math.min(max_h, M.MIN_HIT_TARGET)
+    end
+    if card_h < M.MIN_HIT_TARGET then
+        -- Hand region is too short to host a touch-safe rect. Honour
+        -- the floor anyway so the hit-test stays predictable; the
+        -- scene's reflowable layout will normally avoid this case.
+        card_h = M.MIN_HIT_TARGET
+    end
+    local rects = {}
+    local y = floor(hand_region.y + label_band)
+    for i = 1, count do
+        rects[i] = {
+            x = floor(hand_region.x + 8 + (i - 1) * (card_w + gap)),
+            y = y,
+            w = card_w,
+            h = card_h,
+        }
+    end
+    return rects
+end
+
+-- Compute per-card rectangles for the talon when it sits face-up in
+-- the centre band. Used by the table scene for visual placement; the
+-- talon is not currently tappable so this is rendering geometry.
+function M.talon_card_rects(centre_region, count, opts)
+    if count <= 0 then
+        return {}
+    end
+    opts = opts or {}
+    local gap = opts.gap or CARD_GAP
+    local card_w = opts.card_w or 48
+    local card_h = opts.card_h or 68
+    local label_band = opts.label_band or 32
+    local rects = {}
+    local x = floor(centre_region.x + 16)
+    local y = floor(centre_region.y + label_band)
+    for i = 1, count do
+        rects[i] = {
+            x = x + (i - 1) * (card_w + gap),
+            y = y,
+            w = card_w,
+            h = card_h,
+        }
+    end
+    return rects
+end
+
+-- Compute one rect per opponent seat inside the opponents strip. Used
+-- by the table scene for the talon-pass UI: each rect identifies a
+-- visual target the active player can read while choosing what to
+-- pass.
+function M.opponent_seat_rects(opponents_region, count, opts)
+    if count <= 0 then
+        return {}
+    end
+    opts = opts or {}
+    local gap = opts.gap or 8
+    local available_w = opponents_region.w - gap * (count - 1)
+    local seat_w = math.floor(available_w / count)
+    if seat_w < M.MIN_HIT_TARGET then
+        seat_w = M.MIN_HIT_TARGET
+    end
+    local seat_h = opponents_region.h
+    if seat_h < M.MIN_HIT_TARGET then
+        seat_h = M.MIN_HIT_TARGET
+    end
+    local rects = {}
+    for i = 1, count do
+        rects[i] = {
+            x = floor(opponents_region.x + (i - 1) * (seat_w + gap)),
+            y = floor(opponents_region.y),
+            w = seat_w,
+            h = seat_h,
+        }
+    end
+    return rects
+end
+
 return M

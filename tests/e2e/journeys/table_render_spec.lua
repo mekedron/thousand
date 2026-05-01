@@ -70,10 +70,14 @@ describe("e2e: render playable table state", function()
             assert.is_not_nil(find_text(j, j:find_localised("scene.table.scoreboard.title")))
         end)
 
-        it("labels seat 1 as the local player and seats 2/3 as opponents", function()
+        it("labels the active seat as the local player and the rest as opponents", function()
+            -- Active turn (forehand) renders at the bottom as "Your hand"
+            -- in hot-seat mode; the other two seats are opponents. The
+            -- active seat rotates with the turn — perspective tracks
+            -- is_turn so input wiring lands on whichever player is acting.
             assert.is_not_nil(find_text(j, j:find_localised("scene.table.player_label.you")))
             assert.is_not_nil(
-                find_text(j, j:find_localised("scene.table.player_label.other", { n = 2 }))
+                find_text(j, j:find_localised("scene.table.player_label.other", { n = 1 }))
             )
             assert.is_not_nil(
                 find_text(j, j:find_localised("scene.table.player_label.other", { n = 3 }))

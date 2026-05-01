@@ -10,9 +10,15 @@
 # Heuristic — accepts both false negatives and false positives.
 #   The check looks for double-quoted string literals containing at least
 #   one whitespace character. Lines are skipped if they are comments, or
-#   contain any of: t(, require(, error(, assert(, io.stderr or the
-#   explicit "-- i18n-ok" pragma. (print( is intentionally NOT excluded
+#   contain any of: t(, require(, error(, assert(, failure(, io.stderr or
+#   the explicit "-- i18n-ok" pragma. (print( is intentionally NOT excluded
 #   because love.graphics.print is the primary UI rendering call.)
+#
+#   failure( is the engine error-envelope helper used across core/ and
+#   app/. Its second argument is a developer-facing diagnostic message
+#   destined for crash logs and toast fallbacks, not the player's UI —
+#   adding -- i18n-ok to every line of the error vocabulary would just
+#   clutter the source.
 #
 # Fixing a false positive:
 #   1. Route the literal through i18n.t("some.key") and add the key to
@@ -58,6 +64,7 @@ violations=$(
         | grep -vE '\brequire\(' \
         | grep -vE '\berror\(' \
         | grep -vE '\bassert\(' \
+        | grep -vE '\bfailure\(' \
         | grep -vE 'io\.stderr' \
         | grep -vE 'i18n-ok' \
         || true

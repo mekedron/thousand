@@ -39,6 +39,31 @@ return {
     ["scene.table.phase.tricks"] = "Tricks",
     ["scene.table.phase.done"] = "Game Over",
 
+    ["scene.table.auction.bid_button"] = "Bid %{amount}",
+    ["scene.table.auction.pass_button"] = "Pass",
+    ["scene.table.auction.your_turn"] = "Your turn — bid or pass",
+    ["scene.table.auction.history_entry_bid"] = "Player %{n}: bid %{amount}",
+    ["scene.table.auction.history_entry_pass"] = "Player %{n}: pass",
+
+    ["scene.table.talon.take_button"] = "Take talon",
+    ["scene.table.talon.pass_to"] = "Pass card to Player %{n}",
+    ["scene.table.talon.raise_button"] = "Raise to %{amount}",
+    ["scene.table.talon.skip_raise_button"] = "Keep bid at %{amount}",
+
+    ["scene.table.tricks.your_turn"] = "Your turn — play a card",
+    ["scene.table.tricks.led"] = "Led:",
+
+    ["scene.table.marriage.prompt"] = "Declare marriage in:",
+    ["scene.table.marriage.yes"] = "Declare",
+    ["scene.table.marriage.no"] = "Just play",
+
+    ["scene.table.deal_done.scored"] = "Deal complete",
+    ["scene.table.deal_done.all_pass"] = "All players passed",
+    ["scene.table.deal_done.next_deal"] = "Next deal",
+
+    ["scene.table.toast.illegal_play"] = "Illegal play: %{reason}",
+    ["scene.table.toast.not_your_turn"] = "Not your turn",
+
     ["scene.end_of_game.title"] = "Game Over",
     ["scene.end_of_game.placeholder"] = "Final scores will appear here.",
     ["scene.end_of_game.winner"] = "Winner: Player %{n}",

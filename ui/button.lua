@@ -28,6 +28,7 @@ function M.new(opts)
     return setmetatable({
         id = opts.id,
         label_key = opts.label_key,
+        label_params = opts.label_params,
         enabled = opts.enabled ~= false,
         on_press = opts.on_press or noop,
         x = 0,
@@ -38,6 +39,10 @@ function M.new(opts)
         focused = false,
         pressed = false,
     }, Button)
+end
+
+function Button:set_label_params(params)
+    self.label_params = params
 end
 
 function Button:set_rect(x, y, w, h)
@@ -116,7 +121,7 @@ function Button:draw()
     else
         love.graphics.setColor(0.55, 0.55, 0.55, 1)
     end
-    love.graphics.print(t(self.label_key), self.x + 16, self.y + 18)
+    love.graphics.print(t(self.label_key, self.label_params), self.x + 16, self.y + 18)
 end
 
 return M

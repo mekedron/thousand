@@ -195,7 +195,7 @@ porting pass later, not a UI rewrite.
 - [x] Render the playable table state with placeholder assets.
   - 24-card deck, player hand, talon, current turn, current bid, running
     scoreboard, and end-of-game winner/final scores are visible.
-- [ ] Connect hot-seat input to the rules engine.
+- [x] Connect hot-seat input to the rules engine.
   - Player can click or tap cards through hit-tests.
   - Auction UI lets each player bid or pass in turn.
   - Talon reveal and pass-card interactions are playable.
