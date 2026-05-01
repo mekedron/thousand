@@ -218,7 +218,7 @@ porting pass later, not a UI rewrite.
   - Cards that are legal under must-follow, must-beat, and must-trump rules
     can be visually distinguished.
   - Illegal player actions are blocked with localised feedback.
-- [ ] Route every player-visible string in the hot-seat MVP through `t()`.
+- [x] Route every player-visible string in the hot-seat MVP through `t()`.
   - This includes placeholder UI, error messages, button labels, and
     end-of-game text.
 - [ ] Add baseline auto-save and restore.
