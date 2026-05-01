@@ -100,4 +100,34 @@ describe("app.settings", function()
         assert.is_truthy(content:find('"schemaVersion":1', 1, true))
         assert.is_truthy(content:find('"hot_seat_privacy":false', 1, true))
     end)
+
+    describe("active_template_id", function()
+        it("defaults to russian", function()
+            assert.are.equal("russian", settings.get("active_template_id"))
+        end)
+
+        it("persists a custom id and survives reload", function()
+            settings.set("active_template_id", "polish")
+            settings.reload()
+            assert.are.equal("polish", settings.get("active_template_id"))
+        end)
+
+        it("ignores a non-string active_template_id from disk", function()
+            store["settings.json"] = '{"schemaVersion":1,"active_template_id":42}'
+            settings.reload()
+            assert.are.equal("russian", settings.get("active_template_id"))
+        end)
+
+        it("preserves a valid active_template_id from disk", function()
+            store["settings.json"] = '{"schemaVersion":1,"active_template_id":"ukrainian"}'
+            settings.reload()
+            assert.are.equal("ukrainian", settings.get("active_template_id"))
+        end)
+
+        it("reset returns active_template_id to the canonical default", function()
+            settings.set("active_template_id", "polish")
+            settings.reset()
+            assert.are.equal("russian", settings.get("active_template_id"))
+        end)
+    end)
 end)

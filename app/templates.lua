@@ -28,6 +28,7 @@
 local app_json = require("app.json")
 local core_templates = require("core.templates")
 local rule_config = require("core.rule_config")
+local settings = require("app.settings")
 local i18n = require("app.i18n")
 
 local M = {}
@@ -388,6 +389,41 @@ end
 function M.last_load_error()
     lazy_load()
     return last_error
+end
+
+-- Active template id ----------------------------------------------------
+--
+-- The picker writes the chosen template's id to settings; the menu's
+-- "New Game" reads it back through resolve_active_config to spin up a
+-- fresh session under the right rules.
+
+function M.get_active_id()
+    return settings.get("active_template_id")
+end
+
+function M.set_active_id(id)
+    settings.set("active_template_id", id)
+end
+
+function M.resolve_active_config()
+    lazy_load()
+    local id = settings.get("active_template_id")
+    if type(id) ~= "string" then
+        return rule_config.canonical_russian
+    end
+    local builtin = rule_config.builtins[id]
+    if builtin ~= nil then
+        return builtin
+    end
+    local _, custom = find(id)
+    if custom == nil then
+        return rule_config.canonical_russian
+    end
+    local r = rule_config.try_new(custom.ruleConfig)
+    if not r.ok then
+        return rule_config.canonical_russian
+    end
+    return r.config
 end
 
 -- Test hooks -------------------------------------------------------------

@@ -1696,6 +1696,14 @@ local function clone_descriptor(node)
     return out
 end
 
+function M.sections()
+    local out = {}
+    for i, name in ipairs(SCHEMA._section_order) do
+        out[i] = name
+    end
+    return out
+end
+
 function M.schema_for(path)
     if type(path) ~= "string" then
         return nil

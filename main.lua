@@ -27,6 +27,8 @@ local menu_scene = require("ui.scenes.menu")
 local table_scene = require("ui.scenes.table")
 local end_of_game_scene = require("ui.scenes.end_of_game")
 local settings_scene = require("ui.scenes.settings")
+local template_picker_scene = require("ui.scenes.template_picker")
+local template_editor_scene = require("ui.scenes.template_editor")
 local auto_save = require("app.auto_save")
 
 local manager = scene_manager.new()
@@ -45,6 +47,8 @@ function love.load()
     manager:register("table", table_scene.new(manager))
     manager:register("end_of_game", end_of_game_scene.new(manager))
     manager:register("settings", settings_scene.new(manager))
+    manager:register("template_picker", template_picker_scene.new(manager))
+    manager:register("template_editor", template_editor_scene.new(manager))
     -- Restore an in-progress game from the previous launch, if any. The
     -- auto-save module returns nil for missing / corrupt / finished
     -- saves, so a fresh install boots straight to the menu.
@@ -147,6 +151,10 @@ end
 
 function love.resize(w, h)
     manager:resize(w, h)
+end
+
+function love.wheelmoved(dx, dy)
+    manager:wheelmoved(dx, dy)
 end
 
 function love.touchpressed(_id, x, y, _dx, _dy, _pressure)

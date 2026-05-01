@@ -430,4 +430,86 @@ describe("app.templates", function()
             assert.are.equal(c.id, listing.templates[3].id)
         end)
     end)
+
+    describe("active template id", function()
+        local function fresh_settings()
+            package.loaded["app.settings"] = nil
+            local s = require("app.settings")
+            local read_fn, write_fn, _ = in_memory_storage()
+            s._set_storage(read_fn, write_fn)
+            return s
+        end
+
+        before_each(function()
+            -- The settings module is the storage backing for the active id.
+            -- Reset it per-test so default lookups stay deterministic.
+            fresh_settings()
+        end)
+
+        after_each(function()
+            package.loaded["app.settings"] = nil
+        end)
+
+        it("get_active_id defaults to russian", function()
+            assert.are.equal("russian", templates.get_active_id())
+        end)
+
+        it("set_active_id round-trips through settings", function()
+            templates.set_active_id("polish")
+            assert.are.equal("polish", templates.get_active_id())
+        end)
+
+        it("resolve_active_config returns the canonical built-in by default", function()
+            local cfg = templates.resolve_active_config()
+            assert.is_true(rule_config.is_rule_config(cfg))
+            assert.are.equal(rule_config.canonical_russian, cfg)
+        end)
+
+        it("resolve_active_config returns a built-in when the id matches", function()
+            templates.set_active_id("polish")
+            local cfg = templates.resolve_active_config()
+            assert.is_true(rule_config.is_rule_config(cfg))
+            assert.are.equal(rule_config.builtins.polish, cfg)
+        end)
+
+        it("resolve_active_config returns a frozen RuleConfig from a custom template", function()
+            local created = templates.create({ fromBuiltin = "russian", name = "Custom" })
+            assert.is_true(created.ok)
+            templates.set_active_id(created.template.id)
+            local cfg = templates.resolve_active_config()
+            assert.is_true(rule_config.is_rule_config(cfg))
+        end)
+
+        it("resolve_active_config falls back to canonical when the id is unknown", function()
+            templates.set_active_id("does-not-exist")
+            local cfg = templates.resolve_active_config()
+            assert.are.equal(rule_config.canonical_russian, cfg)
+        end)
+
+        it("resolve_active_config falls back to canonical when blob invalid", function()
+            -- Plant a row that survives outer-envelope validation but fails
+            -- inner rule_config.try_new (set bidding to a wrong type).
+            local good = builtin_blob("russian")
+            good.bidding.opening_min = "not-a-number"
+            local bad_template = {
+                schemaVersion = 1,
+                id = "broken",
+                name = "Broken",
+                parentTemplateId = "russian",
+                starred = false,
+                createdAt = 1,
+                updatedAt = 1,
+                ruleConfig = good,
+            }
+            -- Inject directly via the storage to bypass M.update validation.
+            store["templates.json"] = json.encode({
+                schemaVersion = 1,
+                templates = { bad_template },
+            })
+            templates._reload()
+            templates.set_active_id("broken")
+            local cfg = templates.resolve_active_config()
+            assert.are.equal(rule_config.canonical_russian, cfg)
+        end)
+    end)
 end)

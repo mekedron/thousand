@@ -130,4 +130,8 @@ function Manager:resize(w, h)
     return dispatch(self, "resize", w, h)
 end
 
+function Manager:wheelmoved(dx, dy)
+    return dispatch(self, "wheelmoved", dx, dy)
+end
+
 return M

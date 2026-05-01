@@ -31,6 +31,11 @@ local DEFAULTS = {
     -- curtain is the privacy guarantee. Disable for testing or for a
     -- single human flipping through every seat themselves.
     hot_seat_privacy = true,
+    -- Identifier of the rule template a fresh "New Game" should use.
+    -- Defaults to the canonical Russian built-in; the picker writes a
+    -- different built-in or a custom-template id here when the player
+    -- presses "Use this template".
+    active_template_id = "russian",
 }
 
 local function copy(t)
@@ -99,6 +104,9 @@ local function validate(blob)
     local out = copy(DEFAULTS)
     if type(blob.hot_seat_privacy) == "boolean" then
         out.hot_seat_privacy = blob.hot_seat_privacy
+    end
+    if type(blob.active_template_id) == "string" then
+        out.active_template_id = blob.active_template_id
     end
     return out
 end

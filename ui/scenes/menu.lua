@@ -23,6 +23,7 @@ local Button = require("ui.button")
 local FocusGroup = require("ui.focus_group")
 local Session = require("app.session")
 local auto_save = require("app.auto_save")
+local app_templates = require("app.templates")
 local t = i18n.t
 
 local M = {}
@@ -55,7 +56,8 @@ function M:_build_buttons()
                 -- a half-played deal from the previous session does not
                 -- silently overwrite the fresh shuffle.
                 auto_save.clear()
-                self._manager:set_session(Session.new())
+                local config = app_templates.resolve_active_config()
+                self._manager:set_session(Session.new({ config = config }))
                 self._manager:switch_to("table")
             end,
         }),
@@ -75,6 +77,14 @@ function M:_build_buttons()
             enabled = self._manager:is_game_active(),
             on_press = function()
                 self:_open_modal()
+            end,
+        }),
+        Button.new({
+            id = "templates", -- i18n-ok
+            label_key = "scene.menu.templates",
+            enabled = true,
+            on_press = function()
+                self._manager:switch_to("template_picker")
             end,
         }),
         Button.new({

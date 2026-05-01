@@ -681,6 +681,34 @@ describe("core.rule_config", function()
             assert.is_nil(rule_config.schema_for(""))
             assert.is_nil(rule_config.schema_for(42))
         end)
+    end)
+
+    describe("sections", function()
+        it("returns the canonical section traversal order", function()
+            local sections = rule_config.sections()
+            assert.are.same({
+                "cards",
+                "players",
+                "dealing",
+                "talon",
+                "bidding",
+                "marriages",
+                "tricks",
+                "scoring",
+                "opening_game",
+                "barrel",
+                "endgame",
+                "specials",
+                "penalties",
+            }, sections)
+        end)
+
+        it("returns a fresh copy that callers can mutate without affecting the schema", function()
+            local first = rule_config.sections()
+            first[1] = "tampered"
+            local second = rule_config.sections()
+            assert.are.equal("cards", second[1])
+        end)
 
         it("exposes lua_type, default, and a known status on every catalogued leaf", function()
             local catalogue = {

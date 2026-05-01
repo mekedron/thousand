@@ -374,7 +374,7 @@ variant** — only data.
 
 ### 3.5 Template UI
 
-- [ ] Build the template picker and editor.
+- [x] Build the template picker and editor.
   - Game start shows built-in templates first, then user templates.
   - Editor groups toggles by the sections in this phase.
   - Each toggle has short inline help linked to the relevant rules page.
