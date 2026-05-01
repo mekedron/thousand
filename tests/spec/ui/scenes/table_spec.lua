@@ -222,6 +222,170 @@ describe("ui.scenes.table", function()
         )
     end)
 
+    describe("legal-action affordances", function()
+        local function fake_envelope(code, extra)
+            local err = { code = code, message = code }
+            if extra then
+                for k, v in pairs(extra) do
+                    err[k] = v
+                end
+            end
+            return { ok = false, error = err }
+        end
+
+        it("must_follow_violation surfaces the localised must-follow toast", function()
+            scene:_invoke(fake_envelope("must_follow_violation", { led_suit = "hearts" }))
+            scene:draw(1024, 720)
+            assert.is_not_nil(
+                find_text(
+                    mock,
+                    t("scene.table.toast.must_follow", { suit = t("card.suit.hearts") })
+                ),
+                "must-follow toast with the led-suit glyph"
+            )
+        end)
+
+        it("must_beat_violation surfaces the localised must-beat toast", function()
+            scene:_invoke(fake_envelope("must_beat_violation", { led_suit = "diamonds" }))
+            scene:draw(1024, 720)
+            assert.is_not_nil(
+                find_text(
+                    mock,
+                    t("scene.table.toast.must_beat", { suit = t("card.suit.diamonds") })
+                ),
+                "must-beat toast with the led-suit glyph"
+            )
+        end)
+
+        it("must_trump_violation surfaces the localised must-trump toast", function()
+            scene:_invoke(fake_envelope("must_trump_violation", { trump = "spades" }))
+            scene:draw(1024, 720)
+            local glyph = t("card.suit.spades")
+            assert.is_not_nil(
+                find_text(mock, t("scene.table.toast.must_trump", { suit = glyph })),
+                "must-trump toast with the trump-suit glyph"
+            )
+        end)
+
+        it("must_overtrump_violation surfaces the localised must-overtrump toast", function()
+            scene:_invoke(fake_envelope("must_overtrump_violation", { trump = "clubs" }))
+            scene:draw(1024, 720)
+            assert.is_not_nil(
+                find_text(
+                    mock,
+                    t("scene.table.toast.must_overtrump", { suit = t("card.suit.clubs") })
+                ),
+                "must-overtrump toast with the trump-suit glyph"
+            )
+        end)
+
+        it("card_not_in_hand surfaces its own localised toast", function()
+            scene:_invoke(fake_envelope("card_not_in_hand"))
+            scene:draw(1024, 720)
+            assert.is_not_nil(
+                find_text(mock, t("scene.table.toast.card_not_in_hand")),
+                "card-not-in-hand toast"
+            )
+        end)
+
+        it("falls back to the generic illegal_play toast for unknown engine codes", function()
+            scene:_invoke(fake_envelope("future_unknown_code", { message = "engine said no" }))
+            scene:draw(1024, 720)
+            assert.is_not_nil(
+                find_text(mock, t("scene.table.toast.illegal_play", { reason = "engine said no" })),
+                "fallback illegal_play toast"
+            )
+        end)
+
+        it("hover does not lift an illegal card", function()
+            -- Drive the session into a state where the active player has
+            -- both clubs (led suit) and at least one off-suit card; the
+            -- engine then marks the off-suit card illegal, and the scene
+            -- must NOT lift it under hover.
+            reset_modules()
+            local i18n = require("app.i18n")
+            i18n._reset()
+            i18n._set_logger(function() end)
+            i18n.set_locale("en")
+            local Session = require("app.session")
+            local view_model = require("app.table_view_model")
+
+            local s = Session.new({ seed = 42, dealer = 1 })
+            assert(s:bid(2, 100).ok)
+            assert(s:pass(3).ok)
+            assert(s:pass(1).ok)
+            assert(s:take_talon().ok)
+            local hand = s:hands()[2]
+            assert(s:pass_talon(1, hand[1]).ok)
+            hand = s:hands()[2]
+            assert(s:pass_talon(3, hand[1]).ok)
+            assert(s:skip_raise().ok)
+
+            -- Lead a card so the next seat's hand is constrained by
+            -- must-follow. Pick the leader's first legal card.
+            local leader = s:current_turn()
+            local leader_card = s:legal_cards(leader)[1]
+            assert(s:play(leader, leader_card).ok)
+
+            -- Construct a manager whose session() returns a wrapper:
+            -- the active hand for the new turn is what matters. Build
+            -- the scene against `s` directly.
+            local table_scene = require("ui.scenes.table")
+            local sc = table_scene.new(fake_manager(s))
+            sc:enter(nil, nil)
+            -- Suppress the privacy curtain so the hover test can see
+            -- the active hand.
+            sc._curtain = nil
+            sc._last_revealed_seat = s:current_turn()
+            sc._input_mode = "mouse"
+
+            local view = view_model.from_session(s)
+            local turn = view.turn_player
+            local active_hand = view.hands[turn]
+            assert.is_not_nil(active_hand.card_legality, "active hand should expose card_legality")
+
+            local illegal_index
+            for i, legal in ipairs(active_hand.card_legality) do
+                if legal == false then
+                    illegal_index = i
+                    break
+                end
+            end
+            assert.is_not_nil(
+                illegal_index,
+                "test fixture should produce at least one illegal card after a constrained lead"
+            )
+
+            sc._hovered_card_index = illegal_index
+            mock.graphics.clear_recording()
+            sc:draw(1024, 720)
+
+            -- After the draw, the scene's _hand_card_rects[i] holds the
+            -- base rect (.rect.y) for that card. If hover had lifted the
+            -- card, an extra fill rectangle would have appeared at
+            -- (rect.y - CARD_HOVER_LIFT). Assert no such rectangle was
+            -- drawn for the illegal card's column.
+            local entry = sc._hand_card_rects[illegal_index]
+            assert.is_not_nil(entry, "illegal card should have a recorded hand rect")
+            local base_y = entry.rect.y
+            local lifted_y = base_y - 12 -- CARD_HOVER_LIFT in the scene
+            local saw_lift = false
+            for _, op in ipairs(mock.graphics.recording()) do
+                if
+                    op.op == "rectangle"
+                    and op.mode == "fill"
+                    and op.x == entry.rect.x
+                    and op.w == entry.rect.w
+                    and op.y == lifted_y
+                then
+                    saw_lift = true
+                    break
+                end
+            end
+            assert.is_false(saw_lift, "illegal card should not lift under hover")
+        end)
+    end)
+
     it("opens the marriage modal when active player taps K of a marriage suit", function()
         reset_modules()
         local i18n = require("app.i18n")

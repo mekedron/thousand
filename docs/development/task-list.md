@@ -214,7 +214,7 @@ porting pass later, not a UI rewrite.
     speed.
   - Disabling the toggle suppresses the privacy curtain entirely so a
     single tester can drive every seat without dismissing between turns.
-- [ ] Add legal-action affordances.
+- [x] Add legal-action affordances.
   - Cards that are legal under must-follow, must-beat, and must-trump rules
     can be visually distinguished.
   - Illegal player actions are blocked with localised feedback.
