@@ -100,4 +100,18 @@ return {
     ["card.rank.A"] = "A",
 
     ["greeting.welcome"] = "Welcome, %{name}!",
+
+    ["rule_config.error.not_a_table"] = "Rule config must be a table, got %{actual}.",
+    ["rule_config.error.unknown_field"] = "Unknown rule_config field %{path}.",
+    ["rule_config.error.missing_field"] = "Required field %{path} is missing.",
+    ["rule_config.error.type_mismatch"] = "%{path} must be %{expected}, got %{actual}.",
+    ["rule_config.error.value_not_allowed"] = "%{path} = %{value} is not one of %{allowed}.",
+    ["rule_config.error.value_out_of_range"] = "%{path} = %{value} is out of range.",
+    ["rule_config.error.unsupported_schema_version"] = "Unsupported schema version %{version} (supported: %{supported}).",
+    ["rule_config.error.deferred_field_changed"] = "Field %{path} is not yet selectable.",
+    ["rule_config.error.incompatible_combination"] = "Invalid combination: %{invariant}.",
+    ["rule_config.error.json_decode_failed"] = "Could not decode rule_config JSON: %{details}.",
+
+    ["rule_config.invariant.pre_talon_max_ge_opening_min"] = "Pre-talon maximum (%{pre_talon_max}) must be at least the opening minimum (%{opening_min}).",
+    ["rule_config.invariant.barrel_threshold_below_target"] = "Barrel threshold (%{threshold}) must be below the target score (%{target_score}).",
 }

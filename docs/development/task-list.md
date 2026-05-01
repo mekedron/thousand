@@ -242,7 +242,7 @@ accidentally depend on it.
 
 ### 3.1 `RuleConfig` model & engine wiring
 
-- [ ] Expand `RuleConfig` into the single schema for every engine toggle.
+- [x] Expand `RuleConfig` into the single schema for every engine toggle.
   - Every field has a type, allowed values, default value, and
     `schemaVersion` handling.
   - Every field records whether it is implemented, selectable, or deferred.

@@ -7,10 +7,35 @@
 -- is shaped so Phase 3 variants (Polish, Ukrainian, 2-/4-player, custom)
 -- plug in as data only, with no engine code changes.
 --
--- Shape: top-level keys mirror the toggle catalogue in development/task-list
--- §3.2 (`cards`, `players`, `talon`, `bidding`, `marriages`, `tricks`,
--- `scoring`, `barrel`, `endgame`). Phase 1 populates only the fields it
--- implements; Phase 3 expands the catalogue.
+-- Schema. The private `SCHEMA` table is the contract: every field declares
+-- its lua_type, default, status (implemented / selectable / deferred), and
+-- where applicable, allowed values, min/max, or required nested keys. New
+-- toggles in 3.2 land as new SCHEMA entries; the validator below adapts
+-- automatically. `M.schema_for(path)` exposes a descriptor for the UI and
+-- tests; `M.try_new` and `M.from_json` use the same descriptors to validate.
+--
+-- Status flags:
+--   * "implemented" — the engine reads the field; UI may set any in-range
+--     value.
+--   * "selectable"  — same as "implemented" for validation; reserved as a
+--     UI hint. Phase 3.2 starts using this for toggles whose UI affordances
+--     are settled but whose engine behaviour is still landing.
+--   * "deferred"    — only the schema's `default` value is accepted. The
+--     framework's promise that the engine's reads remain backed by canonical
+--     values until a future task flips the flag.
+--
+-- JSON. `M.to_json(config)` and `M.from_json(string)` round-trip a config
+-- through JSON via app/json. The blob includes `schema_version`; mismatched
+-- versions are rejected (Phase 9 owns forward migrations).
+--
+-- Errors. `M.try_new` and `M.from_json` return
+--   { ok = true, config = <frozen> }
+-- or
+--   { ok = false, error = { code = "...", ...context } }
+-- following the same envelope core/auction.lua, core/tricks.lua, etc. use.
+-- Codes are stable strings; the UI maps them to "rule_config.error.<code>"
+-- in the locale tables. `M.new` keeps its current contract and raises on
+-- failure for backwards compatibility with the existing engine wiring.
 --
 -- Immutability: top-level configs and their section sub-tables are wrapped
 -- in a write-blocking proxy. Reads pass through; assignments raise. List-
@@ -19,19 +44,582 @@
 -- and `ipairs` work — engine code reads through them constantly. The
 -- protection target is accidental writes to named fields like
 -- `config.bidding.opening_min`, which the proxy catches loudly.
---
--- Version: `schema_version` is a single integer at the top level. Phase 1
--- ships version 1; future migrations live in a separate module added when
--- the first migration is needed.
+
+local json = require("app.json")
 
 local M = {}
 
 M.SCHEMA_VERSION = 1
 
-local SUPPORTED_SCHEMA_VERSIONS = { [1] = true }
-
 local RULE_CONFIG_TYPE = "thousand.rule_config"
 local SECTION_TYPE = "thousand.rule_config.section"
+
+-- Schema -----------------------------------------------------------------
+--
+-- `_section_order` doubles as the section traversal order for validation
+-- and serialisation, so error reports and JSON output are deterministic.
+-- Inside each section, `field_order` plays the same role: cards lists
+-- `trick_rank_order` before `point_values` because point_values's
+-- `key_set_from` references trick_rank_order.
+
+local SCHEMA = {
+    _section_order = {
+        "cards",
+        "players",
+        "talon",
+        "bidding",
+        "marriages",
+        "tricks",
+        "scoring",
+        "barrel",
+        "endgame",
+    },
+    schema_version = {
+        kind = "leaf",
+        lua_type = "number",
+        allowed = { 1 },
+        default = 1,
+        status = "implemented",
+    },
+    cards = {
+        kind = "section",
+        field_order = { "trick_rank_order", "point_values" },
+        fields = {
+            trick_rank_order = {
+                kind = "list",
+                element_type = "string",
+                default = { "9", "J", "Q", "K", "10", "A" },
+                status = "implemented",
+            },
+            point_values = {
+                kind = "map",
+                value_type = "number",
+                key_set_from = "cards.trick_rank_order",
+                default = {
+                    ["A"] = 11,
+                    ["10"] = 10,
+                    ["K"] = 4,
+                    ["Q"] = 3,
+                    ["J"] = 2,
+                    ["9"] = 0,
+                },
+                status = "implemented",
+            },
+        },
+    },
+    players = {
+        kind = "section",
+        field_order = { "count" },
+        fields = {
+            -- Phase 3.2's player-count toggle will narrow this to {2, 3, 4}.
+            -- Until then the schema only enforces "positive integer"; the
+            -- dealing module rejects unsupported counts at runtime.
+            count = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 1,
+                default = 3,
+                status = "implemented",
+            },
+        },
+    },
+    talon = {
+        kind = "section",
+        field_order = { "size" },
+        fields = {
+            size = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 0,
+                default = 3,
+                status = "implemented",
+            },
+        },
+    },
+    bidding = {
+        kind = "section",
+        field_order = {
+            "opening_min",
+            "pre_talon_max",
+            "increment_below_200",
+            "increment_from_200",
+        },
+        fields = {
+            opening_min = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 10,
+                default = 100,
+                status = "implemented",
+            },
+            pre_talon_max = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 10,
+                default = 120,
+                status = "implemented",
+            },
+            increment_below_200 = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 1,
+                default = 5,
+                status = "implemented",
+            },
+            increment_from_200 = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 1,
+                default = 10,
+                status = "implemented",
+            },
+        },
+    },
+    marriages = {
+        kind = "section",
+        field_order = { "values" },
+        fields = {
+            values = {
+                kind = "map",
+                value_type = "number",
+                required_keys = { "hearts", "diamonds", "clubs", "spades" },
+                default = { hearts = 100, diamonds = 80, clubs = 60, spades = 40 },
+                status = "implemented",
+            },
+        },
+    },
+    tricks = {
+        kind = "section",
+        field_order = { "must_follow", "must_beat", "must_trump", "must_overtrump" },
+        fields = {
+            must_follow = {
+                kind = "leaf",
+                lua_type = "boolean",
+                default = true,
+                status = "implemented",
+            },
+            must_beat = {
+                kind = "leaf",
+                lua_type = "boolean",
+                default = true,
+                status = "implemented",
+            },
+            must_trump = {
+                kind = "leaf",
+                lua_type = "boolean",
+                default = true,
+                status = "implemented",
+            },
+            must_overtrump = {
+                kind = "leaf",
+                lua_type = "boolean",
+                default = true,
+                status = "implemented",
+            },
+        },
+    },
+    scoring = {
+        kind = "section",
+        field_order = { "round_to_nearest" },
+        fields = {
+            round_to_nearest = {
+                kind = "leaf",
+                lua_type = "number",
+                allowed = { 5 },
+                default = 5,
+                status = "implemented",
+            },
+        },
+    },
+    barrel = {
+        kind = "section",
+        field_order = { "threshold", "deal_count", "fall_off_penalty" },
+        fields = {
+            -- `fall_off_penalty` intentionally omits `min`: -120 is canonical.
+            threshold = {
+                kind = "leaf",
+                lua_type = "number",
+                default = 880,
+                status = "implemented",
+            },
+            deal_count = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 1,
+                default = 3,
+                status = "implemented",
+            },
+            fall_off_penalty = {
+                kind = "leaf",
+                lua_type = "number",
+                default = -120,
+                status = "implemented",
+            },
+        },
+    },
+    endgame = {
+        kind = "section",
+        field_order = { "target_score" },
+        fields = {
+            target_score = {
+                kind = "leaf",
+                lua_type = "number",
+                default = 1000,
+                status = "implemented",
+            },
+        },
+    },
+}
+
+-- Cross-field invariants. Each entry's `predicate` returns true when the
+-- rule is satisfied; `context` returns a table of detail fields the UI
+-- feeds into t("rule_config.invariant." .. name, context).
+
+local INVARIANTS = {
+    {
+        name = "pre_talon_max_ge_opening_min",
+        predicate = function(blob)
+            return blob.bidding.pre_talon_max >= blob.bidding.opening_min
+        end,
+        context = function(blob)
+            return {
+                pre_talon_max = blob.bidding.pre_talon_max,
+                opening_min = blob.bidding.opening_min,
+            }
+        end,
+    },
+    {
+        name = "barrel_threshold_below_target",
+        predicate = function(blob)
+            return blob.barrel.threshold < blob.endgame.target_score
+        end,
+        context = function(blob)
+            return {
+                threshold = blob.barrel.threshold,
+                target_score = blob.endgame.target_score,
+            }
+        end,
+    },
+}
+
+-- Validation -------------------------------------------------------------
+
+local function failure(code, extra)
+    local err = { code = code }
+    if extra then
+        for k, v in pairs(extra) do
+            err[k] = v
+        end
+    end
+    return { ok = false, error = err }
+end
+
+local function deep_equal(a, b)
+    if type(a) ~= type(b) then
+        return false
+    end
+    if type(a) ~= "table" then
+        return a == b
+    end
+    for k, v in pairs(a) do
+        if not deep_equal(v, b[k]) then
+            return false
+        end
+    end
+    for k in pairs(b) do
+        if a[k] == nil then
+            return false
+        end
+    end
+    return true
+end
+
+local function in_set(value, allowed)
+    if not allowed then
+        return true
+    end
+    for _, candidate in ipairs(allowed) do
+        if value == candidate then
+            return true
+        end
+    end
+    return false
+end
+
+local function set_from_list(t)
+    local out = {}
+    for _, v in ipairs(t) do
+        out[v] = true
+    end
+    return out
+end
+
+local function format_path(parts)
+    return table.concat(parts, ".")
+end
+
+local function describe_value_short(v)
+    local tv = type(v)
+    if tv == "string" then
+        return string.format("%q", v)
+    elseif tv == "table" then
+        return "<table>"
+    end
+    return tostring(v)
+end
+
+local function format_allowed(allowed)
+    if not allowed then
+        return "[]"
+    end
+    local parts = {}
+    for i, v in ipairs(allowed) do
+        parts[i] = describe_value_short(v)
+    end
+    return "[" .. table.concat(parts, ", ") .. "]"
+end
+
+local function lookup_path(blob, path)
+    local current = blob
+    for segment in tostring(path):gmatch("[^.]+") do
+        if type(current) ~= "table" then
+            return nil
+        end
+        current = current[segment]
+    end
+    return current
+end
+
+local function child_path(path, segment)
+    local out = {}
+    for i = 1, #path do
+        out[i] = path[i]
+    end
+    out[#out + 1] = tostring(segment)
+    return out
+end
+
+local function validate_leaf(value, descriptor, path)
+    if type(value) ~= descriptor.lua_type then
+        return failure("type_mismatch", {
+            path = format_path(path),
+            expected = descriptor.lua_type,
+            actual = type(value),
+        })
+    end
+    if descriptor.status == "deferred" and not deep_equal(value, descriptor.default) then
+        return failure("deferred_field_changed", { path = format_path(path) })
+    end
+    if not in_set(value, descriptor.allowed) then
+        return failure("value_not_allowed", {
+            path = format_path(path),
+            value = value,
+            allowed = format_allowed(descriptor.allowed),
+        })
+    end
+    if descriptor.min and value < descriptor.min then
+        return failure("value_out_of_range", {
+            path = format_path(path),
+            value = value,
+        })
+    end
+    if descriptor.max and value > descriptor.max then
+        return failure("value_out_of_range", {
+            path = format_path(path),
+            value = value,
+        })
+    end
+    return { ok = true }
+end
+
+local function is_dense_array(t)
+    local n = #t
+    local count = 0
+    for k in pairs(t) do
+        if type(k) ~= "number" or k ~= math.floor(k) or k < 1 or k > n then
+            return false
+        end
+        count = count + 1
+    end
+    return count == n
+end
+
+local function validate_list(value, descriptor, path)
+    if type(value) ~= "table" or not is_dense_array(value) then
+        return failure("type_mismatch", {
+            path = format_path(path),
+            expected = "list",
+            actual = type(value) == "table" and "non-list table" or type(value),
+        })
+    end
+    if descriptor.status == "deferred" and not deep_equal(value, descriptor.default) then
+        return failure("deferred_field_changed", { path = format_path(path) })
+    end
+    if descriptor.element_type then
+        for i = 1, #value do
+            if type(value[i]) ~= descriptor.element_type then
+                return failure("type_mismatch", {
+                    path = format_path(child_path(path, i)),
+                    expected = descriptor.element_type,
+                    actual = type(value[i]),
+                })
+            end
+        end
+    end
+    return { ok = true }
+end
+
+local function validate_map(value, descriptor, path, full_blob)
+    if type(value) ~= "table" then
+        return failure("type_mismatch", {
+            path = format_path(path),
+            expected = "table",
+            actual = type(value),
+        })
+    end
+    if descriptor.status == "deferred" and not deep_equal(value, descriptor.default) then
+        return failure("deferred_field_changed", { path = format_path(path) })
+    end
+    local required
+    if descriptor.required_keys then
+        required = descriptor.required_keys
+    elseif descriptor.key_set_from then
+        local resolved = lookup_path(full_blob, descriptor.key_set_from)
+        if type(resolved) ~= "table" then
+            return failure("missing_field", { path = descriptor.key_set_from })
+        end
+        required = resolved
+    end
+    if required then
+        for _, key in ipairs(required) do
+            local entry = value[key]
+            if entry == nil then
+                return failure("missing_field", {
+                    path = format_path(child_path(path, key)),
+                })
+            end
+            if descriptor.value_type and type(entry) ~= descriptor.value_type then
+                return failure("type_mismatch", {
+                    path = format_path(child_path(path, key)),
+                    expected = descriptor.value_type,
+                    actual = type(entry),
+                })
+            end
+        end
+    end
+    return { ok = true }
+end
+
+local function dispatch_validate(value, descriptor, path, full_blob)
+    if descriptor.kind == "leaf" then
+        return validate_leaf(value, descriptor, path)
+    elseif descriptor.kind == "list" then
+        return validate_list(value, descriptor, path)
+    elseif descriptor.kind == "map" then
+        return validate_map(value, descriptor, path, full_blob)
+    end
+    error("rule_config: bad schema descriptor at " .. format_path(path), 2)
+end
+
+local function validate_section(blob, name, section_schema)
+    local section = blob[name]
+    if section == nil then
+        return failure("missing_field", { path = name })
+    end
+    if type(section) ~= "table" then
+        return failure("type_mismatch", {
+            path = name,
+            expected = "table",
+            actual = type(section),
+        })
+    end
+    local known = set_from_list(section_schema.field_order)
+    for k in pairs(section) do
+        if not known[k] then
+            return failure("unknown_field", { path = name .. "." .. tostring(k) })
+        end
+    end
+    for _, field_name in ipairs(section_schema.field_order) do
+        local descriptor = section_schema.fields[field_name]
+        local value = section[field_name]
+        if value == nil then
+            return failure("missing_field", { path = name .. "." .. field_name })
+        end
+        local res = dispatch_validate(value, descriptor, { name, field_name }, blob)
+        if not res.ok then
+            return res
+        end
+    end
+    return { ok = true }
+end
+
+local function validate_blob(blob, schema, invariants)
+    schema = schema or SCHEMA
+    if type(blob) ~= "table" then
+        return failure("not_a_table", { actual = type(blob) })
+    end
+
+    local section_order = schema._section_order
+    if type(section_order) ~= "table" then
+        error("rule_config: schema is missing _section_order", 2)
+    end
+
+    -- Schema version. All failures funnel into one code so the UI can
+    -- distinguish "save from a different build" from generic validation.
+    local sv_descriptor = schema.schema_version
+    local sv = blob.schema_version
+    if type(sv) ~= sv_descriptor.lua_type or not in_set(sv, sv_descriptor.allowed) then
+        return failure("unsupported_schema_version", {
+            version = sv,
+            supported = format_allowed(sv_descriptor.allowed),
+        })
+    end
+
+    -- Top-level unknown-key rejection.
+    local known_top = { schema_version = true }
+    for _, name in ipairs(section_order) do
+        known_top[name] = true
+    end
+    for k in pairs(blob) do
+        if not known_top[k] then
+            return failure("unknown_field", { path = tostring(k) })
+        end
+    end
+
+    -- Sections in declared order.
+    for _, name in ipairs(section_order) do
+        local section_schema = schema[name]
+        if section_schema and section_schema.kind == "section" then
+            local section_res = validate_section(blob, name, section_schema)
+            if not section_res.ok then
+                return section_res
+            end
+        end
+    end
+
+    -- Cross-field invariants. Default-on for the production schema only;
+    -- a custom test schema opts in by passing its own list (or `nil` for
+    -- "no invariants" — the default for any non-production schema).
+    local effective
+    if invariants ~= nil then
+        effective = invariants
+    elseif schema == SCHEMA then
+        effective = INVARIANTS
+    else
+        effective = {}
+    end
+    for _, invariant in ipairs(effective) do
+        if not invariant.predicate(blob) then
+            local context = invariant.context(blob)
+            context.invariant = invariant.name
+            return failure("incompatible_combination", context)
+        end
+    end
+
+    return { ok = true }
+end
+
+-- Construction -----------------------------------------------------------
 
 local function freeze(data, type_marker)
     return setmetatable({}, {
@@ -43,132 +631,38 @@ local function freeze(data, type_marker)
     })
 end
 
-local function require_field(t, key, expected_type, path)
-    local value = t[key]
-    if value == nil then
-        error(string.format("rule_config: missing %s.%s", path, tostring(key)))
-    end
-    if type(value) ~= expected_type then
-        error(
-            string.format(
-                "rule_config: %s.%s must be a %s, got %s",
-                path,
-                tostring(key),
-                expected_type,
-                type(value)
-            )
-        )
-    end
-    return value
-end
-
-local function validate_cards(section)
-    require_field(section, "point_values", "table", "cards")
-    require_field(section, "trick_rank_order", "table", "cards")
-    for _, rank in ipairs(section.trick_rank_order) do
-        if section.point_values[rank] == nil then
-            error("rule_config: cards.point_values is missing rank " .. tostring(rank))
-        end
-        if type(section.point_values[rank]) ~= "number" then
-            error("rule_config: cards.point_values." .. tostring(rank) .. " must be a number")
-        end
-    end
-end
-
-local function validate_players(section)
-    require_field(section, "count", "number", "players")
-end
-
-local function validate_talon(section)
-    require_field(section, "size", "number", "talon")
-end
-
-local function validate_bidding(section)
-    require_field(section, "opening_min", "number", "bidding")
-    require_field(section, "pre_talon_max", "number", "bidding")
-    require_field(section, "increment_below_200", "number", "bidding")
-    require_field(section, "increment_from_200", "number", "bidding")
-end
-
-local function validate_marriages(section)
-    require_field(section, "values", "table", "marriages")
-    require_field(section.values, "hearts", "number", "marriages.values")
-    require_field(section.values, "diamonds", "number", "marriages.values")
-    require_field(section.values, "clubs", "number", "marriages.values")
-    require_field(section.values, "spades", "number", "marriages.values")
-end
-
-local function validate_tricks(section)
-    require_field(section, "must_follow", "boolean", "tricks")
-    require_field(section, "must_beat", "boolean", "tricks")
-    require_field(section, "must_trump", "boolean", "tricks")
-    require_field(section, "must_overtrump", "boolean", "tricks")
-end
-
-local function validate_scoring(section)
-    require_field(section, "round_to_nearest", "number", "scoring")
-end
-
-local function validate_barrel(section)
-    require_field(section, "threshold", "number", "barrel")
-    require_field(section, "deal_count", "number", "barrel")
-    require_field(section, "fall_off_penalty", "number", "barrel")
-end
-
-local function validate_endgame(section)
-    require_field(section, "target_score", "number", "endgame")
-end
-
-local SECTION_VALIDATORS = {
-    cards = validate_cards,
-    players = validate_players,
-    talon = validate_talon,
-    bidding = validate_bidding,
-    marriages = validate_marriages,
-    tricks = validate_tricks,
-    scoring = validate_scoring,
-    barrel = validate_barrel,
-    endgame = validate_endgame,
-}
-
-local SECTION_NAMES = {
-    "cards",
-    "players",
-    "talon",
-    "bidding",
-    "marriages",
-    "tricks",
-    "scoring",
-    "barrel",
-    "endgame",
-}
-
-function M.new(t)
-    if type(t) ~= "table" then
-        error("rule_config.new expects a table, got " .. type(t))
-    end
-
-    local schema_version = t.schema_version
-    if type(schema_version) ~= "number" then
-        error("rule_config: schema_version must be a number")
-    end
-    if not SUPPORTED_SCHEMA_VERSIONS[schema_version] then
-        error("rule_config: unsupported schema_version " .. tostring(schema_version))
-    end
-
-    for _, name in ipairs(SECTION_NAMES) do
-        local section = t[name]
-        if type(section) ~= "table" then
-            error("rule_config: missing or non-table section " .. name)
-        end
-        SECTION_VALIDATORS[name](section)
-    end
-
-    local data = { schema_version = schema_version }
-    for _, name in ipairs(SECTION_NAMES) do
-        data[name] = freeze(t[name], SECTION_TYPE)
+local function build_frozen(blob)
+    local data = { schema_version = blob.schema_version }
+    for _, name in ipairs(SCHEMA._section_order) do
+        data[name] = freeze(blob[name], SECTION_TYPE)
     end
     return freeze(data, RULE_CONFIG_TYPE)
+end
+
+function M.try_new(blob)
+    local res = validate_blob(blob)
+    if not res.ok then
+        return res
+    end
+    return { ok = true, config = build_frozen(blob) }
+end
+
+function M.new(blob)
+    local res = M.try_new(blob)
+    if res.ok then
+        return res.config
+    end
+    -- Render a developer-facing summary. Existing tests use `assert.has_error`,
+    -- so the exact text is not pinned; the error code is the contract for
+    -- anyone inspecting structured diagnostics.
+    local err = res.error
+    local parts = { "rule_config: " .. tostring(err.code) }
+    for k, v in pairs(err) do
+        if k ~= "code" then
+            parts[#parts + 1] = tostring(k) .. "=" .. tostring(v)
+        end
+    end
+    error(table.concat(parts, " "), 2)
 end
 
 function M.is_rule_config(v)
@@ -177,6 +671,114 @@ function M.is_rule_config(v)
     end
     return getmetatable(v) == RULE_CONFIG_TYPE
 end
+
+-- Schema reflection ------------------------------------------------------
+
+local function clone_descriptor(node)
+    local out = {}
+    for k, v in pairs(node) do
+        if type(v) == "table" then
+            local copy = {}
+            for ki, vi in pairs(v) do
+                copy[ki] = vi
+            end
+            out[k] = copy
+        else
+            out[k] = v
+        end
+    end
+    return out
+end
+
+function M.schema_for(path)
+    if type(path) ~= "string" then
+        return nil
+    end
+    local segments = {}
+    for s in path:gmatch("[^.]+") do
+        segments[#segments + 1] = s
+    end
+    if #segments == 0 then
+        return nil
+    end
+    local first = segments[1]
+    if first == "schema_version" and #segments == 1 then
+        return clone_descriptor(SCHEMA.schema_version)
+    end
+    local section = SCHEMA[first]
+    if not section or section.kind ~= "section" then
+        return nil
+    end
+    if #segments == 1 then
+        local fields = {}
+        for i, name in ipairs(section.field_order) do
+            fields[i] = name
+        end
+        return { kind = "section", fields = fields }
+    end
+    if #segments ~= 2 then
+        return nil
+    end
+    local descriptor = section.fields[segments[2]]
+    if not descriptor then
+        return nil
+    end
+    return clone_descriptor(descriptor)
+end
+
+-- JSON round-trip --------------------------------------------------------
+
+local function plain_copy(value)
+    if type(value) ~= "table" then
+        return value
+    end
+    local out = {}
+    for k, v in pairs(value) do
+        out[k] = plain_copy(v)
+    end
+    return out
+end
+
+function M.to_json(config)
+    if not M.is_rule_config(config) then
+        error("rule_config.to_json expects a RuleConfig, got " .. type(config), 2)
+    end
+    local data = { schema_version = config.schema_version }
+    for _, name in ipairs(SCHEMA._section_order) do
+        local section_schema = SCHEMA[name]
+        local section_out = {}
+        for _, field_name in ipairs(section_schema.field_order) do
+            section_out[field_name] = plain_copy(config[name][field_name])
+        end
+        data[name] = section_out
+    end
+    return json.encode(data)
+end
+
+function M.from_json(s)
+    if type(s) ~= "string" then
+        return failure("type_mismatch", {
+            path = "json",
+            expected = "string",
+            actual = type(s),
+        })
+    end
+    local decoded, err = json.decode(s)
+    if decoded == nil then
+        return failure("json_decode_failed", { details = tostring(err) })
+    end
+    return M.try_new(decoded)
+end
+
+-- Test hook: run validation only, optionally against a custom schema.
+-- Mirrors app/i18n.lua's `_set_locale_table` / `_reset` convention. Used
+-- by specs to exercise the deferred-field path and other schema-shape
+-- variations without mutating the production SCHEMA table.
+function M._validate(blob, schema_override)
+    return validate_blob(blob, schema_override)
+end
+
+-- Canonical instance -----------------------------------------------------
 
 M.canonical_russian = M.new({
     schema_version = 1,
