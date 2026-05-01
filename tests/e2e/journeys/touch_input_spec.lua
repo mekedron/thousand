@@ -85,6 +85,11 @@ describe("e2e: touch input", function()
             local rect = smallest_rect_under_text(j, j:find_localised("scene.menu.new_game"))
             j:click(rect_center(rect))
             j:step()
+            -- Dismiss the privacy curtain that greets every entry to
+            -- the table scene; this test is about the touch path on the
+            -- back button, not the curtain's tap-anywhere dismissal.
+            j:touch(10, 10)
+            j:step()
             local back_label = j:find_localised("scene.table.back_to_menu")
             local back_rect = smallest_rect_under_text(j, back_label)
             j:touch(rect_center(back_rect))

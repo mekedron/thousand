@@ -201,7 +201,7 @@ porting pass later, not a UI rewrite.
   - Talon reveal and pass-card interactions are playable.
   - Marriage declaration is available when leading a K or Q from a held
     marriage.
-- [ ] Add hot-seat privacy and hand-off flow.
+- [x] Add hot-seat privacy and hand-off flow.
   - A pass-to-next-player overlay hides inactive hands.
   - Each player only sees their own hand during private decisions.
 - [ ] Add legal-action affordances.

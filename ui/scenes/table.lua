@@ -24,11 +24,14 @@
 -- The trump-flip-from-next-trick timing rule lives in app/session.lua.
 --
 -- Privacy: opponents render as face-down stacks even though the engine
--- state knows their cards. The privacy hand-off task layers a
--- between-turns overlay on top of this — when it lands, the only delta
--- is that the active seat also goes face-down until the player taps
--- "ready". Today the active seat is whichever hand has perspective ==
--- "self" in the view-model.
+-- state knows their cards. The hot-seat hand-off layers a full-opacity
+-- between-turns curtain on top of the normal render pass — see
+-- `_apply_curtain_trigger` and `draw_privacy_curtain`. The curtain is
+-- raised whenever `current_turn` changes to a seat the curtain has not
+-- yet revealed for, and dismissed by a tap, Enter, or Space; Esc
+-- routes back to the menu. The active seat is whichever hand has
+-- perspective == "self" in the view-model — the curtain hides that
+-- hand entirely until the new player taps Ready.
 
 local i18n = require("app.i18n")
 local Button = require("ui.button")
@@ -63,6 +66,10 @@ local TOAST_BG = { 0.30, 0.06, 0.06, 0.92 }
 local TOAST_FG = { 1.0, 0.92, 0.85, 1 }
 local MODAL_BG = { 0.12, 0.18, 0.14, 1 }
 local MODAL_DIM = { 0, 0, 0, 0.6 }
+-- The privacy curtain backdrop is fully opaque so the previous player's
+-- hand cannot leak through, even for a frame. The 0.6-alpha MODAL_DIM
+-- used for the marriage prompt would not be private enough.
+local CURTAIN_BG = { 0, 0, 0, 1 }
 local FOCUS_OUTLINE = { 0.95, 0.95, 0.55, 1 }
 local ILLEGAL_DIM = { 0, 0, 0, 0.55 }
 
@@ -110,6 +117,15 @@ function M.new(manager)
         -- focus ring instead and suppresses the hover lift. The mode
         -- flips back the moment the other input fires.
         _input_mode = nil,
+        -- Hot-seat privacy. When the active seat changes, _curtain is
+        -- raised — a full-opacity overlay that hides the table until
+        -- the new player taps Ready. _last_revealed_seat tracks which
+        -- seat the curtain has most recently dismissed for, so the
+        -- trigger logic in draw() can compare it to view.turn_player.
+        _curtain = nil,
+        _last_revealed_seat = nil,
+        _curtain_button = nil,
+        _curtain_focus = nil,
     }, M)
     self._back_button = Button.new({
         id = "back_to_menu", -- i18n-ok
@@ -155,6 +171,14 @@ function M:enter(_prev_id, _params)
     self._hovered_card_index = nil
     self._focus_index = nil
     self._input_mode = nil
+    -- Re-entering the table always re-curtains: whoever picks the
+    -- device up after leaving the menu hasn't yet asserted their seat
+    -- identity. The first draw() will raise the curtain for whichever
+    -- seat current_turn returns.
+    self._curtain = nil
+    self._last_revealed_seat = nil
+    self._curtain_button = nil
+    self._curtain_focus = nil
     self:_refresh_view_model()
 end
 
@@ -536,6 +560,52 @@ function M:_close_marriage_modal()
     self._marriage_payload = nil
     self._modal_buttons = {}
     self._modal_focus = nil
+end
+
+-- Privacy curtain ------------------------------------------------------
+
+function M:_open_curtain(for_seat)
+    self._curtain = { for_seat = for_seat }
+    local ready = Button.new({
+        id = "privacy_ready", -- i18n-ok
+        label_key = "scene.table.privacy.ready_button",
+        enabled = true,
+        on_press = function()
+            self:_close_curtain()
+        end,
+    })
+    self._curtain_button = ready
+    self._curtain_focus = FocusGroup.new({ ready })
+    self._curtain_focus:focus(ready)
+end
+
+function M:_close_curtain()
+    if self._curtain then
+        self._last_revealed_seat = self._curtain.for_seat
+    end
+    self._curtain = nil
+    self._curtain_button = nil
+    self._curtain_focus = nil
+end
+
+-- Decide whether the curtain should be up this frame and (re)raise it
+-- if so. Called from draw() right after the view-model is refreshed.
+-- When the active seat is nil (deal_done or done), we clear the
+-- last-revealed seat so the next non-nil turn always re-curtains —
+-- the device sat on the table during the score banner, so any seat
+-- picking it up next is a hand-off.
+function M:_apply_curtain_trigger()
+    local view = self._view_model
+    if not view or view.turn_player == nil then
+        self._last_revealed_seat = nil
+        return
+    end
+    if self._curtain then
+        return
+    end
+    if view.turn_player ~= self._last_revealed_seat then
+        self:_open_curtain(view.turn_player)
+    end
 end
 
 -- Per-frame panel building --------------------------------------------
@@ -1207,6 +1277,35 @@ local function draw_marriage_modal(self, w, h)
     end
 end
 
+local function draw_privacy_curtain(self, w, h)
+    if not self._curtain or not self._curtain_button then
+        return
+    end
+    -- Full-opacity backdrop — full screen, drawn last, before any
+    -- buttons. The active seat's hand renders behind this rectangle but
+    -- alpha 1 hides it entirely.
+    love.graphics.setColor(CURTAIN_BG)
+    love.graphics.rectangle("fill", 0, 0, w, h)
+
+    local panel_w, panel_h = 480, 220
+    local px = math.floor(w * 0.5 - panel_w * 0.5)
+    local py = math.floor(h * 0.5 - panel_h * 0.5)
+    love.graphics.setColor(MODAL_BG)
+    love.graphics.rectangle("fill", px, py, panel_w, panel_h)
+
+    love.graphics.setColor(1, 1, 1, 1)
+    local prompt = t("scene.table.privacy.prompt", { n = self._curtain.for_seat })
+    local subtitle = t("scene.table.privacy.subtitle")
+    love.graphics.printf(prompt, px + 24, py + 48, panel_w - 48, "center")
+    love.graphics.printf(subtitle, px + 24, py + 84, panel_w - 48, "center")
+
+    local btn_w, btn_h = 200, 48
+    local btn_x = px + math.floor(panel_w * 0.5 - btn_w * 0.5)
+    local btn_y = py + panel_h - btn_h - 28
+    self._curtain_button:set_rect(btn_x, btn_y, btn_w, btn_h)
+    self._curtain_button:draw()
+end
+
 local function draw_toast(self, regions)
     if not self._toast then
         return
@@ -1251,6 +1350,7 @@ function M:draw(w, h)
     love.graphics.clear(0.07, 0.22, 0.12)
 
     self:_refresh_view_model()
+    self:_apply_curtain_trigger()
     self:_rebuild_panel_if_needed(self._view_model)
 
     local regions = layout.table_regions(w, h, {
@@ -1283,6 +1383,10 @@ function M:draw(w, h)
 
     draw_toast(self, regions)
     draw_marriage_modal(self, w, h)
+    -- Privacy curtain renders last so its full-opacity backdrop sits
+    -- above every other layer, including the marriage modal — though
+    -- those two states are mutually exclusive in practice.
+    draw_privacy_curtain(self, w, h)
 
     love.graphics.setColor(1, 1, 1, 1)
 end
@@ -1294,6 +1398,9 @@ local function rect_contains(rect, x, y)
 end
 
 function M:_active_buttons()
+    if self._curtain and self._curtain_button then
+        return { self._curtain_button }
+    end
     if self._modal == "marriage" then
         return self._modal_buttons
     end
@@ -1361,8 +1468,11 @@ function M:mousemoved(x, y, _dx, _dy)
     -- Only track hover when the hand is interactive. During auction
     -- the cards are visible but the player should be choosing a bid,
     -- not their card; hovering them suggests playability that isn't
-    -- there yet.
-    if self:_hand_is_interactive() then
+    -- there yet. The privacy curtain hides the hand entirely, so no
+    -- hover tracking either.
+    if self._curtain then
+        self._hovered_card_index = nil
+    elseif self:_hand_is_interactive() then
         local _, idx = self:_card_hit(x, y)
         self._hovered_card_index = idx
     else
@@ -1372,6 +1482,16 @@ end
 
 function M:mousepressed(x, y, button)
     if button ~= 1 then
+        return
+    end
+    if self._curtain then
+        -- Tap-anywhere dismisses the curtain. Route to the Ready
+        -- button first so it can flip its pressed state for visual
+        -- feedback; the release handler clears the curtain regardless
+        -- of where the click landed.
+        if self._curtain_button then
+            self._curtain_button:on_mousepressed(x, y, button)
+        end
         return
     end
     if self._modal == "marriage" then
@@ -1418,6 +1538,24 @@ function M:mousereleased(x, y, button)
     if button ~= 1 then
         return
     end
+    if self._curtain then
+        local btn = self._curtain_button
+        if btn then
+            -- Try the button rect first for the standard release-inside
+            -- semantics (it fires its on_press and clears the curtain
+            -- via _close_curtain). If the release lands outside the
+            -- rect we still want tap-anywhere dismissal, so close the
+            -- curtain manually.
+            local fired = btn:on_mousereleased(x, y, button)
+            if not fired then
+                btn.pressed = false
+                self:_close_curtain()
+            end
+        else
+            self:_close_curtain()
+        end
+        return
+    end
     if self._modal == "marriage" then
         for _, b in ipairs(self._modal_buttons) do
             if b:on_mousereleased(x, y, button) then
@@ -1454,6 +1592,24 @@ local function shift_held()
 end
 
 function M:keypressed(key)
+    if self._curtain then
+        if key == "escape" then -- i18n-ok
+            self:_return_to_menu()
+        elseif key == "tab" then -- i18n-ok
+            -- Single-element focus group; advance is a visual no-op
+            -- but keeps the focus ring lit if the user presses Tab.
+            if self._curtain_focus then
+                self._curtain_focus:advance(shift_held() and -1 or 1)
+            end
+        elseif key == "return" or key == "space" or key == "kpenter" then -- i18n-ok
+            if self._curtain_focus then
+                self._curtain_focus:activate()
+            else
+                self:_close_curtain()
+            end
+        end
+        return
+    end
     if self._modal == "marriage" then
         if key == "tab" then -- i18n-ok
             self._modal_focus:advance(shift_held() and -1 or 1)

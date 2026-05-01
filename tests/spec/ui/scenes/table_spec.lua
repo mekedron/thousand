@@ -253,6 +253,11 @@ describe("ui.scenes.table", function()
         local sc = table_scene.new(fake_manager(s))
         sc:enter(nil, nil)
         sc:draw(1024, 720)
+        -- The privacy curtain greets every fresh entry; dismiss it before
+        -- clicking the K of spades, otherwise the tap just dismisses the
+        -- curtain.
+        sc._curtain = nil
+        sc._last_revealed_seat = sc._view_model and sc._view_model.turn_player
 
         -- Find the K of spades rect; tap it.
         local king_rect
@@ -271,5 +276,191 @@ describe("ui.scenes.table", function()
         local prompt =
             find_text(mock, t("scene.table.marriage.prompt", { suit = t("card.suit.spades") }))
         assert.is_not_nil(prompt, "marriage prompt did not render")
+    end)
+
+    describe("privacy curtain", function()
+        local function dismiss_curtain(s)
+            -- State-level dismiss: matches what _close_curtain does. Used
+            -- by tests that want to drive the table past the first
+            -- between-turns pause without simulating a click.
+            s._curtain = nil
+            if s._view_model and s._view_model.turn_player then
+                s._last_revealed_seat = s._view_model.turn_player
+            end
+        end
+
+        it("raises the curtain on a fresh table for the forehand", function()
+            scene:draw(1024, 720)
+            -- Forehand 2 with dealer 1 is the first non-nil current_turn.
+            assert.is_not_nil(
+                find_text(mock, t("scene.table.privacy.prompt", { n = 2 })),
+                "expected privacy prompt for the forehand on first frame"
+            )
+            assert.is_not_nil(
+                find_text(mock, t("scene.table.privacy.subtitle")),
+                "expected privacy subtitle"
+            )
+            assert.is_not_nil(
+                find_text(mock, t("scene.table.privacy.ready_button")),
+                "expected Ready button label"
+            )
+        end)
+
+        it("dismisses the curtain when Ready is pressed", function()
+            scene:draw(1024, 720)
+            local ready = scene._curtain_button
+            assert.is_not_nil(ready, "expected a curtain Ready button after first draw")
+            local cx = ready.x + ready.w * 0.5
+            local cy = ready.y + ready.h * 0.5
+            scene:mousepressed(cx, cy, 1)
+            scene:mousereleased(cx, cy, 1)
+            mock.graphics.clear_recording()
+            scene:draw(1024, 720)
+            assert.is_nil(
+                find_text(mock, t("scene.table.privacy.prompt", { n = 2 })),
+                "curtain prompt should be gone after Ready"
+            )
+            assert.is_nil(scene._curtain, "scene._curtain should be cleared")
+        end)
+
+        it("dismisses the curtain on a tap anywhere on the backdrop", function()
+            scene:draw(1024, 720)
+            assert.is_not_nil(scene._curtain, "expected curtain up before tap-anywhere")
+            -- (10, 10) is well outside the centred panel for 1024x720.
+            scene:mousepressed(10, 10, 1)
+            scene:mousereleased(10, 10, 1)
+            assert.is_nil(scene._curtain, "scene._curtain should clear after a tap-anywhere")
+            mock.graphics.clear_recording()
+            scene:draw(1024, 720)
+            assert.is_nil(
+                find_text(mock, t("scene.table.privacy.prompt", { n = 2 })),
+                "curtain prompt should be gone after a tap-anywhere"
+            )
+        end)
+
+        it("dismisses the curtain on Enter / Space", function()
+            scene:draw(1024, 720)
+            assert.is_not_nil(scene._curtain, "expected curtain up before Enter")
+            scene:keypressed("return")
+            assert.is_nil(scene._curtain, "scene._curtain should clear after Enter")
+            mock.graphics.clear_recording()
+            scene:draw(1024, 720)
+            assert.is_nil(
+                find_text(mock, t("scene.table.privacy.prompt", { n = 2 })),
+                "Enter should dismiss the curtain via the Ready button"
+            )
+        end)
+
+        it("re-raises the curtain after a card play changes the turn", function()
+            scene:draw(1024, 720)
+            dismiss_curtain(scene)
+
+            assert(session:bid(2, 100).ok)
+            assert(session:pass(3).ok)
+            assert(session:pass(1).ok)
+            assert(session:take_talon().ok)
+            local hand = session:hands()[2]
+            assert(session:pass_talon(1, hand[1]).ok)
+            hand = session:hands()[2]
+            assert(session:pass_talon(3, hand[1]).ok)
+            assert(session:skip_raise().ok)
+            -- All of the above keep the declarer on turn — no curtain.
+            local card = session:legal_cards(2)[1]
+            assert(session:play(2, card).ok)
+
+            mock.graphics.clear_recording()
+            scene:draw(1024, 720)
+            assert.is_not_nil(
+                find_text(mock, t("scene.table.privacy.prompt", { n = 3 })),
+                "expected curtain for seat 3 after the first card play"
+            )
+        end)
+
+        it("Esc during the curtain returns to the menu", function()
+            local switched_to
+            local recording_manager = {
+                switch_to = function(_self, id)
+                    switched_to = id
+                end,
+                session = function()
+                    return session
+                end,
+                is_game_active = function()
+                    return true
+                end,
+            }
+            local table_scene = require("ui.scenes.table")
+            local sc = table_scene.new(recording_manager)
+            sc:enter(nil, nil)
+            sc:draw(1024, 720)
+            assert.is_not_nil(sc._curtain, "expected curtain to be up before Esc")
+            sc:keypressed("escape")
+            assert.are.equal("menu", switched_to)
+        end)
+
+        it("does not show a curtain in the deal_done phase", function()
+            assert(session:bid(2, 100).ok)
+            assert(session:pass(3).ok)
+            assert(session:pass(1).ok)
+            assert(session:take_talon().ok)
+            local hand = session:hands()[2]
+            assert(session:pass_talon(1, hand[1]).ok)
+            hand = session:hands()[2]
+            assert(session:pass_talon(3, hand[1]).ok)
+            assert(session:skip_raise().ok)
+            while session:current_phase() == "tricks" do
+                local p = session:current_turn()
+                local card = session:legal_cards(p)[1]
+                assert(session:play(p, card).ok)
+            end
+            scene:draw(1024, 720)
+            assert.is_not_nil(
+                find_text(mock, t("scene.table.deal_done.scored")),
+                "deal-done banner should appear"
+            )
+            for seat = 1, 3 do
+                assert.is_nil(
+                    find_text(mock, t("scene.table.privacy.prompt", { n = seat })),
+                    "no privacy prompt expected during deal_done for seat " .. seat
+                )
+            end
+        end)
+
+        it("raises a curtain after Next deal kicks off the next deal", function()
+            scene:draw(1024, 720)
+            dismiss_curtain(scene)
+
+            assert(session:bid(2, 100).ok)
+            assert(session:pass(3).ok)
+            assert(session:pass(1).ok)
+            assert(session:take_talon().ok)
+            local hand = session:hands()[2]
+            assert(session:pass_talon(1, hand[1]).ok)
+            hand = session:hands()[2]
+            assert(session:pass_talon(3, hand[1]).ok)
+            assert(session:skip_raise().ok)
+            while session:current_phase() == "tricks" do
+                local p = session:current_turn()
+                local c = session:legal_cards(p)[1]
+                assert(session:play(p, c).ok)
+            end
+            scene:draw(1024, 720)
+            local next_btn
+            for _, b in ipairs(scene._panel_buttons) do
+                if b.id == "deal_done_next" then
+                    next_btn = b
+                    break
+                end
+            end
+            assert.is_not_nil(next_btn, "expected the deal_done next-deal button")
+            next_btn:activate()
+            mock.graphics.clear_recording()
+            scene:draw(1024, 720)
+            -- Dealer rotated 1 → 2; new forehand is seat 3.
+            assert.is_not_nil(
+                find_text(mock, t("scene.table.privacy.prompt", { n = 3 })),
+                "expected curtain for the new forehand after Next deal"
+            )
+        end)
     end)
 end)

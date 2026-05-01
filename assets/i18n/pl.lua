@@ -51,6 +51,10 @@ return {
     ["scene.table.marriage.yes"] = "Declare",
     ["scene.table.marriage.no"] = "Just play",
 
+    ["scene.table.privacy.prompt"] = "Pass the device to Player %{n}.",
+    ["scene.table.privacy.subtitle"] = "Tap when ready.",
+    ["scene.table.privacy.ready_button"] = "Ready",
+
     ["scene.table.deal_done.scored"] = "Deal complete",
     ["scene.table.deal_done.all_pass"] = "All players passed",
     ["scene.table.deal_done.next_deal"] = "Next deal",

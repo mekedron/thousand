@@ -39,6 +39,17 @@ local function click_button(j, label)
     j:click(cx, cy)
 end
 
+-- Tap-anywhere through any privacy curtain that may be up. The hot-seat
+-- privacy hand-off (Phase 2) raises a curtain on entry to the table; we
+-- only want to test the table's back-out paths here, so dismiss any
+-- curtain immediately after entering the table scene.
+local function dismiss_table_curtain(j)
+    if j:find_text(j:find_localised("scene.table.privacy.ready_button")) then
+        j:click(10, 10)
+        j:step()
+    end
+end
+
 local function hover_button(j, label)
     local rect = smallest_rect_under_text(j, label)
     assert(rect, "no button rectangle found for label: " .. label)
@@ -159,6 +170,7 @@ describe("e2e: menu navigation", function()
         it("clicking the touch Menu button returns to the menu", function()
             click_button(j, j:find_localised("scene.menu.new_game"))
             j:step()
+            dismiss_table_curtain(j)
             click_button(j, j:find_localised("scene.table.back_to_menu"))
             j:step()
             assert.is_not_nil(j:find_text(j:find_localised("scene.menu.title")))
@@ -175,6 +187,7 @@ describe("e2e: menu navigation", function()
         it("becomes enabled after a New Game and routes back into the table", function()
             click_button(j, j:find_localised("scene.menu.new_game"))
             j:step()
+            dismiss_table_curtain(j)
             click_button(j, j:find_localised("scene.table.back_to_menu"))
             j:step()
             local cont_rect = smallest_rect_under_text(j, j:find_localised("scene.menu.continue"))

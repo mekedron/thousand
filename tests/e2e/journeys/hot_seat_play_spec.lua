@@ -48,6 +48,18 @@ local function click_button(j, label)
     j:click(rect_center(rect))
 end
 
+-- Dismiss the privacy curtain if it's currently up. The hot-seat hand-off
+-- raises a curtain on every turn change; tests that simply want to drive
+-- the auction or talon flow call this between actions.
+local function dismiss_curtain(j)
+    if not find_text(j, j:find_localised("scene.table.privacy.ready_button")) then
+        return
+    end
+    -- Tap-anywhere dismissal — (10, 10) is well outside the centred panel.
+    j:click(10, 10)
+    j:step()
+end
+
 describe("e2e: hot-seat play wiring", function()
     local j
 
@@ -56,6 +68,12 @@ describe("e2e: hot-seat play wiring", function()
         j:step()
         click_button(j, j:find_localised("scene.menu.new_game"))
         j:step()
+        -- The first curtain greets the forehand on every fresh game.
+        -- Dismiss it so existing test bodies can act as if the table is
+        -- already open. Tests that probe the curtain itself live in the
+        -- "privacy curtain" sub-block below and run before this dismiss
+        -- by virtue of nested describe + their own before_each.
+        dismiss_curtain(j)
     end)
 
     after_each(function()
@@ -87,12 +105,18 @@ describe("e2e: hot-seat play wiring", function()
         it("clicking Bid 100 then two passes terminates the auction", function()
             click_button(j, j:find_localised("scene.table.auction.bid_button", { amount = 100 }))
             j:step()
+            -- Each turn change raises a fresh curtain; dismiss between
+            -- actions so the next click reaches the auction panel.
+            dismiss_curtain(j)
             click_button(j, j:find_localised("scene.table.auction.pass_button"))
             j:step()
+            dismiss_curtain(j)
             click_button(j, j:find_localised("scene.table.auction.pass_button"))
             j:step()
-            -- Auction terminated; the talon take button is the next
-            -- visible action.
+            -- Auction terminated; declarer 2 takes over from the last
+            -- passer, so a final hand-off curtain is up. Dismiss to
+            -- reveal the take-talon panel.
+            dismiss_curtain(j)
             assert.is_not_nil(
                 find_text(j, j:find_localised("scene.table.talon.take_button")),
                 "expected take-talon button after auction terminates"
@@ -104,10 +128,14 @@ describe("e2e: hot-seat play wiring", function()
         before_each(function()
             click_button(j, j:find_localised("scene.table.auction.bid_button", { amount = 100 }))
             j:step()
+            dismiss_curtain(j)
             click_button(j, j:find_localised("scene.table.auction.pass_button"))
             j:step()
+            dismiss_curtain(j)
             click_button(j, j:find_localised("scene.table.auction.pass_button"))
             j:step()
+            -- Auction → talon hand-off back to declarer 2.
+            dismiss_curtain(j)
         end)
 
         it("clicking Take Talon transitions to the awaiting_pass label", function()
@@ -170,10 +198,13 @@ describe("e2e: hot-seat play wiring", function()
             -- in this test.
             click_button(j, j:find_localised("scene.table.auction.bid_button", { amount = 100 }))
             j:step()
+            dismiss_curtain(j)
             click_button(j, j:find_localised("scene.table.auction.pass_button"))
             j:step()
+            dismiss_curtain(j)
             click_button(j, j:find_localised("scene.table.auction.pass_button"))
             j:step()
+            dismiss_curtain(j)
             click_button(j, j:find_localised("scene.table.talon.take_button"))
             j:step()
 
@@ -195,6 +226,52 @@ describe("e2e: hot-seat play wiring", function()
             j:press_key("escape")
             j:step()
             assert.is_not_nil(find_text(j, j:find_localised("scene.menu.title")))
+        end)
+    end)
+
+    describe("privacy curtain", function()
+        -- The outer before_each dismisses the first curtain so the
+        -- general flow tests can act. These cases want fresh curtain
+        -- state, so we back out to the menu and Continue back into the
+        -- table — table_scene:enter() resets _last_revealed_seat, so
+        -- the next draw raises the curtain for the forehand.
+        before_each(function()
+            j:press_key("escape")
+            j:step()
+            click_button(j, j:find_localised("scene.menu.continue"))
+            j:step()
+        end)
+
+        it("renders for the forehand on a new game", function()
+            assert.is_not_nil(
+                find_text(j, j:find_localised("scene.table.privacy.prompt", { n = 2 })),
+                "expected privacy prompt for forehand seat 2"
+            )
+            assert.is_not_nil(
+                find_text(j, j:find_localised("scene.table.privacy.subtitle")),
+                "expected privacy subtitle"
+            )
+            assert.is_not_nil(
+                find_text(j, j:find_localised("scene.table.privacy.ready_button")),
+                "expected Ready button label"
+            )
+        end)
+
+        it("re-renders after each bid", function()
+            dismiss_curtain(j)
+            click_button(j, j:find_localised("scene.table.auction.bid_button", { amount = 100 }))
+            j:step()
+            assert.is_not_nil(
+                find_text(j, j:find_localised("scene.table.privacy.prompt", { n = 3 })),
+                "expected curtain for seat 3 after the first bid"
+            )
+            dismiss_curtain(j)
+            click_button(j, j:find_localised("scene.table.auction.pass_button"))
+            j:step()
+            assert.is_not_nil(
+                find_text(j, j:find_localised("scene.table.privacy.prompt", { n = 1 })),
+                "expected curtain for seat 1 after seat 3 passes"
+            )
         end)
     end)
 end)
