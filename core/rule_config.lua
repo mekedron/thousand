@@ -328,8 +328,16 @@ local SCHEMA = {
             --     variant where the declarer never picks the talon up and
             --     instead passes one card face-down to each opponent
             --     (docs/variations/polish.md). Wired in Phase 3.6.
-            --   * "stock_draw" — deferred; the 2-player Schnapsen-style
-            --     closed-talon stock (docs/variations/two-player.md).
+            --   * "stock_draw" — selectable; the 2-player Schnapsen-style
+            --     closed-talon stock (docs/variations/two-player.md
+            --     "Variant A"). Wired in Phase 3.6's 2-player
+            --     stock-draw task. The stock-draw mechanic itself
+            --     (deal, per-trick draw, phase=draw → strict transition)
+            --     lives in core/dealing.lua and core/tricks.lua, keyed
+            --     off `players.two_player_config = "closed_talon_draw_stock"`;
+            --     the cross-field invariant
+            --     `stock_draw_distribution_requires_variant_a` keeps the
+            --     two settings consistent.
             -- Field-level status reflects the most-permissive value the
             -- picker may select; per-value gating is enforced by the
             -- engine and the cross-field invariants below.
@@ -1436,7 +1444,9 @@ local INVARIANTS = {
     -- Variant A's 6-card stock is dealt separately from any traditional
     -- talon — the schema's talon.size is 0 in this layout. The stock
     -- itself is fixed at 6 cards (24 - 9 - 9). See
-    -- docs/variations/two-player.md "Variant A".
+    -- docs/variations/two-player.md "Variant A". Phase 3.6's 2-player
+    -- stock-draw task also pins `talon.distribution = "stock_draw"`
+    -- for this layout via `stock_draw_distribution_requires_variant_a`.
     {
         name = "two_player_a_requires_no_talon",
         predicate = function(blob)
@@ -1481,7 +1491,10 @@ local INVARIANTS = {
     -- distribution is meaningful only with a 2-card talon — anything
     -- else is a configuration error caught at validation time, not a
     -- runtime "unsupported_talon_size" surprise. See
-    -- docs/variations/polish.md.
+    -- docs/variations/polish.md. Sibling of
+    -- `stock_draw_distribution_requires_variant_a`, which gates the
+    -- 2-player Schnapsen-style distribution against the same
+    -- single-purpose pattern.
     {
         name = "pass_without_taking_requires_two_card_talon",
         predicate = function(blob)
@@ -1497,22 +1510,28 @@ local INVARIANTS = {
             }
         end,
     },
-    -- The 2-player Schnapsen-style "stock_draw" distribution is reserved
-    -- for the future stock-draw engine path (docs/variations/two-player.md
-    -- "Variant A"). Until that lands, the schema-level field-status
-    -- marks `talon.distribution` as selectable so the implemented and
-    -- newly-wired values pass validation; this invariant rejects the
-    -- still-deferred `stock_draw` value at config-load time so custom
-    -- templates cannot silently ride it through.
+    -- The 2-player Schnapsen-style "stock_draw" distribution is the
+    -- 2-player Variant A flow (docs/variations/two-player.md). It is
+    -- only meaningful when the layout is the closed-talon-with-draw-stock
+    -- shape: 2 players, `players.two_player_config =
+    -- "closed_talon_draw_stock"`. The `talon.size = 0` requirement for
+    -- that layout is enforced by `two_player_a_requires_no_talon` above
+    -- — each invariant stays single-purpose. Sibling of
+    -- `pass_without_taking_requires_two_card_talon`.
     {
-        name = "stock_draw_distribution_deferred",
+        name = "stock_draw_distribution_requires_variant_a",
         predicate = function(blob)
-            return blob.talon.distribution ~= "stock_draw"
+            if blob.talon.distribution ~= "stock_draw" then
+                return true
+            end
+            return blob.players.count == 2
+                and blob.players.two_player_config == "closed_talon_draw_stock"
         end,
         context = function(blob)
             return {
                 talon_distribution = blob.talon.distribution,
-                talon_size = blob.talon.size,
+                players_count = blob.players.count,
+                two_player_config = blob.players.two_player_config,
             }
         end,
     },
@@ -2211,13 +2230,19 @@ M.builtins = {
     -- separately from any traditional talon, so `talon.size = 0`; the
     -- draw mechanic and trump-from-stock-bottom rule live in the
     -- engine's two-player path keyed off
-    -- `players.two_player_config = "closed_talon_draw_stock"`.
+    -- `players.two_player_config = "closed_talon_draw_stock"`. Phase
+    -- 3.6's 2-player stock-draw task pins
+    -- `talon.distribution = "stock_draw"` here so the wire-format
+    -- name matches the engine path.
     two_player_a = M.new(with_overrides(canonical_russian_blob(), {
         players = {
             count = 2,
             two_player_config = "closed_talon_draw_stock",
         },
-        talon = { size = 0 },
+        talon = {
+            size = 0,
+            distribution = "stock_draw",
+        },
     })),
 
     -- Two-player Variant B — fixed deal, no draw, 7-card hands and the

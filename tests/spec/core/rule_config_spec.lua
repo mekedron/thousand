@@ -535,11 +535,16 @@ describe("core.rule_config", function()
                 assert.are.equal("closed_talon_draw_stock", config.players.two_player_config)
             end)
 
+            it("uses the stock_draw talon distribution", function()
+                assert.are.equal("stock_draw", config.talon.distribution)
+            end)
+
             it("round-trips through JSON", function()
                 local round_trip = rule_config.from_json(rule_config.to_json(config))
                 assert.is_true(round_trip.ok)
                 assert.are.equal(2, round_trip.config.players.count)
                 assert.are.equal(0, round_trip.config.talon.size)
+                assert.are.equal("stock_draw", round_trip.config.talon.distribution)
             end)
         end)
 
@@ -1758,13 +1763,39 @@ describe("core.rule_config", function()
             end
         end)
 
-        it("rejects the still-deferred stock_draw value via the invariant", function()
+        it("accepts stock_draw when paired with the 2-player Variant A layout", function()
+            local t = valid_table()
+            t.players.count = 2
+            t.players.two_player_config = "closed_talon_draw_stock"
+            t.talon.size = 0
+            t.talon.distribution = "stock_draw"
+            local res = rule_config.try_new(t)
+            assert.is_true(res.ok)
+            assert.are.equal("stock_draw", res.config.talon.distribution)
+            assert.are.equal(2, res.config.players.count)
+            assert.are.equal("closed_talon_draw_stock", res.config.players.two_player_config)
+            assert.are.equal(0, res.config.talon.size)
+        end)
+
+        it("rejects stock_draw with 3 players via the invariant", function()
             local t = valid_table()
             t.talon.distribution = "stock_draw"
             local res = rule_config.try_new(t)
             assert.is_false(res.ok)
             assert.are.equal("incompatible_combination", res.error.code)
-            assert.are.equal("stock_draw_distribution_deferred", res.error.invariant)
+            assert.are.equal("stock_draw_distribution_requires_variant_a", res.error.invariant)
+        end)
+
+        it("rejects stock_draw with 2-player Variant B via the invariant", function()
+            local t = valid_table()
+            t.players.count = 2
+            t.players.two_player_config = "fixed_deal_no_draw"
+            t.talon.size = 3
+            t.talon.distribution = "stock_draw"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("incompatible_combination", res.error.code)
+            assert.are.equal("stock_draw_distribution_requires_variant_a", res.error.invariant)
         end)
 
         it("survives a JSON round trip at its default", function()
@@ -1784,6 +1815,22 @@ describe("core.rule_config", function()
             assert.is_true(res.ok)
             assert.are.equal("pass_without_taking", res.config.talon.distribution)
             assert.are.equal(2, res.config.talon.size)
+        end)
+
+        it("survives a JSON round trip with stock_draw + 2-player Variant A", function()
+            local t = valid_table()
+            t.players.count = 2
+            t.players.two_player_config = "closed_talon_draw_stock"
+            t.talon.size = 0
+            t.talon.distribution = "stock_draw"
+            local config_in = rule_config.new(t)
+            local s = rule_config.to_json(config_in)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("stock_draw", res.config.talon.distribution)
+            assert.are.equal(2, res.config.players.count)
+            assert.are.equal("closed_talon_draw_stock", res.config.players.two_player_config)
+            assert.are.equal(0, res.config.talon.size)
         end)
     end)
 

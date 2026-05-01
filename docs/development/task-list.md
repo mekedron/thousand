@@ -482,7 +482,7 @@ ships scripted engine tests covering every value.
   - `distribution` flips to selectable for `pass_without_taking`;
     `size` flips to implemented; engine tests cover a scripted full
     Polish deal.
-- [ ] Implement 2-player stock_draw talon distribution.
+- [x] Implement 2-player stock_draw talon distribution.
   - `distribution` `stock_draw` runs the 2-player Schnapsen-style
     per-trick draw on top of the existing 2-player Variant A stock
     infrastructure.

@@ -372,6 +372,7 @@ describe("core.rule_config builtins (engine integration)", function()
 
         it("plays a scripted full deal with stock-driven draws", function()
             local config = rule_config.builtins.two_player_a
+            assert.are.equal("stock_draw", config.talon.distribution)
             local deal_result = dealing.deal(build_deck(42), config, { dealer = 1 })
             assert.is_true(deal_result.ok)
 
