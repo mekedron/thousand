@@ -1,0 +1,382 @@
+.frame {
+  background: #1a140a;
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow:
+    0 30px 60px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+  color: #fbf7ee;
+  font-family: var(--ds-font-body);
+  width: 100%;
+  max-width: 640px;
+}
+
+.chrome {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.dotR {
+  background: #e06b5b;
+}
+.dotY {
+  background: #d6a141;
+}
+.dotG {
+  background: #65a83a;
+}
+.chromeTitle {
+  flex: 1;
+  text-align: center;
+  font-family: var(--ds-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: #7a6c50;
+  text-transform: uppercase;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 138px;
+  gap: 10px;
+  height: 360px;
+}
+
+.felt {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  background: radial-gradient(
+    110% 70% at 50% 35%,
+    #4a3d27 0%,
+    #2c2416 65%,
+    #1d1810 100%
+  );
+  border: 1px solid rgba(201, 165, 90, 0.12);
+}
+
+.feltTexture {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1.2px),
+    radial-gradient(rgba(0, 0, 0, 0.18) 1px, transparent 1.2px);
+  background-size: 5px 5px, 5px 5px;
+  background-position: 0 0, 2.5px 2.5px;
+  pointer-events: none;
+}
+
+.opponentLeft {
+  position: absolute;
+  left: 14px;
+  top: 14px;
+}
+.opponentRight {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+}
+
+.miniRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.miniRowReverse {
+  flex-direction: row-reverse;
+}
+
+.avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: var(--ds-font-display);
+  font-size: 18px;
+  color: #fbf7ee;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  flex-shrink: 0;
+}
+.avatarTurn {
+  border: 2px solid #c9a55a;
+  box-shadow: 0 0 0 4px rgba(201, 165, 90, 0.25);
+}
+
+.miniMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.miniMetaRight {
+  align-items: flex-end;
+}
+.miniName {
+  font-size: 12px;
+  color: #fbf7ee;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.miniRow2 {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.miniScore {
+  font-family: var(--ds-font-mono);
+  font-size: 10px;
+  color: #bdae8c;
+  letter-spacing: 0.06em;
+}
+.bidChip {
+  font-size: 9px;
+  font-family: var(--ds-font-mono);
+  letter-spacing: 0.1em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #c9a55a;
+  color: #1c170e;
+  text-transform: uppercase;
+}
+.passedChip {
+  font-size: 9px;
+  font-family: var(--ds-font-mono);
+  letter-spacing: 0.1em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #9c8b6d;
+  text-transform: uppercase;
+}
+.fanWrap {
+  position: relative;
+  width: 110px;
+  height: 38px;
+  margin-top: 2px;
+}
+.fanCard {
+  position: absolute;
+  left: 50%;
+  top: 0;
+}
+
+.trickArea {
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  transform: translate(-50%, -50%);
+  width: 200px;
+  height: 130px;
+}
+.trickCardLeft {
+  position: absolute;
+  left: 30px;
+  top: 30px;
+  transform: rotate(-8deg);
+}
+.trickCardCenter {
+  position: absolute;
+  left: 75px;
+  top: 5px;
+  transform: rotate(2deg);
+  z-index: 2;
+}
+
+.trumpIndicator {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.trumpLabel {
+  font-family: var(--ds-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  color: #9c8b6d;
+  text-transform: uppercase;
+}
+.trumpGlyph {
+  font-family: var(--ds-font-display);
+  font-size: 22px;
+  color: #d96b5a;
+  line-height: 1;
+}
+
+.handRow {
+  position: absolute;
+  bottom: 8px;
+  left: 0;
+  right: 0;
+  display: grid;
+  place-items: center;
+}
+.handFan {
+  display: flex;
+  align-items: flex-end;
+  height: 80px;
+}
+.handCard {
+  border-radius: 7px;
+  transition: transform 0.2s;
+}
+.handCardSelected {
+  outline: 2px solid #c9a55a;
+  outline-offset: 2px;
+}
+.handCardIllegal {
+  filter: grayscale(0.6) brightness(0.55);
+}
+
+.youLabel {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.youAvatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: var(--ds-font-display);
+  font-size: 14px;
+  color: #1c170e;
+  background: linear-gradient(135deg, #e8c97a, #c9a55a);
+  border: 2px solid #c9a55a;
+  box-shadow: 0 0 0 4px rgba(201, 165, 90, 0.25);
+}
+.youName {
+  font-size: 11px;
+  color: #fbf7ee;
+  font-weight: 500;
+}
+.youRole {
+  font-family: var(--ds-font-mono);
+  font-size: 10px;
+  color: #c9a55a;
+  letter-spacing: 0.06em;
+}
+
+.hint {
+  position: absolute;
+  right: 14px;
+  bottom: 18px;
+  font-family: var(--ds-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: #9c8b6d;
+  text-transform: uppercase;
+}
+
+.rail {
+  background: #221a0e;
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid rgba(201, 165, 90, 0.08);
+}
+.railRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.railLabel {
+  font-family: var(--ds-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: #9c8b6d;
+  text-transform: uppercase;
+}
+.railLabelBrass {
+  font-family: var(--ds-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: #c9a55a;
+  text-transform: uppercase;
+}
+.railDiv {
+  height: 1px;
+  background: rgba(201, 165, 90, 0.15);
+}
+.raceRow {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.raceHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.raceName {
+  font-size: 11px;
+  color: #fbf7ee;
+}
+.raceValue {
+  font-family: var(--ds-font-mono);
+  font-size: 12px;
+  color: #bdae8c;
+}
+.raceValueBrass {
+  color: #c9a55a;
+}
+.bar {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+.barFill {
+  height: 100%;
+  border-radius: 999px;
+  background: #7a6c50;
+}
+.barFillBrass {
+  background: #c9a55a;
+}
+.contractValue {
+  font-family: var(--ds-font-mono);
+  font-size: 18px;
+  color: #fbf7ee;
+  margin-top: 2px;
+}
+.railTrump {
+  font-family: var(--ds-font-display);
+  font-size: 22px;
+  color: #d96b5a;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+.foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 4px 0;
+  font-family: var(--ds-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: #7a6c50;
+}
+
+@media (max-width: 768px) {
+  .layout {
+    height: 320px;
+  }
+}

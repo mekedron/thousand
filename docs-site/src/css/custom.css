@@ -1,50 +1,394 @@
 /**
- * Any CSS included here will be global. The classic template
- * bundles Infima by default. Infima is a CSS framework designed to
- * work well for content-centric websites.
+ * Thousand — themed Docusaurus chrome.
+ * Paper / ink + brass system, matched to the in-game UI.
+ * Light mode is the canonical look; dark-mode tokens follow underneath.
  */
 
-/* You can override the default Infima variables here. */
+/* ===== Brand tokens (light) ===== */
 :root {
-  --ifm-color-primary: #2e8555;
-  --ifm-color-primary-dark: #29784c;
-  --ifm-color-primary-darker: #277148;
-  --ifm-color-primary-darkest: #205d3b;
-  --ifm-color-primary-light: #33925d;
-  --ifm-color-primary-lighter: #359962;
-  --ifm-color-primary-lightest: #3cad6e;
-  --ifm-code-font-size: 95%;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+  --ds-bg: #f5f1e8;
+  --ds-paper: #fbf7ee;
+  --ds-paper-shade: #efe9da;
+  --ds-ink: #1a1611;
+  --ds-ink-2: #4a3f2e;
+  --ds-mute: #8a7f6c;
+  --ds-line: #ddd4bf;
+  --ds-line-soft: #ebe3cf;
+  --ds-brass: #b8862c;
+  --ds-brass-deep: #8e6515;
+  --ds-brass-glow: #e8c87a;
+  --ds-hearts: #b32424;
+  --ds-diamonds: #c25b18;
+  --ds-felt: #2a2418;
+  --ds-felt-deep: #1d1812;
+
+  --ds-font-display: 'Instrument Serif', 'Cormorant Garamond', 'Iowan Old Style', Georgia, serif;
+  --ds-font-body: 'Geist', 'Inter', 'SF Pro Text', system-ui, sans-serif;
+  --ds-font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Re-skin Infima with brass primary + Geist body */
+  --ifm-color-primary: #8e6515;
+  --ifm-color-primary-dark: #7a5712;
+  --ifm-color-primary-darker: #6d4e0f;
+  --ifm-color-primary-darkest: #58400d;
+  --ifm-color-primary-light: #a3741a;
+  --ifm-color-primary-lighter: #b8862c;
+  --ifm-color-primary-lightest: #c89a45;
+
+  --ifm-font-family-base: var(--ds-font-body);
+  --ifm-font-family-monospace: var(--ds-font-mono);
+  --ifm-heading-font-family: var(--ds-font-display);
+  --ifm-heading-font-weight: 400;
+
+  --ifm-background-color: var(--ds-paper);
+  --ifm-background-surface-color: var(--ds-paper);
+  --ifm-color-content: var(--ds-ink);
+  --ifm-color-content-secondary: var(--ds-ink-2);
+  --ifm-color-emphasis-100: var(--ds-line-soft);
+  --ifm-color-emphasis-200: var(--ds-line);
+  --ifm-color-emphasis-300: #c9beA1;
+  --ifm-toc-border-color: var(--ds-line);
+  --ifm-hr-border-color: var(--ds-line);
+
+  --ifm-navbar-background-color: var(--ds-paper);
+  --ifm-navbar-shadow: inset 0 -1px 0 var(--ds-line);
+  --ifm-navbar-link-color: var(--ds-ink-2);
+  --ifm-navbar-link-hover-color: var(--ds-brass-deep);
+
+  --ifm-menu-color: var(--ds-ink-2);
+  --ifm-menu-color-active: var(--ds-ink);
+  --ifm-menu-color-background-active: var(--ds-line-soft);
+  --ifm-menu-color-background-hover: var(--ds-line-soft);
+
+  --ifm-link-color: var(--ds-brass-deep);
+  --ifm-link-hover-color: var(--ds-brass);
+
+  --ifm-footer-background-color: var(--ds-felt-deep);
+  --ifm-footer-color: #d8cdb6;
+  --ifm-footer-link-color: #d8cdb6;
+  --ifm-footer-link-hover-color: var(--ds-brass-glow);
+  --ifm-footer-title-color: #9c8b6d;
+
+  --ifm-code-font-size: 92%;
+  --ifm-code-background: var(--ds-line-soft);
+  --ifm-code-border-radius: 4px;
+
+  --docusaurus-highlighted-code-line-bg: rgba(184, 134, 44, 0.12);
 }
 
-/* For readability concerns, you should choose a lighter palette in dark mode. */
+/* ===== Brand tokens (dark) ===== */
 [data-theme='dark'] {
-  --ifm-color-primary: #25c2a0;
-  --ifm-color-primary-dark: #21af90;
-  --ifm-color-primary-darker: #1fa588;
-  --ifm-color-primary-darkest: #1a8870;
-  --ifm-color-primary-light: #29d5b0;
-  --ifm-color-primary-lighter: #32d8b4;
-  --ifm-color-primary-lightest: #4fddbf;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  --ds-bg: #1c170e;
+  --ds-paper: #221a0e;
+  --ds-paper-shade: #2c2418;
+  --ds-ink: #f4ead2;
+  --ds-ink-2: #d8cdb6;
+  --ds-mute: #9c8b6d;
+  --ds-line: #3a3120;
+  --ds-line-soft: #2c2418;
+  --ds-brass: #c9a55a;
+  --ds-brass-deep: #b8862c;
+  --ds-brass-glow: #e8c87a;
+  --ds-hearts: #d96b5a;
+  --ds-diamonds: #e08a4c;
+  --ds-felt: #2a2418;
+  --ds-felt-deep: #14110a;
+
+  --ifm-color-primary: #c9a55a;
+  --ifm-color-primary-dark: #b8862c;
+  --ifm-color-primary-darker: #a3741a;
+  --ifm-color-primary-darkest: #8e6515;
+  --ifm-color-primary-light: #d4b577;
+  --ifm-color-primary-lighter: #e0c290;
+  --ifm-color-primary-lightest: #ecd1ab;
+
+  --ifm-background-color: var(--ds-bg);
+  --ifm-background-surface-color: var(--ds-paper);
+  --ifm-color-content: var(--ds-ink);
+  --ifm-color-content-secondary: var(--ds-ink-2);
+  --ifm-color-emphasis-100: var(--ds-line-soft);
+  --ifm-color-emphasis-200: var(--ds-line);
+  --ifm-toc-border-color: var(--ds-line);
+  --ifm-hr-border-color: var(--ds-line);
+
+  --ifm-navbar-background-color: var(--ds-paper);
+  --ifm-navbar-shadow: inset 0 -1px 0 var(--ds-line);
+  --ifm-navbar-link-color: var(--ds-ink-2);
+  --ifm-navbar-link-hover-color: var(--ds-brass);
+
+  --ifm-menu-color: var(--ds-ink-2);
+  --ifm-menu-color-active: var(--ds-ink);
+  --ifm-menu-color-background-active: var(--ds-line-soft);
+  --ifm-menu-color-background-hover: var(--ds-line-soft);
+
+  --ifm-link-color: var(--ds-brass);
+  --ifm-link-hover-color: var(--ds-brass-glow);
+
+  --ifm-footer-background-color: #0e0c07;
+  --ifm-code-background: var(--ds-line-soft);
+
+  --docusaurus-highlighted-code-line-bg: rgba(201, 165, 90, 0.18);
 }
 
-/* Custom admonition types declared in docusaurus.config.js. Without
-   these overrides, custom keywords inherit the default `note` palette. */
+/* ===== Body + typography baseline ===== */
+html,
+body {
+  font-feature-settings: 'ss01', 'cv11';
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background: var(--ds-bg);
+  color: var(--ds-ink);
+}
+
+.markdown {
+  --ifm-paragraph-margin-bottom: 14px;
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--ds-ink-2);
+}
+.markdown > h1,
+.markdown > h2,
+.markdown > h3,
+.markdown > h4 {
+  color: var(--ds-ink);
+  letter-spacing: -0.01em;
+  font-weight: 400;
+}
+.markdown > h1:first-child {
+  font-size: 56px;
+  line-height: 1;
+  margin-bottom: 22px;
+}
+.markdown > h2 {
+  font-size: 30px;
+  margin-top: 44px;
+  margin-bottom: 14px;
+}
+.markdown > h3 {
+  font-size: 22px;
+  margin-top: 30px;
+  margin-bottom: 10px;
+}
+.markdown a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+  font-weight: 500;
+}
+.markdown strong {
+  color: var(--ds-ink);
+  font-weight: 600;
+}
+.markdown table {
+  font-size: 14px;
+}
+.markdown table th {
+  background: var(--ds-line-soft);
+  font-family: var(--ds-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ds-ink-2);
+  font-weight: 500;
+}
+.markdown table th,
+.markdown table td {
+  border-color: var(--ds-line-soft);
+}
+
+/* Brass eyebrow utility — usable in MDX via <p className="ds-eyebrow"> */
+.ds-eyebrow {
+  font-family: var(--ds-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ds-mute);
+}
+
+/* ===== Sidebar (left nav) ===== */
+.menu {
+  font-size: 14px;
+}
+.menu__list-item-collapsible:hover,
+.menu__link:hover {
+  background: var(--ds-line-soft);
+}
+.menu__link {
+  border-radius: 6px;
+  padding: 7px 10px;
+  color: var(--ds-ink-2);
+  font-weight: 400;
+}
+.menu__link--active:not(.menu__link--sublist) {
+  background: var(--ds-line-soft);
+  color: var(--ds-ink);
+  border-left: 2px solid var(--ds-brass);
+  padding-left: 8px;
+  font-weight: 500;
+}
+.menu__list-item-collapsible--active {
+  background: var(--ds-line-soft);
+}
+.menu__list-item-collapsible .menu__link--sublist {
+  color: var(--ds-ink);
+  font-weight: 500;
+}
+.menu__caret::before,
+.menu__link--sublist-caret::after {
+  filter: opacity(0.6);
+}
+
+/* ===== Right-rail TOC ===== */
+.table-of-contents {
+  font-size: 13px;
+  border-left-color: var(--ds-line);
+}
+.table-of-contents__link {
+  color: var(--ds-mute);
+}
+.table-of-contents__link:hover,
+.table-of-contents__link:hover code {
+  color: var(--ds-brass-deep);
+}
+.table-of-contents__link--active,
+.table-of-contents__link--active code {
+  color: var(--ds-brass-deep);
+  font-weight: 500;
+}
+.table-of-contents__left-border {
+  border-left-color: var(--ds-line);
+}
+
+/* ===== Breadcrumbs ===== */
+.breadcrumbs__item--active .breadcrumbs__link {
+  background: var(--ds-line-soft);
+  color: var(--ds-ink-2);
+}
+.breadcrumbs__link {
+  color: var(--ds-mute);
+  font-size: 13px;
+}
+
+/* ===== Pagination (prev / next) ===== */
+.pagination-nav__link {
+  border-color: var(--ds-line);
+  border-radius: 10px;
+  padding: 14px 18px;
+  background: var(--ds-paper);
+}
+.pagination-nav__link:hover {
+  border-color: var(--ds-brass);
+  background: var(--ds-paper);
+}
+.pagination-nav__sublabel {
+  font-family: var(--ds-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ds-mute);
+  margin-bottom: 4px;
+}
+.pagination-nav__label {
+  font-family: var(--ds-font-display);
+  font-weight: 400;
+  font-size: 18px;
+  color: var(--ds-ink);
+  letter-spacing: -0.005em;
+}
+
+/* ===== Admonitions (built-in + custom) ===== */
+.theme-admonition {
+  border-left-width: 3px;
+  border-radius: 0 8px 8px 0;
+  font-size: 14px;
+}
+
 .theme-admonition-strategy {
-  --ifm-alert-background-color: rgba(149, 76, 233, 0.1);
-  --ifm-alert-background-color-highlight: rgba(149, 76, 233, 0.15);
-  --ifm-alert-border-color: rgb(149, 76, 233);
+  --ifm-alert-background-color: rgba(184, 134, 44, 0.08);
+  --ifm-alert-background-color-highlight: rgba(184, 134, 44, 0.16);
+  --ifm-alert-border-color: var(--ds-brass);
 }
 
 .theme-admonition-variant {
-  --ifm-alert-background-color: rgba(54, 162, 235, 0.1);
-  --ifm-alert-background-color-highlight: rgba(54, 162, 235, 0.15);
-  --ifm-alert-border-color: rgb(54, 162, 235);
+  --ifm-alert-background-color: rgba(194, 91, 24, 0.08);
+  --ifm-alert-background-color-highlight: rgba(194, 91, 24, 0.16);
+  --ifm-alert-border-color: var(--ds-diamonds);
 }
 
 .theme-admonition-example {
-  --ifm-alert-background-color: rgba(255, 159, 64, 0.1);
-  --ifm-alert-background-color-highlight: rgba(255, 159, 64, 0.15);
-  --ifm-alert-border-color: rgb(255, 159, 64);
+  --ifm-alert-background-color: rgba(179, 36, 36, 0.06);
+  --ifm-alert-background-color-highlight: rgba(179, 36, 36, 0.12);
+  --ifm-alert-border-color: var(--ds-hearts);
+}
+
+/* ===== Navbar polish ===== */
+.navbar__title {
+  font-family: var(--ds-font-display);
+  font-weight: 400;
+  font-size: 22px;
+  letter-spacing: -0.005em;
+}
+.navbar__link {
+  font-size: 14px;
+}
+.navbar__link--active {
+  color: var(--ds-brass-deep);
+  border-bottom: 1.5px solid var(--ds-brass);
+  padding-bottom: 4px;
+}
+[data-theme='dark'] .navbar__link--active {
+  color: var(--ds-brass);
+}
+
+/* Search input chrome (works whether algolia is wired or not) */
+.navbar__search-input {
+  background: var(--ds-paper);
+  border: 1px solid var(--ds-line);
+  border-radius: 10px;
+  font-family: var(--ds-font-body);
+  font-size: 13px;
+  color: var(--ds-mute);
+}
+
+/* ===== Footer ===== */
+.footer {
+  --ifm-footer-link-hover-color: var(--ds-brass-glow);
+  background: var(--ds-felt-deep);
+  color: #d8cdb6;
+  padding: 56px 24px 36px;
+}
+.footer__title {
+  font-family: var(--ds-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: #9c8b6d;
+  font-weight: 500;
+  margin-bottom: 12px;
+}
+.footer__link-item {
+  color: #d8cdb6;
+  display: block;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.footer__copyright {
+  color: #9c8b6d;
+  font-size: 13px;
+  max-width: 720px;
+  margin: 28px auto 0;
+}
+
+/* ===== Page width / article spacing ===== */
+.theme-doc-markdown {
+  padding-top: 8px;
+}
+
+/* When viewing a doc page, give the article a touch more horizontal breathing room. */
+@media (min-width: 997px) {
+  .theme-doc-markdown {
+    padding-right: 12px;
+  }
 }

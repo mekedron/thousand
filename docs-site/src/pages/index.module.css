@@ -1,23 +1,307 @@
-/**
- * CSS files with the .module.css suffix will be treated as CSS modules
- * and scoped locally.
- */
+/* Landing-page layout. Forces the brand light palette so the home
+ * page reads as paper-on-paper regardless of system theme. */
+.landing {
+  background: var(--ds-paper);
+  color: var(--ds-ink);
+}
 
-.heroBanner {
-  padding: 4rem 0;
-  text-align: center;
+.section {
+  padding: 60px 80px;
+}
+
+.hero {
   position: relative;
+  padding: 80px 80px 0;
   overflow: hidden;
 }
-
-@media screen and (max-width: 996px) {
-  .heroBanner {
-    padding: 2rem;
-  }
+.heroGrid {
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  gap: 40px;
+  align-items: center;
+  min-height: 540px;
 }
 
-.buttons {
+.eyebrow {
+  font-family: var(--ds-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ds-mute);
+}
+.eyebrowBrass {
+  color: var(--ds-brass-deep);
+}
+
+.heroTitle {
+  font-family: var(--ds-font-display);
+  font-weight: 400;
+  font-size: 124px;
+  line-height: 0.92;
+  letter-spacing: -0.01em;
+  margin: 16px 0 0;
+  color: var(--ds-ink);
+}
+.heroTitleAccent {
+  color: var(--ds-brass-deep);
+  font-style: italic;
+}
+
+.heroLead {
+  font-size: 18px;
+  color: var(--ds-ink-2);
+  max-width: 480px;
+  margin-top: 22px;
+  line-height: 1.55;
+}
+
+.heroCtaRow {
   display: flex;
+  gap: 12px;
+  margin-top: 28px;
+  flex-wrap: wrap;
+}
+
+.btn {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  border: 1px solid var(--ds-ink);
+  background: var(--ds-ink);
+  color: var(--ds-paper);
+  cursor: pointer;
+  text-decoration: none;
+  transition: transform 0.08s ease, background 0.15s ease, border-color 0.15s ease;
+}
+.btn:hover {
+  text-decoration: none;
+  color: var(--ds-paper);
+  transform: translateY(-1px);
+}
+.btnGhost {
+  background: transparent;
+  color: var(--ds-ink);
+  border-color: var(--ds-line);
+}
+.btnGhost:hover {
+  color: var(--ds-ink);
+  border-color: var(--ds-brass);
+}
+.btnBrass {
+  background: var(--ds-brass);
+  border-color: var(--ds-brass-deep);
+  color: #1a1611;
+}
+.btnBrass:hover {
+  color: #1a1611;
+  background: var(--ds-brass-glow);
+}
+.btnFootDark {
+  background: transparent;
+  color: #e8dcc0;
+  border-color: #5a4d35;
+}
+.btnFootDark:hover {
+  color: #e8dcc0;
+  border-color: var(--ds-brass);
+}
+
+.heroStats {
+  display: flex;
+  gap: 22px;
+  margin-top: 32px;
+  font-size: 13px;
+  color: var(--ds-mute);
+  flex-wrap: wrap;
+}
+
+/* Three-column TLDR */
+.tldr {
+  background: var(--ds-paper);
+}
+.tldrLabel {
+  margin-bottom: 12px;
+}
+.tldrGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+.tldrCard {
+  border-top: 1px solid var(--ds-line);
+  padding-top: 20px;
+}
+.tldrNumber {
+  color: var(--ds-brass-deep);
+}
+.tldrTitle {
+  font-family: var(--ds-font-display);
+  font-weight: 400;
+  font-size: 28px;
+  margin-top: 10px;
+  color: var(--ds-ink);
+  letter-spacing: -0.005em;
+}
+.tldrCopy {
+  margin-top: 10px;
+  color: var(--ds-ink-2);
+  line-height: 1.55;
+}
+.tldrLink {
+  color: var(--ds-brass-deep);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  display: inline-block;
+  margin-top: 8px;
+}
+.tldrLink:hover {
+  color: var(--ds-brass);
+  text-decoration: none;
+}
+
+/* Variants strip */
+.variants {
+  background: var(--ds-paper-shade);
+  border-top: 1px solid var(--ds-line);
+}
+.variantsGrid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 14px;
+}
+.variantCard {
+  background: var(--ds-paper);
+  border: 1px solid var(--ds-line);
+  border-radius: 10px;
+  padding: 18px;
+  text-decoration: none;
+  color: var(--ds-ink);
+  transition: border-color 0.15s ease, transform 0.08s ease;
+  display: block;
+}
+.variantCard:hover {
+  border-color: var(--ds-brass);
+  text-decoration: none;
+  color: var(--ds-ink);
+  transform: translateY(-1px);
+}
+.variantTitle {
+  font-family: var(--ds-font-display);
+  font-weight: 400;
+  font-size: 22px;
+  margin: 8px 0 4px;
+  letter-spacing: -0.005em;
+}
+.variantNote {
+  font-size: 13px;
+  color: var(--ds-mute);
+}
+
+/* App promo */
+.promo {
+  padding: 72px 80px;
+  background: var(--ds-felt);
+  color: #e8dcc0;
+}
+.promoGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 60px;
+  align-items: center;
+}
+.promoEyebrow {
+  color: #c9a55a;
+}
+.promoTitle {
+  font-family: var(--ds-font-display);
+  font-weight: 400;
+  font-size: 56px;
+  color: #fbf7ee;
+  margin: 10px 0 16px;
+  line-height: 1;
+  letter-spacing: -0.005em;
+}
+.promoLead {
+  font-size: 16px;
+  color: #bdae8c;
+  max-width: 460px;
+  line-height: 1.55;
+}
+.promoCtas {
+  display: flex;
+  gap: 10px;
+  margin-top: 22px;
+  flex-wrap: wrap;
+}
+.promoMeta {
+  display: flex;
+  gap: 18px;
+  margin-top: 22px;
+  font-size: 12px;
+  color: #9c8b6d;
+  flex-wrap: wrap;
+}
+
+/* Pull quote */
+.quote {
+  background: var(--ds-paper);
+}
+.quoteInner {
+  max-width: 760px;
+  margin: 0 auto;
+  text-align: center;
+}
+.quoteText {
+  font-family: var(--ds-font-display);
+  font-weight: 400;
+  font-size: 36px;
+  line-height: 1.25;
+  color: var(--ds-ink);
+  margin: 16px 0;
+  letter-spacing: -0.005em;
+}
+.quoteText em {
+  color: var(--ds-brass-deep);
+}
+
+/* Mobile collapse */
+@media (max-width: 996px) {
+  .section {
+    padding: 36px 24px;
+  }
+  .hero {
+    padding: 36px 24px 0;
+  }
+  .heroGrid {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+  .heroTitle {
+    font-size: 64px;
+  }
+  .tldrGrid {
+    grid-template-columns: 1fr;
+  }
+  .variantsGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .promo {
+    padding: 36px 24px;
+  }
+  .promoGrid {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+  .promoTitle {
+    font-size: 40px;
+  }
+  .quoteText {
+    font-size: 24px;
+  }
 }

@@ -43,6 +43,23 @@ const config = {
     locales: ['en'],
   },
 
+  // Brand fonts: Instrument Serif for display, Geist for body, Geist Mono for code.
+  stylesheets: [
+    {
+      href: 'https://fonts.googleapis.com',
+      rel: 'preconnect',
+    },
+    {
+      href: 'https://fonts.gstatic.com',
+      rel: 'preconnect',
+      crossorigin: 'anonymous',
+    },
+    {
+      href: 'https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap',
+      rel: 'stylesheet',
+    },
+  ],
+
   presets: [
     [
       'classic',
@@ -94,6 +111,21 @@ const config = {
             label: 'Documentation',
           },
           {
+            to: '/docs/rules/setup',
+            label: 'Rules',
+            position: 'left',
+          },
+          {
+            to: '/docs/variations',
+            label: 'Variations',
+            position: 'left',
+          },
+          {
+            to: '/docs/strategy',
+            label: 'Strategy',
+            position: 'left',
+          },
+          {
             href: 'https://github.com/mekedron/thousand',
             label: 'GitHub',
             position: 'right',
@@ -102,22 +134,21 @@ const config = {
       },
       footer: {
         style: 'dark',
+        logo: {
+          alt: 'Thousand card game',
+          src: 'img/logo.svg',
+          width: 32,
+          height: 32,
+        },
         links: [
           {
             title: 'Documentation',
             items: [
-              {
-                label: 'Overview',
-                to: '/docs/intro',
-              },
-              {
-                label: 'Rules',
-                to: '/docs/rules/setup',
-              },
-              {
-                label: 'Variations',
-                to: '/docs/variations',
-              },
+              {label: 'Introduction', to: '/docs/intro'},
+              {label: 'Equipment', to: '/docs/equipment/deck'},
+              {label: 'Rules of Play', to: '/docs/rules/setup'},
+              {label: 'Strategy', to: '/docs/strategy'},
+              {label: 'Variations', to: '/docs/variations'},
             ],
           },
           {
@@ -127,10 +158,27 @@ const config = {
                 label: 'GitHub',
                 href: 'https://github.com/mekedron/thousand',
               },
+              {
+                label: 'Roadmap',
+                to: '/docs/development/roadmap',
+              },
+              {
+                label: 'Architecture',
+                to: '/docs/development/architecture',
+              },
+            ],
+          },
+          {
+            title: 'Play',
+            items: [
+              {
+                label: 'Download (coming soon)',
+                href: 'https://github.com/mekedron/thousand/releases',
+              },
             ],
           },
         ],
-        copyright: `Copyright © ${new Date().getFullYear()} Thousand Documentation. Built with Docusaurus.`,
+        copyright: `A digital reading room for the classic Eastern-European card game. Open source, open rules. © ${new Date().getFullYear()}.`,
       },
       prism: {
         theme: prismThemes.github,

@@ -1,0 +1,35 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin: 18px 0 22px;
+}
+
+.tile {
+  background: var(--ds-paper);
+  border: 1px solid var(--ds-line);
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.suitName {
+  font-size: 13px;
+  color: var(--ds-mute);
+  font-family: var(--ds-font-body);
+}
+
+.value {
+  font-family: var(--ds-font-mono);
+  font-size: 22px;
+  color: var(--ds-ink);
+  line-height: 1.1;
+}
+
+@media (max-width: 700px) {
+  .grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
