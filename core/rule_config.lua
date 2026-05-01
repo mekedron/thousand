@@ -855,16 +855,91 @@ local SCHEMA = {
             },
         },
     },
+    -- Scoring rules and house-rule toggles. `round_to_nearest` is
+    -- "implemented" — core/scoring.lua reads it directly. Phase 3.2
+    -- widens its allowed set to { 5, 10 } and flips the status to
+    -- "selectable" so the picker can offer the coarse-rounding variant
+    -- (docs/variations/house-rules.md "Rounding granularity"); the
+    -- engine math is generic over any positive integer divisor, so 10
+    -- already works without further plumbing. The remaining fields are
+    -- the scoring house-rule catalogue from
+    -- docs/variations/house-rules.md "Scoring house rules", landing
+    -- here as deferred entries so built-in templates and saved customs
+    -- can reference them by shape today and the engine can wire them
+    -- up in a later task without another schema migration.
     scoring = {
         kind = "section",
-        field_order = { "round_to_nearest" },
+        field_order = {
+            "round_to_nearest",
+            "actual_points_on_success",
+            "defender_contributions",
+            "failed_contract_distribution",
+            "declarer_rounding_before_contract_check",
+        },
         fields = {
             round_to_nearest = {
                 kind = "leaf",
                 lua_type = "number",
-                allowed = { 5 },
+                allowed = { 5, 10 },
                 default = 5,
-                status = "implemented",
+                status = "selectable",
+            },
+            -- House-rule: declarer scores `max(bid, actual deal points)`
+            -- on success rather than just the bid value. Reduces
+            -- over-bidding pressure. See
+            -- docs/variations/house-rules.md "Score actual points on
+            -- success".
+            actual_points_on_success = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "deferred",
+            },
+            -- House-rule: how defender deal points reach defender
+            -- running totals. `standard` credits each defender their
+            -- own captured points; `pooled` sums and splits equally.
+            -- Almost never used outside partnership variants. See
+            -- docs/variations/house-rules.md "Defender contributions".
+            defender_contributions = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "standard", "pooled" },
+                default = "standard",
+                status = "deferred",
+            },
+            -- House-rule: where the bid value "goes" when the
+            -- declarer fails. `lost` matches the canonical Russian
+            -- rule (declarer's individual loss, defenders unaffected);
+            -- the distribution variants split the bid among defenders
+            -- with varying severity. `mirrors_forced_concession`
+            -- reuses the bidding.forced_bid_concession setting for
+            -- consistency. See docs/variations/house-rules.md
+            -- "Failed-contract distribution".
+            failed_contract_distribution = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = {
+                    "lost",
+                    "split_among_defenders",
+                    "each_defender_full",
+                    "mirrors_forced_concession",
+                },
+                default = "lost",
+                status = "deferred",
+            },
+            -- House-rule: round the declarer's captured points before
+            -- comparing them to the bid. A captured 118 against a 120
+            -- bid then rounds up to 120 and makes the contract.
+            -- Forgiving to near-misses; reduces over-bidding caution.
+            -- See docs/variations/house-rules.md "Declarer rounding
+            -- before contract check".
+            declarer_rounding_before_contract_check = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "deferred",
             },
         },
     },
@@ -1523,7 +1598,13 @@ M.canonical_russian = M.new({
         slam_against_penalty = "off",
         lead_trump_after_marriage = "off",
     },
-    scoring = { round_to_nearest = 5 },
+    scoring = {
+        round_to_nearest = 5,
+        actual_points_on_success = "off",
+        defender_contributions = "standard",
+        failed_contract_distribution = "lost",
+        declarer_rounding_before_contract_check = "off",
+    },
     barrel = {
         threshold = 880,
         deal_count = 3,

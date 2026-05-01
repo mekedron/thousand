@@ -317,7 +317,7 @@ only for toggles marked selectable.
   - Slam bonus.
   - Slam-against penalty.
   - Lead-trump-after-marriage requirement.
-- [ ] Add scoring toggles.
+- [x] Add scoring toggles.
   - Rounding granularity.
   - Score declarer's actual deal points instead of bid on success.
   - Defender contributions.

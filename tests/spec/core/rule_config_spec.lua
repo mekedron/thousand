@@ -82,7 +82,13 @@ local function valid_table()
             slam_against_penalty = "off",
             lead_trump_after_marriage = "off",
         },
-        scoring = { round_to_nearest = 5 },
+        scoring = {
+            round_to_nearest = 5,
+            actual_points_on_success = "off",
+            defender_contributions = "standard",
+            failed_contract_distribution = "lost",
+            declarer_rounding_before_contract_check = "off",
+        },
         barrel = {
             threshold = 880,
             deal_count = 3,
@@ -331,6 +337,13 @@ describe("core.rule_config", function()
             assert.are.equal(5, config.scoring.round_to_nearest)
         end)
 
+        it("encodes the canonical scoring toggles at their defaults", function()
+            assert.are.equal("off", config.scoring.actual_points_on_success)
+            assert.are.equal("standard", config.scoring.defender_contributions)
+            assert.are.equal("lost", config.scoring.failed_contract_distribution)
+            assert.are.equal("off", config.scoring.declarer_rounding_before_contract_check)
+        end)
+
         it("encodes the canonical barrel rules", function()
             assert.are.equal(880, config.barrel.threshold)
             assert.are.equal(3, config.barrel.deal_count)
@@ -480,7 +493,16 @@ describe("core.rule_config", function()
                         "lead_trump_after_marriage",
                     },
                 },
-                { "scoring", { "round_to_nearest" } },
+                {
+                    "scoring",
+                    {
+                        "round_to_nearest",
+                        "actual_points_on_success",
+                        "defender_contributions",
+                        "failed_contract_distribution",
+                        "declarer_rounding_before_contract_check",
+                    },
+                },
                 { "barrel", { "threshold", "deal_count", "fall_off_penalty" } },
                 { "endgame", { "target_score" } },
             }
@@ -2207,6 +2229,190 @@ describe("core.rule_config", function()
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
             assert.are.equal("off", res.config.tricks.lead_trump_after_marriage)
+        end)
+    end)
+
+    describe("scoring.round_to_nearest", function()
+        it("exposes a selectable number-leaf descriptor with allowed = {5, 10}", function()
+            local d = rule_config.schema_for("scoring.round_to_nearest")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(5, d.default)
+            assert.are.equal("selectable", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed[5])
+            assert.is_true(allowed[10])
+        end)
+
+        it("accepts each of 5, 10 through try_new (selectable, not deferred)", function()
+            for _, ok_value in ipairs({ 5, 10 }) do
+                local t = valid_table()
+                t.scoring.round_to_nearest = ok_value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "round_to_nearest=" .. ok_value .. " should be accepted")
+                assert.are.equal(ok_value, res.config.scoring.round_to_nearest)
+            end
+        end)
+
+        it("rejects values outside {5, 10} with value_not_allowed", function()
+            for _, bad in ipairs({ 0, 1, 3, 7, 20 }) do
+                local t = valid_table()
+                t.scoring.round_to_nearest = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "round_to_nearest=" .. bad .. " should be rejected")
+                assert.are.equal("value_not_allowed", res.error.code)
+                assert.are.equal("scoring.round_to_nearest", res.error.path)
+                assert.are.equal(bad, res.error.value)
+            end
+        end)
+
+        it("survives a JSON round trip with round_to_nearest = 10", function()
+            local t = valid_table()
+            t.scoring.round_to_nearest = 10
+            local config_in = rule_config.new(t)
+            local s = rule_config.to_json(config_in)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal(10, res.config.scoring.round_to_nearest)
+        end)
+    end)
+
+    describe("scoring.actual_points_on_success", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("scoring.actual_points_on_success")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["on"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.scoring.actual_points_on_success = "on"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("scoring.actual_points_on_success", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.scoring.actual_points_on_success)
+        end)
+    end)
+
+    describe("scoring.defender_contributions", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("scoring.defender_contributions")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("standard", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["standard"])
+            assert.is_true(allowed["pooled"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.scoring.defender_contributions = "pooled"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("scoring.defender_contributions", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("standard", res.config.scoring.defender_contributions)
+        end)
+    end)
+
+    describe("scoring.failed_contract_distribution", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("scoring.failed_contract_distribution")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("lost", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["lost"])
+            assert.is_true(allowed["split_among_defenders"])
+            assert.is_true(allowed["each_defender_full"])
+            assert.is_true(allowed["mirrors_forced_concession"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            for _, bad in ipairs({
+                "split_among_defenders",
+                "each_defender_full",
+                "mirrors_forced_concession",
+            }) do
+                local t = valid_table()
+                t.scoring.failed_contract_distribution = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
+                assert.are.equal("deferred_field_changed", res.error.code)
+                assert.are.equal("scoring.failed_contract_distribution", res.error.path)
+            end
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("lost", res.config.scoring.failed_contract_distribution)
+        end)
+    end)
+
+    describe("scoring.declarer_rounding_before_contract_check", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("scoring.declarer_rounding_before_contract_check")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["on"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.scoring.declarer_rounding_before_contract_check = "on"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("scoring.declarer_rounding_before_contract_check", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.scoring.declarer_rounding_before_contract_check)
         end)
     end)
 

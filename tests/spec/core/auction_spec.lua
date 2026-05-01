@@ -518,7 +518,13 @@ describe("core.auction", function()
                     slam_against_penalty = "off",
                     lead_trump_after_marriage = "off",
                 },
-                scoring = { round_to_nearest = 5 },
+                scoring = {
+                    round_to_nearest = 5,
+                    actual_points_on_success = "off",
+                    defender_contributions = "standard",
+                    failed_contract_distribution = "lost",
+                    declarer_rounding_before_contract_check = "off",
+                },
                 barrel = { threshold = 880, deal_count = 3, fall_off_penalty = -120 },
                 endgame = { target_score = 1000 },
             })
@@ -612,7 +618,13 @@ describe("core.auction", function()
                     slam_against_penalty = "off",
                     lead_trump_after_marriage = "off",
                 },
-                scoring = { round_to_nearest = 5 },
+                scoring = {
+                    round_to_nearest = 5,
+                    actual_points_on_success = "off",
+                    defender_contributions = "standard",
+                    failed_contract_distribution = "lost",
+                    declarer_rounding_before_contract_check = "off",
+                },
                 barrel = { threshold = 880, deal_count = 3, fall_off_penalty = -120 },
                 endgame = { target_score = 1000 },
             })
