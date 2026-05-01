@@ -393,18 +393,30 @@ function M:_apply_button_focus_marks()
     self._back_button.focused = (self:_focus_target() == "back")
 end
 
--- After a card-removing mutation (play, talon-pass, marriage+play),
--- clear keyboard focus if it was sitting on a card. Without this the
--- _focus_index slides into the panel/back range — the unified
--- ordering reads the now-out-of-range card index as the next group's
--- entry, so a play of the last card would silently jump focus to the
--- Menu button. In hot-seat mode the active player also rotates after
--- a play, which makes inheriting the previous player's focus index
--- equally wrong: the new player should press an arrow key when they
--- are ready to nav.
-function M:_clear_card_focus_after_mutation()
-    if self:_focus_target() == "card" then
+-- Reconcile keyboard focus with a hand that just shrank. Card-removing
+-- mutations (play, talon-pass, marriage+play) either reduce the active
+-- hand by one (talon awaiting_pass) or rotate to the next seat whose
+-- count may also be lower (a closing trick play). Without an
+-- adjustment the unified _focus_index slides into the panel/back
+-- range and the yellow ring silently lands on the Menu button.
+--
+-- Pre-mutation target is captured by the call site so we can tell
+-- "focus was on a card" from "focus was on Back". When focus was on
+-- a card we keep it on a card: snap to the new last card if the
+-- index is now beyond range, or clear it when the new hand is
+-- empty (deal_done after the eighth trick).
+function M:_reconcile_card_focus_after_mutation(pre_target)
+    if pre_target ~= "card" then
+        return
+    end
+    if not self._focus_index then
+        return
+    end
+    local card_count = self:_focus_card_count()
+    if card_count == 0 then
         self._focus_index = nil
+    elseif self._focus_index > card_count then
+        self._focus_index = card_count
     end
 end
 
@@ -470,9 +482,10 @@ function M:_do_pass_talon(target, card)
     if not session then
         return
     end
+    local pre_target = self:_focus_target()
     self:_invoke(session:pass_talon(target, card))
     self:_refresh_view_model()
-    self:_clear_card_focus_after_mutation()
+    self:_reconcile_card_focus_after_mutation(pre_target)
 end
 
 function M:_do_raise(amount)
@@ -498,9 +511,10 @@ function M:_do_play(player, card)
     if not session then
         return
     end
+    local pre_target = self:_focus_target()
     self:_invoke(session:play(player, card))
     self:_refresh_view_model()
-    self:_clear_card_focus_after_mutation()
+    self:_reconcile_card_focus_after_mutation(pre_target)
 end
 
 function M:_do_declare_then_play(player, suit, card)
@@ -508,12 +522,13 @@ function M:_do_declare_then_play(player, suit, card)
     if not session then
         return
     end
+    local pre_target = self:_focus_target()
     if not self:_invoke(session:declare_marriage(player, suit)) then
         return
     end
     self:_invoke(session:play(player, card))
     self:_refresh_view_model()
-    self:_clear_card_focus_after_mutation()
+    self:_reconcile_card_focus_after_mutation(pre_target)
 end
 
 function M:_do_start_next_deal()

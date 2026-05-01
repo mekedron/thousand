@@ -428,6 +428,64 @@ describe("ui.scenes.table", function()
             end
         end)
 
+        it("playing the last focused card snaps focus to the new last card", function()
+            -- Disable the privacy curtain so focus is observable
+            -- straight after the mutation, without dismissing a modal.
+            local settings = require("app.settings")
+            local store = {}
+            settings._set_storage(function(p)
+                return store[p]
+            end, function(p, v)
+                store[p] = v
+                return true
+            end)
+            settings.set("hot_seat_privacy", false)
+
+            -- Drive to the tricks phase.
+            assert(session:bid(2, 100).ok)
+            assert(session:pass(3).ok)
+            assert(session:pass(1).ok)
+            assert(session:take_talon().ok)
+            local hand = session:hands()[2]
+            assert(session:pass_talon(1, hand[1]).ok)
+            hand = session:hands()[2]
+            assert(session:pass_talon(3, hand[1]).ok)
+            assert(session:skip_raise().ok)
+            assert.are.equal("tricks", session:current_phase())
+
+            -- Drive two plays so the third player is about to close
+            -- trick 1. The trick winner leads trick 2 with one fewer
+            -- card than the closer had — that is the rotation gap
+            -- where the bug was visible.
+            local lead = session:current_turn()
+            assert(session:play(lead, session:legal_cards(lead)[1]).ok)
+            local follower = session:current_turn()
+            assert(session:play(follower, session:legal_cards(follower)[1]).ok)
+
+            local closer = session:current_turn()
+            scene:draw(1024, 720)
+            local closer_count = #session:hands()[closer]
+            scene._focus_index = closer_count
+            assert.are.equal("card", scene:_focus_target())
+
+            scene:_do_play(closer, session:legal_cards(closer)[1])
+
+            local new_turn = session:current_turn()
+            assert.is_not_nil(new_turn, "trick 2 should have begun with a new leader")
+            scene:draw(1024, 720)
+            local new_count = scene:_focus_card_count()
+            assert.is_not_nil(scene._focus_index, "focus should snap to a card, not drop")
+            assert.is_true(
+                scene._focus_index <= new_count,
+                "focus_index "
+                    .. tostring(scene._focus_index)
+                    .. " > new card_count "
+                    .. tostring(new_count)
+                    .. " — focus leaked into the panel/back range"
+            )
+            assert.are.equal("card", scene:_focus_target())
+        end)
+
         it("does not raise the curtain when settings.hot_seat_privacy is off", function()
             local settings = require("app.settings")
             -- Swap in an in-memory storage hook so the toggle write
