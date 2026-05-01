@@ -685,13 +685,43 @@ local SCHEMA = {
             },
         },
     },
+    -- Trick-play rules and house-rule toggles. The four `must_*` booleans
+    -- are "implemented" — the engine reads them from
+    -- core/tricks.lua's legality and required-action computation. The
+    -- remaining fields are the trick-play house-rule catalogue from
+    -- docs/variations/house-rules.md "Trick-play house rules", landing
+    -- here as deferred entries so built-in templates and saved customs
+    -- can reference them by shape today and the engine can wire them up
+    -- in a later task without another schema migration.
     tricks = {
         kind = "section",
-        field_order = { "must_follow", "must_beat", "must_trump", "must_overtrump" },
+        field_order = {
+            "must_follow",
+            "must_beat",
+            "must_trump",
+            "must_overtrump",
+            "must_overtake_strictness",
+            "must_trump_strictness",
+            "defender_must_overtrump_declarer",
+            "lazy_revoke",
+            "partial_trumping",
+            "last_trick_bonus",
+            "slam_bonus",
+            "slam_against_penalty",
+            "lead_trump_after_marriage",
+        },
         fields = {
+            -- Guarded constant: must-follow is the floor of every Thousand
+            -- variant in v1, so the schema accepts only `true`. The field
+            -- stays a boolean so the engine read site (core/tricks.lua)
+            -- and existing JSON saves keep their shape; the narrower
+            -- `allowed` set is the UI / template-editor contract that
+            -- prevents anyone from saving a config the engine does not
+            -- support.
             must_follow = {
                 kind = "leaf",
                 lua_type = "boolean",
+                allowed = { true },
                 default = true,
                 status = "implemented",
             },
@@ -712,6 +742,116 @@ local SCHEMA = {
                 lua_type = "boolean",
                 default = true,
                 status = "implemented",
+            },
+            -- House-rule: how strictly the must-overtake rule applies
+            -- when following suit. `standard` is the canonical Russian
+            -- read of must-beat; `polish_strict` matches Polish Tysiąc's
+            -- *przebijanie*, which carries the obligation forward more
+            -- aggressively (e.g. when discarding into a side-suit lead).
+            -- See docs/variations/house-rules.md "Trick-play house rules"
+            -- and docs/variations/polish.md.
+            must_overtake_strictness = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "standard", "polish_strict" },
+                default = "standard",
+                status = "deferred",
+            },
+            -- House-rule: how strictly must-trump and must-overtrump
+            -- apply when void in the led suit. `standard` matches the
+            -- four canonical booleans; `polish_strict` enforces the
+            -- Polish escalation. See docs/variations/house-rules.md
+            -- "Trick-play house rules".
+            must_trump_strictness = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "standard", "polish_strict" },
+                default = "standard",
+                status = "deferred",
+            },
+            -- House-rule: a defender who can overtrump the declarer's
+            -- played trump must do so even when not strictly required by
+            -- the must-overtrump rule. Used at tables that want
+            -- defenders to push declarer harder. See
+            -- docs/variations/house-rules.md "Trick-play house rules".
+            defender_must_overtrump_declarer = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "deferred",
+            },
+            -- House-rule: misplays (failure to follow / overtake / trump)
+            -- are punished only when caught and called before the next
+            -- trick is led. After the next lead the misplay stands.
+            -- Useful for casual play. See
+            -- docs/variations/house-rules.md "Lazy revoke".
+            lazy_revoke = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "deferred",
+            },
+            -- House-rule: a defender who cannot beat an existing trump
+            -- but holds a lower trump may discard rather than play the
+            -- lower trump. Standard Thousand requires playing the trump.
+            -- See docs/variations/house-rules.md "Partial trumping".
+            partial_trumping = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "deferred",
+            },
+            -- House-rule: the winner of the final (8th) trick earns a
+            -- small bonus added to that side's deal score. Common at
+            -- many Russian and Polish tables. The bonus value is a
+            -- sibling field that lands with the gameplay task. See
+            -- docs/variations/house-rules.md "Last-trick bonus".
+            last_trick_bonus = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "deferred",
+            },
+            -- House-rule: bonus for the declarer winning all 8 tricks.
+            -- `fixed` adds a flat bonus (commonly +60 or +120);
+            -- `doubled_bid` doubles the contract value on success. The
+            -- amount of the fixed bonus is a sibling field that lands
+            -- with the gameplay task. See
+            -- docs/variations/house-rules.md "Slam bonus".
+            slam_bonus = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "fixed", "doubled_bid" },
+                default = "off",
+                status = "deferred",
+            },
+            -- House-rule: defender-side analogue of the slam bonus —
+            -- the declarer takes zero tricks and the defenders score a
+            -- bonus. Mostly relevant for mizère contracts, but a few
+            -- tables use it for ordinary contracts too. See
+            -- docs/variations/house-rules.md "Slam bonus".
+            slam_against_penalty = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "deferred",
+            },
+            -- House-rule: after declaring a marriage, the declarer must
+            -- lead trump on the next trick (not just the K or Q of the
+            -- marriage). Some tables enforce this as a strategy lock;
+            -- most do not. See docs/variations/house-rules.md
+            -- "Lead-trump-after-marriage".
+            lead_trump_after_marriage = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "deferred",
             },
         },
     },
@@ -1373,6 +1513,15 @@ M.canonical_russian = M.new({
         must_beat = true,
         must_trump = true,
         must_overtrump = true,
+        must_overtake_strictness = "standard",
+        must_trump_strictness = "standard",
+        defender_must_overtrump_declarer = "off",
+        lazy_revoke = "off",
+        partial_trumping = "off",
+        last_trick_bonus = "off",
+        slam_bonus = "off",
+        slam_against_penalty = "off",
+        lead_trump_after_marriage = "off",
     },
     scoring = { round_to_nearest = 5 },
     barrel = {

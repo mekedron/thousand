@@ -306,7 +306,7 @@ only for toggles marked selectable.
   - Drowned-marriage rule.
   - Ace marriage / тузовый марьяж.
   - One trump per deal.
-- [ ] Add trick-play toggles.
+- [x] Add trick-play toggles.
   - Must follow suit as a guarded constant.
   - Must overtake strictness.
   - Must trump strictness.
