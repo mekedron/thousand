@@ -361,7 +361,7 @@ variant** — only data.
 
 ### 3.4 Custom templates
 
-- [ ] Implement custom template lifecycle and persistence.
+- [x] Implement custom template lifecycle and persistence.
   - Clone a built-in template into an editable copy.
   - Edit any toggle with live validation feedback.
   - Save, rename, delete, duplicate, star, and sort custom templates.

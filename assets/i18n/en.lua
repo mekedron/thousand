@@ -115,4 +115,17 @@ return {
     ["rule_config.invariant.pre_talon_max_ge_opening_min"] = "Pre-talon maximum (%{pre_talon_max}) must be at least the opening minimum (%{opening_min}).",
     ["rule_config.invariant.barrel_threshold_below_target"] = "Barrel threshold (%{threshold}) must be below the target score (%{target_score}).",
     ["rule_config.invariant.partnership_mode_requires_four_players"] = "Fixed partnerships are only valid with 4 players (got %{count} with partnership_mode=%{partnership_mode}).",
+
+    ["templates.error.not_a_table"] = "Template must be a table, got %{actual}.",
+    ["templates.error.unsupported_schema_version"] = "Unsupported template schema version %{version} (supported: %{supported}).",
+    ["templates.error.field_required"] = "Required template field %{path} is missing.",
+    ["templates.error.type_mismatch"] = "Template %{path} must be %{expected}, got %{actual}.",
+    ["templates.error.invalid_rule_config"] = "Template's rule config is invalid.",
+    ["templates.error.json_decode_failed"] = "Could not decode template JSON: %{details}.",
+    ["templates.error.unknown_parent"] = "Built-in template %{parentTemplateId} is not known to this build.",
+    ["templates.error.parent_missing"] = "This template's parent built-in is not available; reset is unavailable.",
+    ["templates.error.unknown_template"] = "No template with id %{id}.",
+    ["templates.error.per_template_invalid"] = "Dropped %{dropped_count} corrupt template(s) on load.",
+
+    ["templates.duplicate_suffix"] = "%{name} copy",
 }
