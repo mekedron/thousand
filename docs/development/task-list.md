@@ -274,7 +274,7 @@ only for toggles marked selectable.
   - Weak-hand redeal options.
   - Misdeal handling options.
   - All-pass handling options, including распасы reverse-scoring.
-- [ ] Add talon toggles.
+- [x] Add talon toggles.
   - Talon size (0 / 2 / 3).
   - Talon distribution options.
   - Talon-flip-after-first-round.

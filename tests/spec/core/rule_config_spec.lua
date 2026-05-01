@@ -31,7 +31,17 @@ local function valid_table()
             misdeal_handling = "standard",
             all_pass_handling = "redeal",
         },
-        talon = { size = 3 },
+        talon = {
+            size = 3,
+            distribution = "declarer_takes_then_passes",
+            flip_after_first_round = "off",
+            pass_the_talon = "off",
+            buyback = "off",
+            hidden_on_minimum_100 = "off",
+            bad_talon_redeal = "off",
+            rebuy = "off",
+            open_discard = "off",
+        },
         bidding = {
             opening_min = 100,
             pre_talon_max = 120,
@@ -230,6 +240,17 @@ describe("core.rule_config", function()
             assert.are.equal("redeal", config.dealing.all_pass_handling)
         end)
 
+        it("encodes the canonical talon-section defaults", function()
+            assert.are.equal("declarer_takes_then_passes", config.talon.distribution)
+            assert.are.equal("off", config.talon.flip_after_first_round)
+            assert.are.equal("off", config.talon.pass_the_talon)
+            assert.are.equal("off", config.talon.buyback)
+            assert.are.equal("off", config.talon.hidden_on_minimum_100)
+            assert.are.equal("off", config.talon.bad_talon_redeal)
+            assert.are.equal("off", config.talon.rebuy)
+            assert.are.equal("off", config.talon.open_discard)
+        end)
+
         it("encodes the canonical bidding rules", function()
             assert.are.equal(100, config.bidding.opening_min)
             assert.are.equal(120, config.bidding.pre_talon_max)
@@ -342,7 +363,20 @@ describe("core.rule_config", function()
                         "all_pass_handling",
                     },
                 },
-                { "talon", { "size" } },
+                {
+                    "talon",
+                    {
+                        "size",
+                        "distribution",
+                        "flip_after_first_round",
+                        "pass_the_talon",
+                        "buyback",
+                        "hidden_on_minimum_100",
+                        "bad_talon_redeal",
+                        "rebuy",
+                        "open_discard",
+                    },
+                },
                 {
                     "bidding",
                     {
@@ -949,6 +983,332 @@ describe("core.rule_config", function()
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
             assert.are.equal("redeal", res.config.dealing.all_pass_handling)
+        end)
+    end)
+
+    describe("talon.size", function()
+        it("exposes a selectable number-leaf descriptor with allowed = {0, 2, 3}", function()
+            local d = rule_config.schema_for("talon.size")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(3, d.default)
+            assert.are.equal("selectable", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed[0])
+            assert.is_true(allowed[2])
+            assert.is_true(allowed[3])
+        end)
+
+        it("accepts the default value through try_new", function()
+            local res = rule_config.try_new(valid_table())
+            assert.is_true(res.ok)
+            assert.are.equal(3, res.config.talon.size)
+        end)
+
+        it("accepts each of 0, 2, 3 through try_new (selectable, not deferred)", function()
+            for _, ok_size in ipairs({ 0, 2, 3 }) do
+                local t = valid_table()
+                t.talon.size = ok_size
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "size=" .. ok_size .. " should be accepted")
+                assert.are.equal(ok_size, res.config.talon.size)
+            end
+        end)
+
+        it("rejects sizes outside {0, 2, 3} with value_not_allowed", function()
+            for _, bad in ipairs({ -1, 1, 4, 5, 99 }) do
+                local t = valid_table()
+                t.talon.size = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "size=" .. bad .. " should be rejected")
+                assert.are.equal("value_not_allowed", res.error.code)
+                assert.are.equal("talon.size", res.error.path)
+                assert.are.equal(bad, res.error.value)
+            end
+        end)
+
+        it("survives a JSON round trip with size = 2", function()
+            local t = valid_table()
+            t.talon.size = 2
+            local config_in = rule_config.new(t)
+            local s = rule_config.to_json(config_in)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal(2, res.config.talon.size)
+        end)
+    end)
+
+    describe("talon.distribution", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("talon.distribution")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("declarer_takes_then_passes", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["declarer_takes_then_passes"])
+            assert.is_true(allowed["pass_without_taking"])
+            assert.is_true(allowed["stock_draw"])
+        end)
+
+        it("accepts the default value through try_new", function()
+            local res = rule_config.try_new(valid_table())
+            assert.is_true(res.ok)
+            assert.are.equal("declarer_takes_then_passes", res.config.talon.distribution)
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            for _, bad in ipairs({ "pass_without_taking", "stock_draw" }) do
+                local t = valid_table()
+                t.talon.distribution = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
+                assert.are.equal("deferred_field_changed", res.error.code)
+                assert.are.equal("talon.distribution", res.error.path)
+            end
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("declarer_takes_then_passes", res.config.talon.distribution)
+        end)
+    end)
+
+    describe("talon.flip_after_first_round", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("talon.flip_after_first_round")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["on"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.talon.flip_after_first_round = "on"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("talon.flip_after_first_round", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.talon.flip_after_first_round)
+        end)
+    end)
+
+    describe("talon.pass_the_talon", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("talon.pass_the_talon")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["on"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.talon.pass_the_talon = "on"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("talon.pass_the_talon", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.talon.pass_the_talon)
+        end)
+    end)
+
+    describe("talon.buyback", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("talon.buyback")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["on"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.talon.buyback = "on"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("talon.buyback", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.talon.buyback)
+        end)
+    end)
+
+    describe("talon.hidden_on_minimum_100", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("talon.hidden_on_minimum_100")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["minimum_100_only"])
+            assert.is_true(allowed["any_forced_100"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            for _, bad in ipairs({ "minimum_100_only", "any_forced_100" }) do
+                local t = valid_table()
+                t.talon.hidden_on_minimum_100 = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
+                assert.are.equal("deferred_field_changed", res.error.code)
+                assert.are.equal("talon.hidden_on_minimum_100", res.error.path)
+            end
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.talon.hidden_on_minimum_100)
+        end)
+    end)
+
+    describe("talon.bad_talon_redeal", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("talon.bad_talon_redeal")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["any_contract"])
+            assert.is_true(allowed["minimum_100_only"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            for _, bad in ipairs({ "any_contract", "minimum_100_only" }) do
+                local t = valid_table()
+                t.talon.bad_talon_redeal = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
+                assert.are.equal("deferred_field_changed", res.error.code)
+                assert.are.equal("talon.bad_talon_redeal", res.error.path)
+            end
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.talon.bad_talon_redeal)
+        end)
+    end)
+
+    describe("talon.rebuy", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("talon.rebuy")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["on"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.talon.rebuy = "on"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("talon.rebuy", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.talon.rebuy)
+        end)
+    end)
+
+    describe("talon.open_discard", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("talon.open_discard")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["on"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.talon.open_discard = "on"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("talon.open_discard", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.talon.open_discard)
         end)
     end)
 

@@ -253,14 +253,130 @@ local SCHEMA = {
     },
     talon = {
         kind = "section",
-        field_order = { "size" },
+        field_order = {
+            "size",
+            "distribution",
+            "flip_after_first_round",
+            "pass_the_talon",
+            "buyback",
+            "hidden_on_minimum_100",
+            "bad_talon_redeal",
+            "rebuy",
+            "open_discard",
+        },
         fields = {
+            -- Phase 3.2 narrowed the allowed set to {0, 2, 3} and flipped
+            -- the status to "selectable": 0 disables the talon entirely
+            -- (some 4-player layouts), 2 is the Polish Tysiąc shape, 3 is
+            -- canonical Russian. The picker may surface all three; the
+            -- engine still gates runtime to size == 3 until the 2- and
+            -- 4-player paths land (see core/dealing.lua's
+            -- unsupported_talon_size guard).
             size = {
                 kind = "leaf",
                 lua_type = "number",
-                min = 0,
+                allowed = { 0, 2, 3 },
                 default = 3,
-                status = "implemented",
+                status = "selectable",
+            },
+            -- How talon cards reach the players. "declarer_takes_then_passes"
+            -- is the standard 3-card Russian flow (docs/rules/talon.md).
+            -- "pass_without_taking" matches the Polish 2-card variant where
+            -- the declarer never picks the talon up
+            -- (docs/variations/polish.md). "stock_draw" is the 2-player
+            -- Schnapsen-style closed-talon stock
+            -- (docs/variations/two-player.md). Locked to the standard
+            -- distribution until those engine paths land.
+            distribution = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = {
+                    "declarer_takes_then_passes",
+                    "pass_without_taking",
+                    "stock_draw",
+                },
+                default = "declarer_takes_then_passes",
+                status = "deferred",
+            },
+            -- House-rule: keep the talon closed during the first round of
+            -- bidding and flip it only if the auction reaches a second
+            -- round. Lets first-round bids stay sharp while preserving
+            -- talon mystery for serious bids
+            -- (docs/variations/house-rules.md).
+            flip_after_first_round = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "deferred",
+            },
+            -- House-rule: a declarer disgusted with the talon may concede
+            -- the deal at the bid before play
+            -- (docs/variations/house-rules.md, docs/rules/talon.md).
+            pass_the_talon = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "deferred",
+            },
+            -- House-rule: declarer may discard the entire hand for a fresh
+            -- deal at a 50-point penalty
+            -- (docs/variations/house-rules.md).
+            buyback = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "deferred",
+            },
+            -- House-rule: when the declarer wins at minimum 100 simply
+            -- because everyone else passed, defenders do not see the
+            -- talon. Some tables extend this to any forced-100 contract
+            -- (bolt or forced opening); see
+            -- docs/variations/house-rules.md.
+            hidden_on_minimum_100 = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "minimum_100_only", "any_forced_100" },
+                default = "off",
+                status = "deferred",
+            },
+            -- House-rule: after the talon is revealed, a worthless talon
+            -- triggers a redeal. Some tables allow this only on minimum-100
+            -- contracts; others on any contract before the pass step.
+            -- Distinct from the dealing-time 4-nine and 3-nine redeals
+            -- catalogued in dealing.* — those fire before the auction;
+            -- this one fires after the talon reveal. See
+            -- docs/variations/house-rules.md.
+            bad_talon_redeal = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "any_contract", "minimum_100_only" },
+                default = "off",
+                status = "deferred",
+            },
+            -- House-rule: another player may "buy the talon away" by
+            -- naming a higher fixed contract after seeing the talon,
+            -- creating a second auction with full talon information
+            -- (docs/variations/house-rules.md).
+            rebuy = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "deferred",
+            },
+            -- House-rule: declarer's discards to opponents are dealt
+            -- face-up so defenders see what was thrown away. Mostly a
+            -- tournament or analysis rule
+            -- (docs/variations/house-rules.md).
+            open_discard = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "deferred",
             },
         },
     },
@@ -976,7 +1092,17 @@ M.canonical_russian = M.new({
         misdeal_handling = "standard",
         all_pass_handling = "redeal",
     },
-    talon = { size = 3 },
+    talon = {
+        size = 3,
+        distribution = "declarer_takes_then_passes",
+        flip_after_first_round = "off",
+        pass_the_talon = "off",
+        buyback = "off",
+        hidden_on_minimum_100 = "off",
+        bad_talon_redeal = "off",
+        rebuy = "off",
+        open_discard = "off",
+    },
     bidding = {
         opening_min = 100,
         pre_talon_max = 120,

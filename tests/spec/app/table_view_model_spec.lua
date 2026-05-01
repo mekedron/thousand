@@ -372,7 +372,17 @@ describe("app.table_view_model", function()
                     misdeal_handling = "standard",
                     all_pass_handling = "redeal",
                 },
-                talon = { size = 3 },
+                talon = {
+                    size = 3,
+                    distribution = "declarer_takes_then_passes",
+                    flip_after_first_round = "off",
+                    pass_the_talon = "off",
+                    buyback = "off",
+                    hidden_on_minimum_100 = "off",
+                    bad_talon_redeal = "off",
+                    rebuy = "off",
+                    open_discard = "off",
+                },
                 bidding = bidding,
                 marriages = {
                     values = { hearts = 100, diamonds = 80, clubs = 60, spades = 40 },
