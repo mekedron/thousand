@@ -358,7 +358,12 @@ describe("app.table_view_model", function()
                     },
                     trick_rank_order = { "9", "J", "Q", "K", "10", "A" },
                 },
-                players = { count = 3 },
+                players = {
+                    count = 3,
+                    partnership_mode = "none",
+                    four_player_config = "dealer_plays_no_talon",
+                    two_player_config = "closed_talon_draw_stock",
+                },
                 talon = { size = 3 },
                 bidding = bidding,
                 marriages = {

@@ -114,4 +114,5 @@ return {
 
     ["rule_config.invariant.pre_talon_max_ge_opening_min"] = "Pre-talon maximum (%{pre_talon_max}) must be at least the opening minimum (%{opening_min}).",
     ["rule_config.invariant.barrel_threshold_below_target"] = "Barrel threshold (%{threshold}) must be below the target score (%{target_score}).",
+    ["rule_config.invariant.partnership_mode_requires_four_players"] = "Fixed partnerships are only valid with 4 players (got %{count} with partnership_mode=%{partnership_mode}).",
 }

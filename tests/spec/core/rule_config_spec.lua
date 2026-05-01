@@ -17,7 +17,12 @@ local function valid_table()
             },
             trick_rank_order = { "9", "J", "Q", "K", "10", "A" },
         },
-        players = { count = 3 },
+        players = {
+            count = 3,
+            partnership_mode = "none",
+            four_player_config = "dealer_plays_no_talon",
+            two_player_config = "closed_talon_draw_stock",
+        },
         talon = { size = 3 },
         bidding = {
             opening_min = 100,
@@ -201,6 +206,12 @@ describe("core.rule_config", function()
             assert.are.equal(3, config.talon.size)
         end)
 
+        it("encodes the canonical players-section seating defaults", function()
+            assert.are.equal("none", config.players.partnership_mode)
+            assert.are.equal("dealer_plays_no_talon", config.players.four_player_config)
+            assert.are.equal("closed_talon_draw_stock", config.players.two_player_config)
+        end)
+
         it("encodes the canonical bidding rules", function()
             assert.are.equal(100, config.bidding.opening_min)
             assert.are.equal(120, config.bidding.pre_talon_max)
@@ -290,10 +301,18 @@ describe("core.rule_config", function()
             assert.is_nil(rule_config.schema_for(42))
         end)
 
-        it("exposes lua_type, default, and status on every implemented leaf", function()
+        it("exposes lua_type, default, and a known status on every catalogued leaf", function()
             local catalogue = {
                 { "cards", { "trick_rank_order", "point_values" } },
-                { "players", { "count" } },
+                {
+                    "players",
+                    {
+                        "count",
+                        "partnership_mode",
+                        "four_player_config",
+                        "two_player_config",
+                    },
+                },
                 { "talon", { "size" } },
                 {
                     "bidding",
@@ -314,6 +333,11 @@ describe("core.rule_config", function()
                 { "barrel", { "threshold", "deal_count", "fall_off_penalty" } },
                 { "endgame", { "target_score" } },
             }
+            local known_status = {
+                implemented = true,
+                selectable = true,
+                deferred = true,
+            }
             for _, entry in ipairs(catalogue) do
                 local section, fields = entry[1], entry[2]
                 for _, name in ipairs(fields) do
@@ -322,7 +346,10 @@ describe("core.rule_config", function()
                     assert.is_not_nil(d, path .. " has no descriptor")
                     assert.is_truthy(d.kind, path .. " missing kind")
                     assert.is_not_nil(d.default, path .. " missing default")
-                    assert.are.equal("implemented", d.status, path .. " has wrong status")
+                    assert.is_true(
+                        known_status[d.status] == true,
+                        path .. " has unknown status: " .. tostring(d.status)
+                    )
                 end
             end
         end)
@@ -532,6 +559,159 @@ describe("core.rule_config", function()
         end)
     end)
 
+    describe("players.count", function()
+        it("exposes a leaf descriptor narrowed to {2, 3, 4} and selectable", function()
+            local d = rule_config.schema_for("players.count")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(3, d.default)
+            assert.are.equal("selectable", d.status)
+            assert.is_nil(d.min)
+            assert.is_table(d.allowed)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed[2])
+            assert.is_true(allowed[3])
+            assert.is_true(allowed[4])
+        end)
+
+        it("rejects player counts outside {2, 3, 4} with value_not_allowed", function()
+            for _, bad in ipairs({ 0, 1, 5, 99 }) do
+                local t = valid_table()
+                t.players.count = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "count=" .. bad .. " should be rejected")
+                assert.are.equal("value_not_allowed", res.error.code)
+                assert.are.equal("players.count", res.error.path)
+                assert.are.equal(bad, res.error.value)
+            end
+        end)
+
+        it("accepts each of 2, 3, 4 through try_new", function()
+            for _, ok_count in ipairs({ 2, 3, 4 }) do
+                local t = valid_table()
+                t.players.count = ok_count
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "count=" .. ok_count .. " should be accepted")
+                assert.are.equal(ok_count, res.config.players.count)
+            end
+        end)
+
+        it("survives a JSON round trip with count = 2", function()
+            local t = valid_table()
+            t.players.count = 2
+            local config_in = rule_config.new(t)
+            local s = rule_config.to_json(config_in)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal(2, res.config.players.count)
+        end)
+    end)
+
+    describe("players.partnership_mode", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("players.partnership_mode")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("none", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["none"])
+            assert.is_true(allowed["fixed_across_table"])
+        end)
+
+        it("accepts the default value through try_new", function()
+            local res = rule_config.try_new(valid_table())
+            assert.is_true(res.ok)
+            assert.are.equal("none", res.config.players.partnership_mode)
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.players.partnership_mode = "fixed_across_table"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("players.partnership_mode", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("none", res.config.players.partnership_mode)
+        end)
+    end)
+
+    describe("players.four_player_config", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("players.four_player_config")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("dealer_plays_no_talon", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["dealer_plays_no_talon"])
+            assert.is_true(allowed["dealer_sits_out"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.players.four_player_config = "dealer_sits_out"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("players.four_player_config", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("dealer_plays_no_talon", res.config.players.four_player_config)
+        end)
+    end)
+
+    describe("players.two_player_config", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("players.two_player_config")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("closed_talon_draw_stock", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["closed_talon_draw_stock"])
+            assert.is_true(allowed["fixed_deal_no_draw"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.players.two_player_config = "fixed_deal_no_draw"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("players.two_player_config", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("closed_talon_draw_stock", res.config.players.two_player_config)
+        end)
+    end)
+
     describe("cross-field invariants", function()
         it("rejects pre_talon_max below opening_min", function()
             local t = valid_table()
@@ -598,6 +778,92 @@ describe("core.rule_config", function()
             assert.is_false(res.ok)
             assert.are.equal("deferred_field_changed", res.error.code)
             assert.are.equal("test_section.deferred_field", res.error.path)
+        end)
+    end)
+
+    describe("partnership_mode_requires_four_players invariant", function()
+        -- partnership_mode is deferred in production, so the invariant can't
+        -- fire through try_new today. Exercise its predicate against a
+        -- synthetic schema where the field is selectable, and pass the
+        -- invariant in explicitly so the production INVARIANTS list does not
+        -- have to be reachable from the test.
+        local synth_schema = {
+            _section_order = { "players" },
+            schema_version = {
+                kind = "leaf",
+                lua_type = "number",
+                allowed = { 1 },
+                default = 1,
+                status = "implemented",
+            },
+            players = {
+                kind = "section",
+                field_order = { "count", "partnership_mode" },
+                fields = {
+                    count = {
+                        kind = "leaf",
+                        lua_type = "number",
+                        allowed = { 2, 3, 4 },
+                        default = 3,
+                        status = "selectable",
+                    },
+                    partnership_mode = {
+                        kind = "leaf",
+                        lua_type = "string",
+                        allowed = { "none", "fixed_across_table" },
+                        default = "none",
+                        status = "selectable",
+                    },
+                },
+            },
+        }
+
+        local function find_invariant(name)
+            for _, inv in ipairs(rule_config._invariants()) do
+                if inv.name == name then
+                    return inv
+                end
+            end
+            return nil
+        end
+
+        it("is registered on the production INVARIANTS list", function()
+            assert.is_not_nil(find_invariant("partnership_mode_requires_four_players"))
+        end)
+
+        it("accepts partnership_mode=none with any selectable player count", function()
+            local invariants = { find_invariant("partnership_mode_requires_four_players") }
+            for _, count in ipairs({ 2, 3, 4 }) do
+                local res = rule_config._validate({
+                    schema_version = 1,
+                    players = { count = count, partnership_mode = "none" },
+                }, synth_schema, invariants)
+                assert.is_true(res.ok, "count=" .. count .. " with mode=none should pass")
+            end
+        end)
+
+        it("accepts partnership_mode=fixed_across_table when count == 4", function()
+            local invariants = { find_invariant("partnership_mode_requires_four_players") }
+            local res = rule_config._validate({
+                schema_version = 1,
+                players = { count = 4, partnership_mode = "fixed_across_table" },
+            }, synth_schema, invariants)
+            assert.is_true(res.ok)
+        end)
+
+        it("rejects partnership_mode=fixed_across_table when count != 4", function()
+            local invariants = { find_invariant("partnership_mode_requires_four_players") }
+            for _, count in ipairs({ 2, 3 }) do
+                local res = rule_config._validate({
+                    schema_version = 1,
+                    players = { count = count, partnership_mode = "fixed_across_table" },
+                }, synth_schema, invariants)
+                assert.is_false(res.ok, "count=" .. count .. " should be rejected")
+                assert.are.equal("incompatible_combination", res.error.code)
+                assert.are.equal("partnership_mode_requires_four_players", res.error.invariant)
+                assert.are.equal("fixed_across_table", res.error.partnership_mode)
+                assert.are.equal(count, res.error.count)
+            end
         end)
     end)
 end)

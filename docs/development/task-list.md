@@ -261,7 +261,7 @@ which remains the source of truth for behavior. Catalogue tasks mean
 schema, validation, and UI representation; gameplay behavior is required
 only for toggles marked selectable.
 
-- [ ] Add players and seating toggles.
+- [x] Add players and seating toggles.
   - Player count (2 / 3 / 4).
   - Partnership mode (none / fixed across-the-table), valid only for 4
     players.

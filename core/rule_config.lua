@@ -109,17 +109,54 @@ local SCHEMA = {
     },
     players = {
         kind = "section",
-        field_order = { "count" },
+        field_order = {
+            "count",
+            "partnership_mode",
+            "four_player_config",
+            "two_player_config",
+        },
         fields = {
-            -- Phase 3.2's player-count toggle will narrow this to {2, 3, 4}.
-            -- Until then the schema only enforces "positive integer"; the
-            -- dealing module rejects unsupported counts at runtime.
+            -- Phase 3.2 narrowed this to {2, 3, 4} and flipped the status to
+            -- "selectable": the picker can offer any of the three, but
+            -- dealing/auction still gate runtime to count == 3 until 3.3
+            -- ships built-in 2- and 4-player templates.
             count = {
                 kind = "leaf",
                 lua_type = "number",
-                min = 1,
+                allowed = { 2, 3, 4 },
                 default = 3,
-                status = "implemented",
+                status = "selectable",
+            },
+            -- Partnership applies only to the 4-player table (see
+            -- docs/variations/four-player.md). Locked to "none" until the
+            -- 4-player engine path lands.
+            partnership_mode = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "none", "fixed_across_table" },
+                default = "none",
+                status = "deferred",
+            },
+            -- 4-player seating layout (see docs/variations/four-player.md).
+            -- "dealer_plays_no_talon" is Configuration A, the docs' reference;
+            -- "dealer_sits_out" is Configuration B.
+            four_player_config = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "dealer_plays_no_talon", "dealer_sits_out" },
+                default = "dealer_plays_no_talon",
+                status = "deferred",
+            },
+            -- 2-player layout (see docs/variations/two-player.md).
+            -- "closed_talon_draw_stock" is Variant A (Schnapsen-style draw);
+            -- "fixed_deal_no_draw" is Variant B (8 tricks, identical pattern
+            -- to the 3-player game).
+            two_player_config = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "closed_talon_draw_stock", "fixed_deal_no_draw" },
+                default = "closed_talon_draw_stock",
+                status = "deferred",
             },
         },
     },
@@ -310,6 +347,23 @@ local INVARIANTS = {
             return {
                 threshold = blob.barrel.threshold,
                 target_score = blob.endgame.target_score,
+            }
+        end,
+    },
+    -- Silent under the production schema today: partnership_mode is
+    -- deferred, so deferred_field_changed short-circuits any non-default
+    -- attempt before this predicate runs. The invariant lives here so the
+    -- task that flips partnership_mode to "selectable" gets the constraint
+    -- for free. See docs/variations/four-player.md.
+    {
+        name = "partnership_mode_requires_four_players",
+        predicate = function(blob)
+            return blob.players.partnership_mode == "none" or blob.players.count == 4
+        end,
+        context = function(blob)
+            return {
+                partnership_mode = blob.players.partnership_mode,
+                count = blob.players.count,
             }
         end,
     },
@@ -783,12 +837,23 @@ function M.from_json(s)
     return M.try_new(decoded)
 end
 
--- Test hook: run validation only, optionally against a custom schema.
--- Mirrors app/i18n.lua's `_set_locale_table` / `_reset` convention. Used
--- by specs to exercise the deferred-field path and other schema-shape
--- variations without mutating the production SCHEMA table.
-function M._validate(blob, schema_override)
-    return validate_blob(blob, schema_override)
+-- Test hook: run validation only, optionally against a custom schema and
+-- a custom invariants list. Mirrors app/i18n.lua's `_set_locale_table` /
+-- `_reset` convention. Used by specs to exercise the deferred-field path,
+-- alternative schema shapes, and invariants whose target field is still
+-- deferred in production (so try_new can't reach the predicate).
+function M._validate(blob, schema_override, invariants_override)
+    return validate_blob(blob, schema_override, invariants_override)
+end
+
+-- Test hook: returns a shallow copy of the production INVARIANTS list so
+-- specs can assert wiring without reaching into the module's locals.
+function M._invariants()
+    local copy = {}
+    for i, inv in ipairs(INVARIANTS) do
+        copy[i] = inv
+    end
+    return copy
 end
 
 -- Canonical instance -----------------------------------------------------
@@ -806,7 +871,12 @@ M.canonical_russian = M.new({
         },
         trick_rank_order = { "9", "J", "Q", "K", "10", "A" },
     },
-    players = { count = 3 },
+    players = {
+        count = 3,
+        partnership_mode = "none",
+        four_player_config = "dealer_plays_no_talon",
+        two_player_config = "closed_talon_draw_stock",
+    },
     talon = { size = 3 },
     bidding = {
         opening_min = 100,
