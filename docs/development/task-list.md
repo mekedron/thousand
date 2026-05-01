@@ -209,7 +209,7 @@ porting pass later, not a UI rewrite.
     `love.filesystem`, validated by `schemaVersion`.
   - `app/json.lua` provides the minimal encoder/decoder reused by Phase 2
     auto-save and Phase 3 templates.
-  - Settings scene exposes one row + Back; Phase 4's full settings
+  - Settings scene exposes one row + Back; Phase 5's full settings
     screen extends this scene with locale, sound, theme, and animation
     speed.
   - Disabling the toggle suppresses the privacy curtain entirely so a
@@ -389,11 +389,46 @@ variant** — only data.
 
 ---
 
-## Phase 4 — UX & polish
+## Phase 4 — AI opponents (algorithmic)
+
+Goal: a single human plays against two AI seats. **No LLM yet — silent
+AI.** The hard requirement is legal play under every built-in
+`RuleConfig`; strong strategy can improve incrementally after the first
+working AI.
+
+- [ ] Define the AI player interface in `app/ai/`.
+  - Interface covers `chooseBid`, `chooseTalonPass`, `chooseRaise`,
+    `chooseCard`, and `chooseMarriage`.
+  - Interface can observe game state without importing UI or LLM code.
+- [ ] Implement rule-based bidding, talon, raise, and marriage decisions.
+  - Bidding heuristic follows the [Strategy](../strategy.md) page.
+  - Decisions are legal under the active `RuleConfig`.
+  - Strategy tuning is strongest for the canonical Russian template first.
+- [ ] Implement rule-based trick play.
+  - AI obeys must-follow, must-beat, must-trump, and overtrump rules.
+  - AI move legality works under every built-in `RuleConfig`, not just
+    Russian.
+- [ ] Enforce AI legality and latency.
+  - Every AI move is validated by the same rules engine that guards human
+    moves.
+  - AI never produces an illegal move in tests.
+  - Move latency is capped at 2 seconds with a "thinking..." indicator.
+- [ ] Add single-player mode and difficulty levels.
+  - Single-player mode is selectable from the main menu.
+  - Easy, normal, and hard differ in marriage planning, trump leading, and
+    defender cooperation.
+- [ ] Re-test AI on supported desktop platforms.
+  - macOS and Linux runs have no regressions.
+- [ ] Add AI behavior for special contracts.
+  - Mizère / no-tricks contract is played correctly when enabled.
+
+---
+
+## Phase 5 — UX & polish
 
 Goal: it looks and feels like a card game, not a prototype.
 
-### 4.1 Look & feel basics
+### 5.1 Look & feel basics
 
 - [ ] Add polished table presentation.
   - Animations cover deal, play, capture, trump-flip on marriage, and talon
@@ -414,7 +449,7 @@ Goal: it looks and feels like a card game, not a prototype.
 - [ ] Add optional background music.
   - One-track music can be toggled on or off.
 
-### 4.2 Card skins
+### 5.2 Card skins
 
 - [ ] Define the card-skin asset-pack format.
   - A skin directory contains 24 face cards, a card back, and table felt.
@@ -430,7 +465,7 @@ Goal: it looks and feels like a card game, not a prototype.
   - Per-skin sound overrides are supported.
   - User-imported custom skins can be loaded from the save directory.
 
-### 4.3 Save & load games
+### 5.3 Save & load games
 
 A complete game to 1000 can run an hour or more across many deals.
 Players need to set a game aside and come back to it — possibly with
@@ -470,11 +505,10 @@ multiple games on the go.
 
 ---
 
-## Phase 5 — iOS port (cross-platform prototype)
+## Phase 6 — iOS port (cross-platform prototype)
 
 Goal: the same Lua source builds and runs on **macOS, Linux and iOS**.
-The base hot-seat game from Phases 0–4 plays correctly on every v1
-target.
+The full game plays correctly on every v1 target.
 
 - [ ] Wire the love-ios Xcode project and iOS app assets.
   - Xcode project embeds the current `.love`.
@@ -493,46 +527,11 @@ target.
   - Skin selector works under touch input.
   - Save and resume work in the iOS sandbox.
 - [ ] Validate the cross-platform prototype end-to-end.
-  - A complete hot-seat game can be played on iPhone, iPad, macOS, and Linux
+  - A complete game can be played on iPhone, iPad, macOS, and Linux
     without regressions.
 - [ ] Add iOS platform polish.
   - Haptic feedback fires on card play, trick capture, and marriage.
   - Dynamic Type support is available for accessibility.
-
----
-
-## Phase 6 — AI opponents (algorithmic)
-
-Goal: a single human plays against two AI seats. **No LLM yet — silent
-AI.** The hard requirement is legal play under every built-in
-`RuleConfig`; strong strategy can improve incrementally after the first
-working AI.
-
-- [ ] Define the AI player interface in `app/ai/`.
-  - Interface covers `chooseBid`, `chooseTalonPass`, `chooseRaise`,
-    `chooseCard`, and `chooseMarriage`.
-  - Interface can observe game state without importing UI or LLM code.
-- [ ] Implement rule-based bidding, talon, raise, and marriage decisions.
-  - Bidding heuristic follows the [Strategy](../strategy.md) page.
-  - Decisions are legal under the active `RuleConfig`.
-  - Strategy tuning is strongest for the canonical Russian template first.
-- [ ] Implement rule-based trick play.
-  - AI obeys must-follow, must-beat, must-trump, and overtrump rules.
-  - AI move legality works under every built-in `RuleConfig`, not just
-    Russian.
-- [ ] Enforce AI legality and latency.
-  - Every AI move is validated by the same rules engine that guards human
-    moves.
-  - AI never produces an illegal move in tests.
-  - Move latency is capped at 2 seconds with a "thinking..." indicator.
-- [ ] Add single-player mode and difficulty levels.
-  - Single-player mode is selectable from the main menu.
-  - Easy, normal, and hard differ in marriage planning, trump leading, and
-    defender cooperation.
-- [ ] Re-test AI on all prototype platforms.
-  - macOS, Linux, and iOS runs have no regressions.
-- [ ] Add AI behavior for special contracts.
-  - Mizère / no-tricks contract is played correctly when enabled.
 
 ---
 
@@ -561,7 +560,7 @@ and talk to the architect.
     move.
 - [ ] Prove LLM failures cannot affect gameplay.
   - With the LLM client stubbed to return chaos, errors, or nothing, every
-    test from Phases 1, 2, 3, and 6 still passes unchanged.
+    test from Phases 1, 2, 3, and 4 still passes unchanged.
 
 ### 7.2 `CharacterPreset` data model
 
@@ -679,7 +678,7 @@ talon, marriages, must-trump and the barrel are all unfamiliar concepts
 to many players. Education mode is the dedicated learning path for
 people who want to **study** the game rather than just play it.
 
-Distinct from the single-deal tutorial in Phase 4, Education mode is a
+Distinct from the single-deal tutorial in Phase 5, Education mode is a
 multi-lesson course from the main menu.
 
 - [ ] Build the Education mode hub and lesson framework.
@@ -729,7 +728,7 @@ work against keys already used in the code.
 
 ### 9.2 Persistence
 
-The save format and save/load UI already land in Phase 2 and Phase 4.
+The save format and save/load UI already land in Phase 2 and Phase 5.
 This section hardens persistence for release.
 
 - [ ] Audit auto-save across platform suspension points.

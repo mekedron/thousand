@@ -29,7 +29,7 @@ Window opens at 1280×720. Active scene: main menu.
 | 8 | Press Cmd+Q (macOS) or click `Quit` from the main menu | App exits cleanly. |
 
 Touch-hardware checks (real iOS / Android tap, drag, multi-touch) are
-deferred to Phase 5 (iOS port) when love-ios lands. Until then the
+deferred to Phase 6 (iOS port) when love-ios lands. Until then the
 pure-Lua harness covers the touch wiring through
 `tests/e2e/journeys/touch_input_spec.lua`.
 

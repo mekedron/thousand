@@ -37,7 +37,7 @@ default for large or risky work.
 
 **Request Plan Mode for:**
 
-- Any task in **Phase 6** (algorithmic AI) — bidding heuristics, trick
+- Any task in **Phase 4** (algorithmic AI) — bidding heuristics, trick
   play, difficulty levels, AI player abstraction.
 - Any task in **Phase 7** (AI characters & LLM) — LLM client, character
   presets, chat HUD, endpoint settings, secure-storage integration.

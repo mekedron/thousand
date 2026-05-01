@@ -30,7 +30,7 @@ mock cannot: the visual result inside a real Love2D window.
      top-left, and a coloured suit shape (red diamonds/hearts, dark
      clubs/spades) drawn just below — NOT a tofu box. The shapes are
      primitives because LÖVE's default font has no Unicode coverage for
-     ♠♣♦♥; Phase 4 will replace these with proper card art.
+     ♠♣♦♥; Phase 5 will replace these with proper card art.
    - **Right column** shows `Score`, then three rows
      `Your hand · 0`, `Player 2 · 0`, `Player 3 · 0`. The `Player 2`
      row is highlighted in cyan because it is their turn.
