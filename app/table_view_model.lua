@@ -17,16 +17,17 @@
 
 local M = {}
 
--- Display sort order: keep suits in the canonical order the rules doc
--- uses (spades, clubs, diamonds, hearts) and rank cards low-to-high by
--- their trick rank so the player's hand reads left-to-right like a
--- bridge fan. The renderer relies on this order for hover and focus
--- indices to match what the player sees.
+-- Display sort order: spades → hearts → clubs → diamonds, alternating
+-- the dark/red colour pairs so adjacent suits are visually distinct in
+-- a fanned hand. Within each suit, cards run low-to-high by trick rank
+-- so the player can read the hand left-to-right. The renderer relies
+-- on this order for hover and focus indices to match what the player
+-- sees.
 local SUIT_DISPLAY_ORDER = {
     spades = 1, -- i18n-ok
-    clubs = 2, -- i18n-ok
-    diamonds = 3, -- i18n-ok
-    hearts = 4, -- i18n-ok
+    hearts = 2, -- i18n-ok
+    clubs = 3, -- i18n-ok
+    diamonds = 4, -- i18n-ok
 }
 local RANK_DISPLAY_ORDER = {
     ["9"] = 1, -- i18n-ok

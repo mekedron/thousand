@@ -180,10 +180,15 @@ function M:_hand_is_interactive(view)
 end
 
 function M:_focus_card_count()
-    if self:_hand_is_interactive() then
-        return #self._hand_card_rects
+    if not self:_hand_is_interactive() then
+        return 0
     end
-    return 0
+    local view = self._view_model
+    if not view or not view.turn_player then
+        return 0
+    end
+    local hand = view.hands[view.turn_player]
+    return hand and hand.count or 0
 end
 
 function M:_focusable_count()
@@ -233,6 +238,80 @@ function M:_advance_focus(direction)
     end
     cur = ((cur - 1 + direction) % total) + 1
     self._focus_index = cur
+end
+
+-- Cycle keyboard focus within the current group (cards-only OR
+-- panel-buttons-and-back-only). Bound to Left/Right so the player can
+-- walk their hand left↔right without overshooting into the bid panel.
+-- When no focus is set yet, seed it on the first element of whichever
+-- group the hand state suggests (interactive hand → cards; otherwise
+-- panel buttons + back).
+function M:_advance_within_group(direction)
+    local card_count = self:_focus_card_count()
+    local panel_count = #self._panel_buttons + 1 -- +1 for back button
+    local target = self:_focus_target()
+
+    if target == "card" or (target == nil and card_count > 0) then
+        if card_count == 0 then
+            return
+        end
+        local cur = self._focus_index or (direction > 0 and 0 or card_count + 1)
+        cur = ((cur - 1 + direction) % card_count) + 1
+        self._focus_index = cur
+        return
+    end
+
+    if panel_count == 0 then
+        return
+    end
+    local rel
+    local in_panel_group = target == "panel" or target == "back" -- i18n-ok
+    if in_panel_group then
+        rel = self._focus_index - card_count
+    else
+        rel = direction > 0 and 0 or panel_count + 1
+    end
+    rel = ((rel - 1 + direction) % panel_count) + 1
+    self._focus_index = card_count + rel
+end
+
+-- Up/Down jumps focus between the hand-card group and the panel group.
+-- A pure focus-cycling Tab still cycles through everything.
+function M:_jump_focus_groups()
+    local target = self:_focus_target()
+    local card_count = self:_focus_card_count()
+    local on_card = target == "card" -- i18n-ok
+    local on_panel = target == "panel" or target == "back" -- i18n-ok
+    if on_card then
+        if #self._panel_buttons + 1 > 0 then
+            self._focus_index = card_count + 1
+        end
+        return
+    end
+    if on_panel then
+        if card_count > 0 then
+            self._focus_index = 1
+        end
+        return
+    end
+    if card_count > 0 then
+        self._focus_index = 1
+    elseif #self._panel_buttons + 1 > 0 then
+        self._focus_index = 1
+    end
+end
+
+-- Seed focus on the first card when the hand becomes interactive and
+-- no focus is currently visible. The discoverability win matters more
+-- than strict focus-visible — players need to see "this card is what
+-- I'd play right now" to understand left/right are wired.
+function M:_seed_focus_if_idle()
+    if self._focus_index then
+        return
+    end
+    if self:_hand_is_interactive() and self:_focus_card_count() > 0 then
+        self._focus_index = 1
+    end
 end
 
 function M:_activate_focus()
@@ -1099,6 +1178,7 @@ function M:draw(w, h)
 
     self:_refresh_view_model()
     self:_rebuild_panel_if_needed(self._view_model)
+    self:_seed_focus_if_idle()
 
     local regions = layout.table_regions(w, h, {
         menu_btn_w = MENU_BTN_W,
@@ -1299,10 +1379,12 @@ function M:keypressed(key)
         self:_return_to_menu()
     elseif key == "tab" then -- i18n-ok
         self:_advance_focus(shift_held() and -1 or 1)
-    elseif key == "down" or key == "right" then -- i18n-ok
-        self:_advance_focus(1)
-    elseif key == "up" or key == "left" then -- i18n-ok
-        self:_advance_focus(-1)
+    elseif key == "left" then -- i18n-ok
+        self:_advance_within_group(-1)
+    elseif key == "right" then -- i18n-ok
+        self:_advance_within_group(1)
+    elseif key == "up" or key == "down" then -- i18n-ok
+        self:_jump_focus_groups()
     elseif key == "return" or key == "space" or key == "kpenter" then -- i18n-ok
         if self._focus_index then
             self:_activate_focus()
