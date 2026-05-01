@@ -47,6 +47,17 @@ from day one.
 - [x] Add local pre-commit checks for linting and tests.
 - [x] Add a CI guard for hard-coded player-visible strings outside locale
   tables.
+- [x] Set up the e2e test harness for Phase 2+ UI work.
+  - Pure-Lua mock of the `love` global so journey tests run under busted with
+    no Love2D runtime.
+  - Driver loads `main.lua` against the mock and exposes step / click /
+    keypress / resize, plus a localised-string finder.
+  - Recording captures `clear`, `print`, `printf`, `setColor`, `rectangle`,
+    and `push` / `pop` / `translate` so journeys can assert what was drawn.
+  - First sanity-check journey passes against the placeholder `main.lua` and
+    is ready to extend when the scene skeleton lands.
+  - Busted picks up `tests/e2e/` automatically and the 80%-of-`core/`
+    coverage gate stays untouched.
 
 ---
 

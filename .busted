@@ -2,7 +2,7 @@ return {
     default = {
         output = "utfTerminal",
         pattern = "_spec%.lua$",
-        ROOT = { "tests/spec" },
+        ROOT = { "tests/spec", "tests/e2e" },
         verbose = true,
     },
 }
