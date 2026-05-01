@@ -103,6 +103,13 @@ function M.new(manager)
         -- button — Tab/arrow keys cycle through every clickable
         -- target, Enter activates whichever is focused.
         _focus_index = nil,
+        -- Most recent input source — nil before any input, then
+        -- "mouse" or "keyboard". Mouse and keyboard navigation are
+        -- mutually exclusive on the hand: hovering with the cursor
+        -- elevates a card; pressing Tab/arrows shows the keyboard
+        -- focus ring instead and suppresses the hover lift. The mode
+        -- flips back the moment the other input fires.
+        _input_mode = nil,
     }, M)
     self._back_button = Button.new({
         id = "back_to_menu", -- i18n-ok
@@ -147,6 +154,7 @@ function M:enter(_prev_id, _params)
     self._focus = FocusGroup.new({ self._back_button })
     self._hovered_card_index = nil
     self._focus_index = nil
+    self._input_mode = nil
     self:_refresh_view_model()
 end
 
@@ -872,8 +880,16 @@ local function draw_hand(self, view, region)
     end
     local card_rects = layout.hand_card_rects(region, count)
     local interactive = self:_hand_is_interactive(view)
-    local card_focus_active = interactive and self:_focus_target() == "card"
+    -- Mouse and keyboard input are mutually exclusive on the hand:
+    -- whichever fired most recently wins, the other is suppressed
+    -- until its source fires again. Hover lifts the card; focus
+    -- adds the yellow outline + lift.
+    local mode = self._input_mode
+    local keyboard_mode = mode == "keyboard" -- i18n-ok
+    local card_focus_active = interactive and keyboard_mode and self:_focus_target() == "card"
     local focused_card_index = card_focus_active and self._focus_index or nil
+    local hover_active = interactive and not keyboard_mode
+    local hovered_card_index = hover_active and self._hovered_card_index or nil
 
     if self_hand.is_turn and #card_rects > 0 then
         local first = card_rects[1]
@@ -884,7 +900,7 @@ local function draw_hand(self, view, region)
 
     -- Draw cards from outside-in so the lifted (hovered or focused)
     -- card stays on top regardless of array order.
-    local lifted_index = self._hovered_card_index or focused_card_index
+    local lifted_index = hovered_card_index or focused_card_index
     for i = 1, count do
         if i ~= lifted_index then
             local card = self_hand.cards[i]
@@ -1291,6 +1307,7 @@ function M:_handle_card_tap(view, entry)
 end
 
 function M:mousemoved(x, y, _dx, _dy)
+    self._input_mode = "mouse" -- i18n-ok
     for _, b in ipairs(self:_active_buttons()) do
         b:on_mousemoved(x, y)
     end
@@ -1408,14 +1425,19 @@ function M:keypressed(key)
     if key == "escape" then -- i18n-ok
         self:_return_to_menu()
     elseif key == "tab" then -- i18n-ok
+        self._input_mode = "keyboard" -- i18n-ok
         self:_advance_focus(shift_held() and -1 or 1)
     elseif key == "left" then -- i18n-ok
+        self._input_mode = "keyboard" -- i18n-ok
         self:_advance_within_group(-1)
     elseif key == "right" then -- i18n-ok
+        self._input_mode = "keyboard" -- i18n-ok
         self:_advance_within_group(1)
     elseif key == "up" or key == "down" then -- i18n-ok
+        self._input_mode = "keyboard" -- i18n-ok
         self:_jump_focus_groups()
     elseif key == "return" or key == "space" or key == "kpenter" then -- i18n-ok
+        self._input_mode = "keyboard" -- i18n-ok
         if self._focus_index then
             self:_activate_focus()
         elseif #self._panel_buttons == 1 then
