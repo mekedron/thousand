@@ -368,6 +368,21 @@ function M:_apply_button_focus_marks()
     self._back_button.focused = (self:_focus_target() == "back")
 end
 
+-- After a card-removing mutation (play, talon-pass, marriage+play),
+-- clear keyboard focus if it was sitting on a card. Without this the
+-- _focus_index slides into the panel/back range — the unified
+-- ordering reads the now-out-of-range card index as the next group's
+-- entry, so a play of the last card would silently jump focus to the
+-- Menu button. In hot-seat mode the active player also rotates after
+-- a play, which makes inheriting the previous player's focus index
+-- equally wrong: the new player should press an arrow key when they
+-- are ready to nav.
+function M:_clear_card_focus_after_mutation()
+    if self:_focus_target() == "card" then
+        self._focus_index = nil
+    end
+end
+
 -- Input → session boundary ---------------------------------------------
 
 local function err_to_toast_key(err)
@@ -432,6 +447,7 @@ function M:_do_pass_talon(target, card)
     end
     self:_invoke(session:pass_talon(target, card))
     self:_refresh_view_model()
+    self:_clear_card_focus_after_mutation()
 end
 
 function M:_do_raise(amount)
@@ -459,6 +475,7 @@ function M:_do_play(player, card)
     end
     self:_invoke(session:play(player, card))
     self:_refresh_view_model()
+    self:_clear_card_focus_after_mutation()
 end
 
 function M:_do_declare_then_play(player, suit, card)
@@ -471,6 +488,7 @@ function M:_do_declare_then_play(player, suit, card)
     end
     self:_invoke(session:play(player, card))
     self:_refresh_view_model()
+    self:_clear_card_focus_after_mutation()
 end
 
 function M:_do_start_next_deal()
