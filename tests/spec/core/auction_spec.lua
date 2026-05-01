@@ -459,6 +459,14 @@ describe("core.auction", function()
                     four_player_config = "dealer_plays_no_talon",
                     two_player_config = "closed_talon_draw_stock",
                 },
+                dealing = {
+                    four_nine_redeal = "off",
+                    three_nine_redeal = "off",
+                    four_jack_redeal = "off",
+                    weak_hand_redeal = "off",
+                    misdeal_handling = "standard",
+                    all_pass_handling = "redeal",
+                },
                 talon = { size = 3 },
                 bidding = {
                     opening_min = 100,
@@ -510,6 +518,14 @@ describe("core.auction", function()
                     partnership_mode = "none",
                     four_player_config = "dealer_plays_no_talon",
                     two_player_config = "closed_talon_draw_stock",
+                },
+                dealing = {
+                    four_nine_redeal = "off",
+                    three_nine_redeal = "off",
+                    four_jack_redeal = "off",
+                    weak_hand_redeal = "off",
+                    misdeal_handling = "standard",
+                    all_pass_handling = "redeal",
                 },
                 talon = { size = 3 },
                 bidding = {

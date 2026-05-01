@@ -66,6 +66,7 @@ local SCHEMA = {
     _section_order = {
         "cards",
         "players",
+        "dealing",
         "talon",
         "bidding",
         "marriages",
@@ -156,6 +157,96 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "closed_talon_draw_stock", "fixed_deal_no_draw" },
                 default = "closed_talon_draw_stock",
+                status = "deferred",
+            },
+        },
+    },
+    -- Dealing & redeal house rules. Every toggle here is "deferred" until
+    -- the engine learns to honour an alternative; the locked-in default of
+    -- each field is the value that matches the engine's current behaviour,
+    -- so canonical_russian carries the new section without any gameplay
+    -- change. See docs/variations/house-rules.md "Dealing & redeal house
+    -- rules" for the spec each toggle maps to.
+    dealing = {
+        kind = "section",
+        field_order = {
+            "four_nine_redeal",
+            "three_nine_redeal",
+            "four_jack_redeal",
+            "weak_hand_redeal",
+            "misdeal_handling",
+            "all_pass_handling",
+        },
+        fields = {
+            -- A player dealt all four 9s may demand a redeal. "mandatory"
+            -- forces the dealer to redeal even if the player would prefer
+            -- to play. See house-rules.md "4-nine mandatory redeal".
+            four_nine_redeal = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "optional", "mandatory" },
+                default = "off",
+                status = "deferred",
+            },
+            -- A player dealt three 9s may optionally request a redeal.
+            -- See house-rules.md "3-nine optional redeal".
+            three_nine_redeal = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "optional" },
+                default = "off",
+                status = "deferred",
+            },
+            -- A player dealt all four Jacks may request a redeal.
+            -- See house-rules.md "Four-jack redeal".
+            four_jack_redeal = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "deferred",
+            },
+            -- "Weak hand" entitles the player to request a redeal.
+            --   "strict":  no marriage, no Ace, no card above 10.
+            --   "loose":   no marriage and no Ace.
+            --   "counted": card-point sum below a house-defined threshold;
+            --              the threshold sibling field lands with the
+            --              gameplay task that flips this to selectable.
+            -- See house-rules.md "Weak-hand redeal".
+            weak_hand_redeal = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "strict", "loose", "counted" },
+                default = "off",
+                status = "deferred",
+            },
+            -- Misdeal recovery branch.
+            --   "standard":     same dealer redeals, no penalty.
+            --   "soft_penalty": deal moves clockwise.
+            --   "flat_penalty": dealer pays a fixed penalty (typically 20)
+            --                   and redeals; the amount is a sibling field
+            --                   that lands with the gameplay task.
+            -- See house-rules.md "Misdeal handling".
+            misdeal_handling = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "standard", "soft_penalty", "flat_penalty" },
+                default = "standard",
+                status = "deferred",
+            },
+            -- Behaviour when nobody bids and no forced-opening / bolt rule
+            -- is in effect.
+            --   "redeal":   same dealer redeals, no scoring (current UI
+            --               flow's "All players passed" → "Next deal").
+            --   "pass_out": deal moves clockwise without scoring.
+            --   "raspassy": play the deal without trump or bidding, with
+            --               the reverse-scoring rule from house-rules.md.
+            -- See house-rules.md "All-pass handling".
+            all_pass_handling = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "redeal", "pass_out", "raspassy" },
+                default = "redeal",
                 status = "deferred",
             },
         },
@@ -876,6 +967,14 @@ M.canonical_russian = M.new({
         partnership_mode = "none",
         four_player_config = "dealer_plays_no_talon",
         two_player_config = "closed_talon_draw_stock",
+    },
+    dealing = {
+        four_nine_redeal = "off",
+        three_nine_redeal = "off",
+        four_jack_redeal = "off",
+        weak_hand_redeal = "off",
+        misdeal_handling = "standard",
+        all_pass_handling = "redeal",
     },
     talon = { size = 3 },
     bidding = {

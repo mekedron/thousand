@@ -267,7 +267,7 @@ only for toggles marked selectable.
     players.
   - 4-player configuration (dealer plays no talon / dealer sits out).
   - 2-player configuration (closed-talon draw stock / fixed deal no draw).
-- [ ] Add dealing and redeal-trigger toggles.
+- [x] Add dealing and redeal-trigger toggles.
   - 4-nine redeal (off / optional / mandatory).
   - 3-nine redeal (off / optional).
   - 4-jack redeal (off / on).

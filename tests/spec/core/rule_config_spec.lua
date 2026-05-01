@@ -23,6 +23,14 @@ local function valid_table()
             four_player_config = "dealer_plays_no_talon",
             two_player_config = "closed_talon_draw_stock",
         },
+        dealing = {
+            four_nine_redeal = "off",
+            three_nine_redeal = "off",
+            four_jack_redeal = "off",
+            weak_hand_redeal = "off",
+            misdeal_handling = "standard",
+            all_pass_handling = "redeal",
+        },
         talon = { size = 3 },
         bidding = {
             opening_min = 100,
@@ -109,6 +117,7 @@ describe("core.rule_config", function()
             local sections = {
                 "cards",
                 "players",
+                "dealing",
                 "talon",
                 "bidding",
                 "marriages",
@@ -212,6 +221,15 @@ describe("core.rule_config", function()
             assert.are.equal("closed_talon_draw_stock", config.players.two_player_config)
         end)
 
+        it("encodes the canonical dealing-section defaults", function()
+            assert.are.equal("off", config.dealing.four_nine_redeal)
+            assert.are.equal("off", config.dealing.three_nine_redeal)
+            assert.are.equal("off", config.dealing.four_jack_redeal)
+            assert.are.equal("off", config.dealing.weak_hand_redeal)
+            assert.are.equal("standard", config.dealing.misdeal_handling)
+            assert.are.equal("redeal", config.dealing.all_pass_handling)
+        end)
+
         it("encodes the canonical bidding rules", function()
             assert.are.equal(100, config.bidding.opening_min)
             assert.are.equal(120, config.bidding.pre_talon_max)
@@ -311,6 +329,17 @@ describe("core.rule_config", function()
                         "partnership_mode",
                         "four_player_config",
                         "two_player_config",
+                    },
+                },
+                {
+                    "dealing",
+                    {
+                        "four_nine_redeal",
+                        "three_nine_redeal",
+                        "four_jack_redeal",
+                        "weak_hand_redeal",
+                        "misdeal_handling",
+                        "all_pass_handling",
                     },
                 },
                 { "talon", { "size" } },
@@ -709,6 +738,217 @@ describe("core.rule_config", function()
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
             assert.are.equal("closed_talon_draw_stock", res.config.players.two_player_config)
+        end)
+    end)
+
+    describe("dealing.four_nine_redeal", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("dealing.four_nine_redeal")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["optional"])
+            assert.is_true(allowed["mandatory"])
+        end)
+
+        it("accepts the default value through try_new", function()
+            local res = rule_config.try_new(valid_table())
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.dealing.four_nine_redeal)
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            for _, bad in ipairs({ "optional", "mandatory" }) do
+                local t = valid_table()
+                t.dealing.four_nine_redeal = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
+                assert.are.equal("deferred_field_changed", res.error.code)
+                assert.are.equal("dealing.four_nine_redeal", res.error.path)
+            end
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.dealing.four_nine_redeal)
+        end)
+    end)
+
+    describe("dealing.three_nine_redeal", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("dealing.three_nine_redeal")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["optional"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.dealing.three_nine_redeal = "optional"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("dealing.three_nine_redeal", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.dealing.three_nine_redeal)
+        end)
+    end)
+
+    describe("dealing.four_jack_redeal", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("dealing.four_jack_redeal")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["on"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.dealing.four_jack_redeal = "on"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("dealing.four_jack_redeal", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.dealing.four_jack_redeal)
+        end)
+    end)
+
+    describe("dealing.weak_hand_redeal", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("dealing.weak_hand_redeal")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["strict"])
+            assert.is_true(allowed["loose"])
+            assert.is_true(allowed["counted"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            for _, bad in ipairs({ "strict", "loose", "counted" }) do
+                local t = valid_table()
+                t.dealing.weak_hand_redeal = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
+                assert.are.equal("deferred_field_changed", res.error.code)
+                assert.are.equal("dealing.weak_hand_redeal", res.error.path)
+            end
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.dealing.weak_hand_redeal)
+        end)
+    end)
+
+    describe("dealing.misdeal_handling", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("dealing.misdeal_handling")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("standard", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["standard"])
+            assert.is_true(allowed["soft_penalty"])
+            assert.is_true(allowed["flat_penalty"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            for _, bad in ipairs({ "soft_penalty", "flat_penalty" }) do
+                local t = valid_table()
+                t.dealing.misdeal_handling = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
+                assert.are.equal("deferred_field_changed", res.error.code)
+                assert.are.equal("dealing.misdeal_handling", res.error.path)
+            end
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("standard", res.config.dealing.misdeal_handling)
+        end)
+    end)
+
+    describe("dealing.all_pass_handling", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("dealing.all_pass_handling")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("redeal", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["redeal"])
+            assert.is_true(allowed["pass_out"])
+            assert.is_true(allowed["raspassy"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            for _, bad in ipairs({ "pass_out", "raspassy" }) do
+                local t = valid_table()
+                t.dealing.all_pass_handling = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
+                assert.are.equal("deferred_field_changed", res.error.code)
+                assert.are.equal("dealing.all_pass_handling", res.error.path)
+            end
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("redeal", res.config.dealing.all_pass_handling)
         end)
     end)
 
