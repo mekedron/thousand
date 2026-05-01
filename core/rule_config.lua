@@ -575,9 +575,24 @@ local SCHEMA = {
             },
         },
     },
+    -- Marriage values and house-rule toggles. The `values` map is
+    -- "implemented" — the engine reads each suit's bonus from it. The
+    -- remaining fields are the marriage house-rule catalogue from
+    -- docs/variations/house-rules.md "Marriage house rules", landing
+    -- here as deferred entries so built-in templates and saved customs
+    -- can reference them by shape today and the engine can wire them
+    -- up in a later task without another schema migration.
     marriages = {
         kind = "section",
-        field_order = { "values" },
+        field_order = {
+            "values",
+            "half_marriage_capture_bonus",
+            "trump_activation_timing",
+            "marriage_announcement_timing",
+            "drowned_marriage",
+            "ace_marriage",
+            "one_trump_per_deal",
+        },
         fields = {
             values = {
                 kind = "map",
@@ -585,6 +600,88 @@ local SCHEMA = {
                 required_keys = { "hearts", "diamonds", "clubs", "spades" },
                 default = { hearts = 100, diamonds = 80, clubs = 60, spades = 40 },
                 status = "implemented",
+            },
+            -- House-rule: a defender who captures both the K and the Q
+            -- of the same suit in tricks scores a small bonus
+            -- (typically ~20 points). Applies only to captured halves,
+            -- not declared marriages. See
+            -- docs/variations/house-rules.md "Half-marriage capture
+            -- bonus".
+            half_marriage_capture_bonus = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "deferred",
+            },
+            -- House-rule: when does the declared suit become trump?
+            -- Standard `next_trick` defers the switch by one trick;
+            -- the `immediate` variant applies trump on the very trick
+            -- the K or Q was led, retroactively re-ranking cards
+            -- already played to it. See
+            -- docs/variations/house-rules.md "Trump activation
+            -- timing".
+            trump_activation_timing = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "next_trick", "immediate" },
+                default = "next_trick",
+                status = "deferred",
+            },
+            -- House-rule: how may a marriage be declared? Standard
+            -- `on_lead` requires leading the K or Q while on lead.
+            -- `hand_announcement` lets the leader announce from the
+            -- hand and play a different card; trump still switches.
+            -- `pre_first_trick` restricts declarations to the moment
+            -- before the first trick. See
+            -- docs/variations/house-rules.md "Marriage announcement
+            -- timing".
+            marriage_announcement_timing = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "on_lead", "hand_announcement", "pre_first_trick" },
+                default = "on_lead",
+                status = "deferred",
+            },
+            -- House-rule: a marriage is *drowned* when an opponent
+            -- captures the other half before declaration. The
+            -- `retroactive_cancel` variant goes further: a marriage
+            -- already declared is retroactively cancelled if its
+            -- K or Q is later captured. The `off` default leaves
+            -- declared marriages standing once announced. See
+            -- docs/variations/house-rules.md "Drowned marriage".
+            drowned_marriage = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "retroactive_cancel" },
+                default = "off",
+                status = "deferred",
+            },
+            -- House-rule: a player holding all four Aces declares an
+            -- *ace marriage* (тузовый марьяж) for ~200 points. The
+            -- `on` variant scores the bonus only; `sets_trump` makes
+            -- the suit of the first Ace led after declaration the
+            -- new trump, replacing the K-Q marriage as the trump
+            -- trigger. See docs/variations/house-rules.md "Ace
+            -- marriage / Тузовый марьяж".
+            ace_marriage = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on", "sets_trump" },
+                default = "off",
+                status = "deferred",
+            },
+            -- House-rule: only the first declared marriage in a deal
+            -- sets trump; later marriages still score their bonus
+            -- but the trump suit no longer flips. Used at tables
+            -- that find mid-deal trump-flipping confusing. See
+            -- docs/variations/house-rules.md "One trump per deal".
+            one_trump_per_deal = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "deferred",
             },
         },
     },
@@ -1264,6 +1361,12 @@ M.canonical_russian = M.new({
     },
     marriages = {
         values = { hearts = 100, diamonds = 80, clubs = 60, spades = 40 },
+        half_marriage_capture_bonus = "off",
+        trump_activation_timing = "next_trick",
+        marriage_announcement_timing = "on_lead",
+        drowned_marriage = "off",
+        ace_marriage = "off",
+        one_trump_per_deal = "off",
     },
     tricks = {
         must_follow = true,

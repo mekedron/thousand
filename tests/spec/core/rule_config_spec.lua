@@ -60,6 +60,12 @@ local function valid_table()
         },
         marriages = {
             values = { hearts = 100, diamonds = 80, clubs = 60, spades = 40 },
+            half_marriage_capture_bonus = "off",
+            trump_activation_timing = "next_trick",
+            marriage_announcement_timing = "on_lead",
+            drowned_marriage = "off",
+            ace_marriage = "off",
+            one_trump_per_deal = "off",
         },
         tricks = {
             must_follow = true,
@@ -284,6 +290,15 @@ describe("core.rule_config", function()
             assert.are.equal(40, config.marriages.values.spades)
         end)
 
+        it("encodes the canonical marriage toggles at their defaults", function()
+            assert.are.equal("off", config.marriages.half_marriage_capture_bonus)
+            assert.are.equal("next_trick", config.marriages.trump_activation_timing)
+            assert.are.equal("on_lead", config.marriages.marriage_announcement_timing)
+            assert.are.equal("off", config.marriages.drowned_marriage)
+            assert.are.equal("off", config.marriages.ace_marriage)
+            assert.are.equal("off", config.marriages.one_trump_per_deal)
+        end)
+
         it("encodes the canonical strict trick rules", function()
             assert.is_true(config.tricks.must_follow)
             assert.is_true(config.tricks.must_beat)
@@ -414,7 +429,18 @@ describe("core.rule_config", function()
                         "named_contracts",
                     },
                 },
-                { "marriages", { "values" } },
+                {
+                    "marriages",
+                    {
+                        "values",
+                        "half_marriage_capture_bonus",
+                        "trump_activation_timing",
+                        "marriage_announcement_timing",
+                        "drowned_marriage",
+                        "ace_marriage",
+                        "one_trump_per_deal",
+                    },
+                },
                 {
                     "tricks",
                     { "must_follow", "must_beat", "must_trump", "must_overtrump" },
@@ -1634,6 +1660,204 @@ describe("core.rule_config", function()
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
             assert.are.equal("off", res.config.bidding.named_contracts)
+        end)
+    end)
+
+    describe("marriages.half_marriage_capture_bonus", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("marriages.half_marriage_capture_bonus")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["on"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.marriages.half_marriage_capture_bonus = "on"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("marriages.half_marriage_capture_bonus", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.marriages.half_marriage_capture_bonus)
+        end)
+    end)
+
+    describe("marriages.trump_activation_timing", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("marriages.trump_activation_timing")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("next_trick", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["next_trick"])
+            assert.is_true(allowed["immediate"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.marriages.trump_activation_timing = "immediate"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("marriages.trump_activation_timing", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("next_trick", res.config.marriages.trump_activation_timing)
+        end)
+    end)
+
+    describe("marriages.marriage_announcement_timing", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("marriages.marriage_announcement_timing")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("on_lead", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["on_lead"])
+            assert.is_true(allowed["hand_announcement"])
+            assert.is_true(allowed["pre_first_trick"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            for _, bad in ipairs({ "hand_announcement", "pre_first_trick" }) do
+                local t = valid_table()
+                t.marriages.marriage_announcement_timing = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
+                assert.are.equal("deferred_field_changed", res.error.code)
+                assert.are.equal("marriages.marriage_announcement_timing", res.error.path)
+            end
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("on_lead", res.config.marriages.marriage_announcement_timing)
+        end)
+    end)
+
+    describe("marriages.drowned_marriage", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("marriages.drowned_marriage")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["retroactive_cancel"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.marriages.drowned_marriage = "retroactive_cancel"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("marriages.drowned_marriage", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.marriages.drowned_marriage)
+        end)
+    end)
+
+    describe("marriages.ace_marriage", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("marriages.ace_marriage")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["on"])
+            assert.is_true(allowed["sets_trump"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            for _, bad in ipairs({ "on", "sets_trump" }) do
+                local t = valid_table()
+                t.marriages.ace_marriage = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
+                assert.are.equal("deferred_field_changed", res.error.code)
+                assert.are.equal("marriages.ace_marriage", res.error.path)
+            end
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.marriages.ace_marriage)
+        end)
+    end)
+
+    describe("marriages.one_trump_per_deal", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("marriages.one_trump_per_deal")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["on"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.marriages.one_trump_per_deal = "on"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("marriages.one_trump_per_deal", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.marriages.one_trump_per_deal)
         end)
     end)
 

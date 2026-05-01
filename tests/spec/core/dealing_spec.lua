@@ -64,6 +64,12 @@ local function valid_config_table()
         },
         marriages = {
             values = { hearts = 100, diamonds = 80, clubs = 60, spades = 40 },
+            half_marriage_capture_bonus = "off",
+            trump_activation_timing = "next_trick",
+            marriage_announcement_timing = "on_lead",
+            drowned_marriage = "off",
+            ace_marriage = "off",
+            one_trump_per_deal = "off",
         },
         tricks = {
             must_follow = true,

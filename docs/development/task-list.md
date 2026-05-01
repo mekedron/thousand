@@ -298,7 +298,7 @@ only for toggles marked selectable.
   - No contract without marriage.
   - Negative-score bidding restriction.
   - Named contract bids.
-- [ ] Add marriage toggles.
+- [x] Add marriage toggles.
   - Hearts / Diamonds / Clubs / Spades values.
   - Half-marriage capture bonus.
   - Trump activation timing.
