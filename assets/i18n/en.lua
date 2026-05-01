@@ -75,6 +75,11 @@ return {
 
     ["scene.table.toast.illegal_play"] = "Illegal play: %{reason}",
     ["scene.table.toast.not_your_turn"] = "Not your turn",
+    ["scene.table.toast.must_follow"] = "You must follow %{suit}",
+    ["scene.table.toast.must_beat"] = "You must beat the %{suit} on the trick",
+    ["scene.table.toast.must_trump"] = "You must play trump (%{suit})",
+    ["scene.table.toast.must_overtrump"] = "You must overtrump (%{suit})",
+    ["scene.table.toast.card_not_in_hand"] = "That card is not in your hand",
 
     ["scene.end_of_game.title"] = "Game Over",
     ["scene.end_of_game.placeholder"] = "Final scores will appear here.",

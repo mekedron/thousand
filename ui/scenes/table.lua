@@ -422,6 +422,21 @@ end
 
 -- Input → session boundary ---------------------------------------------
 
+-- Map an engine error code to a localised toast. The trick-taking rules
+-- (`must_follow_violation`, `must_beat_violation`, `must_trump_violation`,
+-- `must_overtrump_violation`) each carry their relevant suit (`led_suit`
+-- or `trump`) on the error envelope; we surface that suit through the
+-- localised `card.suit.*` glyph so the toast tells the player exactly
+-- which constraint they hit. Unknown codes fall through to the generic
+-- `illegal_play` reason path so a future engine error never produces a
+-- bare English string at the table.
+local function suit_glyph(suit)
+    if not suit then
+        return "" -- i18n-ok: empty fallback when the engine error omits the suit
+    end
+    return i18n.t("card.suit." .. suit) -- i18n-ok: lookup builds an i18n key
+end
+
 local function err_to_toast_key(err)
     if not err then
         return "scene.table.toast.illegal_play", { reason = "" } -- i18n-ok
@@ -429,6 +444,16 @@ local function err_to_toast_key(err)
     local code = err.code
     if code == "not_your_turn" then
         return "scene.table.toast.not_your_turn", {}
+    elseif code == "must_follow_violation" then
+        return "scene.table.toast.must_follow", { suit = suit_glyph(err.led_suit) }
+    elseif code == "must_beat_violation" then
+        return "scene.table.toast.must_beat", { suit = suit_glyph(err.led_suit) }
+    elseif code == "must_trump_violation" then
+        return "scene.table.toast.must_trump", { suit = suit_glyph(err.trump) }
+    elseif code == "must_overtrump_violation" then
+        return "scene.table.toast.must_overtrump", { suit = suit_glyph(err.trump) }
+    elseif code == "card_not_in_hand" then
+        return "scene.table.toast.card_not_in_hand", {}
     end
     return "scene.table.toast.illegal_play", { reason = err.message or err.code or "" } -- i18n-ok
 end
@@ -1039,17 +1064,28 @@ local function draw_hand(self, view, region)
         draw_turn_ring(first.x, first.y, total_w, first.h)
     end
 
+    -- Legality affordance: an illegal card is dimmed and never lifts
+    -- under hover. Suppressing the lift signals "not pickable" without
+    -- adding extra visual chrome — the dim and the missing rise tell
+    -- the player which card the engine would reject. Keyboard focus
+    -- can still land on an illegal card so Enter surfaces the
+    -- localised toast explaining the rule break.
+    local lift_hovered_index
+    if hovered_card_index then
+        local legality = self_hand.card_legality and self_hand.card_legality[hovered_card_index]
+        if legality ~= false then
+            lift_hovered_index = hovered_card_index
+        end
+    end
+    local lifted_index = lift_hovered_index or focused_card_index
     -- Draw cards from outside-in so the lifted (hovered or focused)
     -- card stays on top regardless of array order.
-    local lifted_index = hovered_card_index or focused_card_index
     for i = 1, count do
         if i ~= lifted_index then
             local card = self_hand.cards[i]
             local r = card_rects[i]
             local legality = self_hand.card_legality and self_hand.card_legality[i]
             cards.draw_face_up(card, r.x, r.y, r.w, r.h)
-            -- Hit-rect is wider than the visible card so half-gap clicks
-            -- still register on whichever card the cursor is closer to.
             local hit_rect = {
                 x = r.x - CARD_HIT_PAD_X,
                 y = r.y,
@@ -1063,10 +1099,6 @@ local function draw_hand(self, view, region)
                 owner = self_hand.player,
                 legal = (legality ~= false),
             }
-            -- Dim cards the engine would currently reject (legality
-            -- affordance: the next-task work will refine the visuals,
-            -- but the dim state already tells the player which cards
-            -- are pickable).
             if interactive and legality == false then
                 love.graphics.setColor(ILLEGAL_DIM)
                 love.graphics.rectangle("fill", r.x, r.y, r.w, r.h)
