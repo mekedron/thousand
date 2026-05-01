@@ -159,7 +159,11 @@ describe("ui finger-size guard", function()
                 -- recording.
                 local end_of_game_scene = require("ui.scenes.end_of_game")
                 local fake_manager = {
-                    set_game_active = function() end,
+                    clear_session = function() end,
+                    set_session = function() end,
+                    session = function()
+                        return nil
+                    end,
                     is_game_active = function()
                         return false
                     end,

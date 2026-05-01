@@ -128,8 +128,8 @@ describe("e2e: menu navigation", function()
             assert.is_true(color_matches(rect_bg_color(j, rect), DISABLED_BG))
         end)
 
-        it("focuses the first enabled button on the first frame", function()
-            assert.is_true(any_setcolor_in_frame(j, FOCUS_OUTLINE))
+        it("does not show a focus ring on entry — focus surfaces only on Tab", function()
+            assert.is_false(any_setcolor_in_frame(j, FOCUS_OUTLINE))
         end)
     end)
 
@@ -137,8 +137,8 @@ describe("e2e: menu navigation", function()
         it("transitions to the table scene", function()
             click_button(j, j:find_localised("scene.menu.new_game"))
             j:step()
-            assert.is_not_nil(j:find_text(j:find_localised("scene.table.title")))
-            assert.is_not_nil(j:find_text(j:find_localised("scene.table.escape_hint")))
+            assert.is_not_nil(j:find_text(j:find_localised("scene.table.scoreboard.title")))
+            assert.is_not_nil(j:find_text(j:find_localised("scene.table.bid.label")))
             assert.is_not_nil(j:find_text(j:find_localised("scene.table.back_to_menu")))
         end)
     end)
@@ -183,7 +183,7 @@ describe("e2e: menu navigation", function()
 
             click_button(j, j:find_localised("scene.menu.continue"))
             j:step()
-            assert.is_not_nil(j:find_text(j:find_localised("scene.table.title")))
+            assert.is_not_nil(j:find_text(j:find_localised("scene.table.scoreboard.title")))
         end)
 
         it("greys out again after Abandon → Yes", function()
@@ -219,7 +219,7 @@ describe("e2e: menu navigation", function()
             j:release(cx, cy)
             j:step()
             -- After release inside, transition fires; we land on the table.
-            assert.is_not_nil(j:find_text(j:find_localised("scene.table.title")))
+            assert.is_not_nil(j:find_text(j:find_localised("scene.table.scoreboard.title")))
         end)
 
         it("releasing outside cancels the action", function()
@@ -234,12 +234,21 @@ describe("e2e: menu navigation", function()
     end)
 
     describe("keyboard navigation", function()
-        it("Enter activates the focused button on a fresh menu", function()
-            -- New Game is the only enabled button on a fresh menu (Continue
-            -- and Abandon are greyed; Quit would exit). Start there.
+        it("Tab + Enter activates the first enabled button on a fresh menu", function()
+            -- Tab seeds focus on the first enabled button (New Game).
+            -- Continue and Abandon are greyed and skipped; Quit would
+            -- exit the harness. Enter then activates New Game.
+            j:press_key("tab")
             j:press_key("return")
             j:step()
-            assert.is_not_nil(j:find_text(j:find_localised("scene.table.title")))
+            assert.is_not_nil(j:find_text(j:find_localised("scene.table.scoreboard.title")))
+        end)
+
+        it("Enter without prior Tab does nothing — focus must be surfaced first", function()
+            j:press_key("return")
+            j:step()
+            -- Still on the menu.
+            assert.is_not_nil(j:find_text(j:find_localised("scene.menu.title")))
         end)
 
         it("Tab cycles forward through enabled buttons", function()
@@ -258,6 +267,7 @@ describe("e2e: menu navigation", function()
         end)
 
         it("Escape on the table returns to the menu", function()
+            j:press_key("tab")
             j:press_key("return")
             j:step()
             j:press_key("escape")

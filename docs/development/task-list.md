@@ -192,7 +192,7 @@ porting pass later, not a UI rewrite.
     pass.
   - Table layout responds to window size instead of using fixed desktop-only
     coordinates.
-- [ ] Render the playable table state with placeholder assets.
+- [x] Render the playable table state with placeholder assets.
   - 24-card deck, player hand, talon, current turn, current bid, running
     scoreboard, and end-of-game winner/final scores are visible.
 - [ ] Connect hot-seat input to the rules engine.

@@ -7,11 +7,12 @@
 -- on-disk auto-saves.
 --
 -- Each button has hover / focus / active visual states (see ui/button.lua)
--- and the scene is fully keyboard-navigable. The "next" direction is any
--- of Tab / Down / Right; the "previous" direction is any of Shift+Tab /
--- Up / Left. Enter and Space activate the focused button. This means
--- the vertical main menu and the horizontal confirm-abandon modal each
--- get a natural arrow-key axis without two separate keymaps.
+-- and the scene is fully keyboard-navigable. Focus behaviour is shared
+-- with every other scene through ui/focus_group.lua: NO focus ring on
+-- entry, the first Tab / arrow press surfaces it, and clicks leave focus
+-- alone (focus-visible idiom). The "next" direction is any of Tab / Down
+-- / Right; the "previous" direction is any of Shift+Tab / Up / Left.
+-- Enter and Space activate the focused button.
 --
 -- Layout is recomputed each frame from the (w, h) passed into draw and
 -- cached on `self` so input handlers can hit-test against the same rects
@@ -19,6 +20,8 @@
 
 local i18n = require("app.i18n")
 local Button = require("ui.button")
+local FocusGroup = require("ui.focus_group")
+local Session = require("app.session")
 local t = i18n.t
 
 local M = {}
@@ -28,41 +31,10 @@ local BUTTON_W = 280
 local BUTTON_H = 56
 local BUTTON_GAP = 12
 
-local function index_of(list, item)
-    for i, v in ipairs(list) do
-        if v == item then
-            return i
-        end
-    end
-    return nil
-end
-
-local function next_enabled(list, from_index, direction)
-    if #list == 0 then
-        return nil
-    end
-    local i = from_index or 0
-    for _ = 1, #list do
-        i = ((i - 1 + direction) % #list) + 1
-        if list[i].enabled then
-            return list[i]
-        end
-    end
-    return nil
-end
-
-local function update_focus_marks(list, focused)
-    for _, b in ipairs(list) do
-        b.focused = (b == focused)
-    end
-end
-
 function M.new(manager)
     local self = setmetatable({
         _manager = manager,
         _modal = nil,
-        _focused = nil,
-        _modal_focused = nil,
     }, M)
     self:_build_buttons()
     return self
@@ -78,7 +50,7 @@ function M:_build_buttons()
             label_key = "scene.menu.new_game",
             enabled = true,
             on_press = function()
-                self._manager:set_game_active(true)
+                self._manager:set_session(Session.new())
                 self._manager:switch_to("table")
             end,
         }),
@@ -117,7 +89,7 @@ function M:_build_buttons()
             label_key = "scene.menu.confirm_abandon.yes",
             enabled = true,
             on_press = function()
-                self._manager:set_game_active(false)
+                self._manager:clear_session()
                 self:_close_modal()
                 self:_refresh_enabled_states()
             end,
@@ -131,8 +103,8 @@ function M:_build_buttons()
             end,
         }),
     }
-    self._focused = next_enabled(self._buttons, 0, 1)
-    update_focus_marks(self._buttons, self._focused)
+    self._focus = FocusGroup.new(self._buttons)
+    self._modal_focus = FocusGroup.new(self._modal_buttons)
 end
 
 function M:_refresh_enabled_states()
@@ -142,27 +114,35 @@ function M:_refresh_enabled_states()
             b:set_enabled(active)
         end
     end
-    if self._focused and not self._focused.enabled then
-        self._focused = next_enabled(self._buttons, 0, 1)
+    -- If keyboard nav had landed on a button that just got disabled, drop
+    -- focus rather than auto-advance — focus-visible should only return
+    -- when the user nav's again.
+    local focused = self._focus:focused()
+    if focused and not focused.enabled then
+        self._focus:clear()
     end
-    update_focus_marks(self._buttons, self._focused)
 end
 
 function M:_open_modal()
     self._modal = "confirm_abandon" -- i18n-ok
-    self._modal_focused = self._modal_buttons[2] -- default focus on Cancel
-    update_focus_marks(self._modal_buttons, self._modal_focused)
+    -- Modal opens with explicit focus on Cancel so an inadvertent Enter
+    -- press dismisses the modal rather than abandoning the game. This
+    -- IS a deliberate focus-on-open, distinct from the entry-time
+    -- focus-on-Tab convention.
+    self._modal_focus:focus(self._modal_buttons[2])
 end
 
 function M:_close_modal()
     self._modal = nil
-    self._modal_focused = nil
-    update_focus_marks(self._modal_buttons, nil)
+    self._modal_focus:clear()
 end
 
 function M:enter(_prev_id, _params)
     self:_close_modal()
     self:_refresh_enabled_states()
+    -- Drop any leftover focus from a previous visit so the menu opens
+    -- without a yellow focus ring; the user has not navigated yet.
+    self._focus:clear()
 end
 
 local function compute_layout(self, w, h)
@@ -240,18 +220,9 @@ end
 
 local function active_list(self)
     if self._modal == "confirm_abandon" then -- i18n-ok
-        return self._modal_buttons, self._modal_focused
+        return self._modal_buttons, self._modal_focus
     end
-    return self._buttons, self._focused
-end
-
-local function set_focus(self, list, focused)
-    if self._modal == "confirm_abandon" then -- i18n-ok
-        self._modal_focused = focused
-    else
-        self._focused = focused
-    end
-    update_focus_marks(list, focused)
+    return self._buttons, self._focus
 end
 
 function M:mousemoved(x, y, _dx, _dy)
@@ -284,32 +255,16 @@ local function shift_held()
     return love.keyboard.isDown("lshift") or love.keyboard.isDown("rshift") -- i18n-ok
 end
 
-local function focus_step(self, direction)
-    local list, focused = active_list(self)
-    local current
-    if focused then
-        current = index_of(list, focused)
-    else
-        current = direction > 0 and 0 or (#list + 1)
-    end
-    local target = next_enabled(list, current, direction)
-    if target then
-        set_focus(self, list, target)
-    end
-end
-
 function M:keypressed(key)
+    local _, focus = active_list(self)
     if key == "tab" then -- i18n-ok
-        focus_step(self, shift_held() and -1 or 1)
+        focus:advance(shift_held() and -1 or 1)
     elseif key == "down" or key == "right" then -- i18n-ok
-        focus_step(self, 1)
+        focus:advance(1)
     elseif key == "up" or key == "left" then -- i18n-ok
-        focus_step(self, -1)
+        focus:advance(-1)
     elseif key == "return" or key == "space" or key == "kpenter" then -- i18n-ok
-        local _, focused = active_list(self)
-        if focused then
-            focused:activate()
-        end
+        focus:activate()
     elseif key == "escape" then -- i18n-ok
         if self._modal == "confirm_abandon" then -- i18n-ok
             self:_close_modal()

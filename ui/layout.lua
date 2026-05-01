@@ -1,10 +1,12 @@
 -- Layout primitives shared across UI scenes. Pure Lua — no love.* — so it
 -- can be unit-tested under busted without the runtime.
 --
--- Scope is intentionally narrow: only the helpers Phase 2's first reflowable
--- table needs. The richer table_regions(w, h) helper (scoreboard / hand /
--- talon / opponents / prompt rectangles) lands with the next task, when its
--- consumers exist.
+-- Scope is intentionally narrow: helpers for Phase 2's reflowable table.
+-- top_right, center_panel and the touch-target floor live here from day
+-- one; table_regions joined them when the table-rendering task landed
+-- and divides the table into the five rectangles the scene draws into:
+-- scoreboard, opponents strip, centre band, active-player hand and the
+-- top-right Menu button.
 
 local M = {}
 
@@ -51,6 +53,94 @@ end
 -- True iff (w, h) clears the touch-target minimum on both axes.
 function M.is_touch_target_ok(w, h)
     return w >= M.MIN_HIT_TARGET and h >= M.MIN_HIT_TARGET
+end
+
+-- Divide the table window into the five regions the table scene draws.
+--
+--   ┌────────────────────────────────────────┬───────────┐
+--   │              opponents strip            │           │
+--   ├────────────────────────────────────────┤           │
+--   │                                         │ scoreboard│
+--   │             centre band                 │           │
+--   │                                         │           │
+--   ├────────────────────────────────────────┤           │
+--   │            active-player hand           │           │
+--   └────────────────────────────────────────┴───────────┘
+--   menu_button is a small rect anchored to the very top-right corner,
+--   above the scoreboard column.
+--
+-- All five rectangles use floored integer coordinates so subsequent draw
+-- calls land on whole pixels regardless of the input window size.
+--
+-- `opts` is optional and overrides:
+--   margin       — outer/inter-region gap (default M.SAFE_MARGIN)
+--   scoreboard_w — fixed width of the right column
+--   hand_h       — fixed height of the bottom strip
+--   opponents_h  — fixed height of the top strip
+--   menu_btn_w   — Menu button width
+--   menu_btn_h   — Menu button height (must clear MIN_HIT_TARGET)
+function M.table_regions(outer_w, outer_h, opts)
+    opts = opts or {}
+    local margin = opts.margin or M.SAFE_MARGIN
+    local scoreboard_w = opts.scoreboard_w or 200
+    local hand_h = opts.hand_h or 140
+    local opponents_h = opts.opponents_h or 120
+    local menu_btn_w = opts.menu_btn_w or 120
+    local menu_btn_h = opts.menu_btn_h or 48
+
+    -- Reserve a band at the top of the right column for the menu button so
+    -- the scoreboard never overlaps it. The scoreboard starts below the
+    -- button + a margin's worth of breathing room.
+    local right_x = outer_w - scoreboard_w - margin
+    local scoreboard_y = margin + menu_btn_h + margin
+    local scoreboard_h = outer_h - scoreboard_y - margin
+    if scoreboard_h < 0 then
+        scoreboard_h = 0
+    end
+
+    local left_w = outer_w - scoreboard_w - margin * 3
+    if left_w < 0 then
+        left_w = 0
+    end
+
+    local opponents = {
+        x = floor(margin),
+        y = floor(margin),
+        w = floor(left_w),
+        h = floor(opponents_h),
+    }
+    local hand = {
+        x = floor(margin),
+        y = floor(outer_h - hand_h - margin),
+        w = floor(left_w),
+        h = floor(hand_h),
+    }
+    local centre_y = opponents.y + opponents.h + margin
+    local centre_h = hand.y - centre_y - margin
+    if centre_h < 0 then
+        centre_h = 0
+    end
+    local centre = {
+        x = floor(margin),
+        y = floor(centre_y),
+        w = floor(left_w),
+        h = floor(centre_h),
+    }
+    local scoreboard = {
+        x = floor(right_x),
+        y = floor(scoreboard_y),
+        w = floor(scoreboard_w),
+        h = floor(scoreboard_h),
+    }
+    local menu_button = M.top_right(outer_w, outer_h, menu_btn_w, menu_btn_h, margin)
+
+    return {
+        opponents = opponents,
+        centre = centre,
+        hand = hand,
+        scoreboard = scoreboard,
+        menu_button = menu_button,
+    }
 end
 
 return M

@@ -1,6 +1,12 @@
 -- Scene manager. Owns the active scene, forwards Love2D callbacks into it,
--- and tracks whether a game session is in progress so the menu can decide
--- whether to enable its "Abandon Game" affordance.
+-- and holds the in-progress game session so the menu can decide whether to
+-- enable Continue / Abandon and the table can read what to render.
+--
+-- The session lives here (rather than in a dedicated app/session_store
+-- module) because the manager already owns scene-lifecycle state; adding
+-- a second source of truth for "is a game active?" would only invite
+-- drift. If a future feature needs cross-scene session access without
+-- the manager, promote then.
 --
 -- The API is shaped so a future stack-based push/pop model is an additive
 -- change, not a rename: scenes never see manager.current as a field, and
@@ -32,7 +38,7 @@ function M.new()
     return setmetatable({
         _scenes = {},
         _active_id = nil,
-        _game_active = false,
+        _session = nil,
     }, Manager)
 end
 
@@ -65,12 +71,20 @@ function Manager:active()
     return self._active_id, self._scenes[self._active_id]
 end
 
-function Manager:set_game_active(value)
-    self._game_active = value and true or false
+function Manager:set_session(session)
+    self._session = session
+end
+
+function Manager:session()
+    return self._session
+end
+
+function Manager:clear_session()
+    self._session = nil
 end
 
 function Manager:is_game_active()
-    return self._game_active
+    return self._session ~= nil
 end
 
 local function dispatch(self, name, ...)

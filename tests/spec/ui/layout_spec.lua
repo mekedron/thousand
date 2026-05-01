@@ -73,4 +73,59 @@ describe("ui.layout", function()
             assert.is_false(layout.is_touch_target_ok(0, 0))
         end)
     end)
+
+    describe("table_regions()", function()
+        it("returns five named regions plus the menu button rect", function()
+            local r = layout.table_regions(1280, 720)
+            assert.is_table(r.opponents)
+            assert.is_table(r.centre)
+            assert.is_table(r.hand)
+            assert.is_table(r.scoreboard)
+            assert.is_table(r.menu_button)
+        end)
+
+        it("anchors the menu button at the top-right", function()
+            local r = layout.table_regions(1280, 720)
+            local expected = layout.top_right(1280, 720, 120, 48)
+            assert.are.equal(expected.x, r.menu_button.x)
+            assert.are.equal(expected.y, r.menu_button.y)
+        end)
+
+        it("places the scoreboard column on the right below the menu button", function()
+            local r = layout.table_regions(1280, 720)
+            assert.is_true(r.scoreboard.x > r.opponents.x + r.opponents.w)
+            assert.is_true(r.scoreboard.y > r.menu_button.y + r.menu_button.h - 1)
+        end)
+
+        it("stacks opponents → centre → hand vertically with margins between", function()
+            local r = layout.table_regions(1280, 720)
+            assert.is_true(r.centre.y > r.opponents.y + r.opponents.h)
+            assert.is_true(r.hand.y > r.centre.y + r.centre.h)
+        end)
+
+        it("returns floored integer coordinates", function()
+            local r = layout.table_regions(801, 601)
+            for _, key in ipairs({ "opponents", "centre", "hand", "scoreboard" }) do
+                local rect = r[key]
+                assert.are.equal(math.floor(rect.x), rect.x, key .. ".x")
+                assert.are.equal(math.floor(rect.y), rect.y, key .. ".y")
+                assert.are.equal(math.floor(rect.w), rect.w, key .. ".w")
+                assert.are.equal(math.floor(rect.h), rect.h, key .. ".h")
+            end
+        end)
+
+        it("reflows across window sizes", function()
+            for _, size in ipairs({ { 800, 600 }, { 1024, 768 }, { 1600, 900 } }) do
+                local w, h = size[1], size[2]
+                local r = layout.table_regions(w, h)
+                assert.is_true(r.hand.y < h, "hand fits in " .. w .. "x" .. h)
+                assert.is_true(r.scoreboard.x + r.scoreboard.w <= w, "scoreboard fits horizontally")
+            end
+        end)
+
+        it("respects the menu_btn_h override when reserving the right column", function()
+            local r = layout.table_regions(1280, 720, { menu_btn_h = 64 })
+            assert.is_true(r.scoreboard.y >= layout.SAFE_MARGIN + 64)
+        end)
+    end)
 end)
