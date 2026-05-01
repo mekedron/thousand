@@ -48,6 +48,15 @@ local function valid_table()
             increment_threshold = 200,
             increment_below_200 = 5,
             increment_from_200 = 10,
+            forced_opening = "off",
+            forced_dealer_bid = "off",
+            blind_bid = "off",
+            re_entry_after_pass = "off",
+            contra = "off",
+            forced_bid_concession = "off",
+            no_contract_without_marriage = "off",
+            negative_score_restriction = "off",
+            named_contracts = "off",
         },
         marriages = {
             values = { hearts = 100, diamonds = 80, clubs = 60, spades = 40 },
@@ -257,6 +266,15 @@ describe("core.rule_config", function()
             assert.are.equal(200, config.bidding.increment_threshold)
             assert.are.equal(5, config.bidding.increment_below_200)
             assert.are.equal(10, config.bidding.increment_from_200)
+            assert.are.equal("off", config.bidding.forced_opening)
+            assert.are.equal("off", config.bidding.forced_dealer_bid)
+            assert.are.equal("off", config.bidding.blind_bid)
+            assert.are.equal("off", config.bidding.re_entry_after_pass)
+            assert.are.equal("off", config.bidding.contra)
+            assert.are.equal("off", config.bidding.forced_bid_concession)
+            assert.are.equal("off", config.bidding.no_contract_without_marriage)
+            assert.are.equal("off", config.bidding.negative_score_restriction)
+            assert.are.equal("off", config.bidding.named_contracts)
         end)
 
         it("encodes the canonical marriage values", function()
@@ -385,6 +403,15 @@ describe("core.rule_config", function()
                         "increment_threshold",
                         "increment_below_200",
                         "increment_from_200",
+                        "forced_opening",
+                        "forced_dealer_bid",
+                        "blind_bid",
+                        "re_entry_after_pass",
+                        "contra",
+                        "forced_bid_concession",
+                        "no_contract_without_marriage",
+                        "negative_score_restriction",
+                        "named_contracts",
                     },
                 },
                 { "marriages", { "values" } },
@@ -1309,6 +1336,304 @@ describe("core.rule_config", function()
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
             assert.are.equal("off", res.config.talon.open_discard)
+        end)
+    end)
+
+    describe("bidding.forced_opening", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("bidding.forced_opening")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["on"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.bidding.forced_opening = "on"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("bidding.forced_opening", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.bidding.forced_opening)
+        end)
+    end)
+
+    describe("bidding.forced_dealer_bid", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("bidding.forced_dealer_bid")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["on"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.bidding.forced_dealer_bid = "on"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("bidding.forced_dealer_bid", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.bidding.forced_dealer_bid)
+        end)
+    end)
+
+    describe("bidding.blind_bid", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("bidding.blind_bid")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["first_bid_double"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.bidding.blind_bid = "first_bid_double"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("bidding.blind_bid", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.bidding.blind_bid)
+        end)
+    end)
+
+    describe("bidding.re_entry_after_pass", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("bidding.re_entry_after_pass")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["on"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.bidding.re_entry_after_pass = "on"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("bidding.re_entry_after_pass", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.bidding.re_entry_after_pass)
+        end)
+    end)
+
+    describe("bidding.contra", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("bidding.contra")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["contra_only"])
+            assert.is_true(allowed["contra_and_redouble"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            for _, bad in ipairs({ "contra_only", "contra_and_redouble" }) do
+                local t = valid_table()
+                t.bidding.contra = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
+                assert.are.equal("deferred_field_changed", res.error.code)
+                assert.are.equal("bidding.contra", res.error.path)
+            end
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.bidding.contra)
+        end)
+    end)
+
+    describe("bidding.forced_bid_concession", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("bidding.forced_bid_concession")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["equal_split"])
+            assert.is_true(allowed["each_full"])
+            assert.is_true(allowed["preset_ratio"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            for _, bad in ipairs({ "equal_split", "each_full", "preset_ratio" }) do
+                local t = valid_table()
+                t.bidding.forced_bid_concession = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
+                assert.are.equal("deferred_field_changed", res.error.code)
+                assert.are.equal("bidding.forced_bid_concession", res.error.path)
+            end
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.bidding.forced_bid_concession)
+        end)
+    end)
+
+    describe("bidding.no_contract_without_marriage", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("bidding.no_contract_without_marriage")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["no_120_without_marriage"])
+            assert.is_true(allowed["capped_by_marriages"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            for _, bad in ipairs({ "no_120_without_marriage", "capped_by_marriages" }) do
+                local t = valid_table()
+                t.bidding.no_contract_without_marriage = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
+                assert.are.equal("deferred_field_changed", res.error.code)
+                assert.are.equal("bidding.no_contract_without_marriage", res.error.path)
+            end
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.bidding.no_contract_without_marriage)
+        end)
+    end)
+
+    describe("bidding.negative_score_restriction", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("bidding.negative_score_restriction")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["on"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.bidding.negative_score_restriction = "on"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("bidding.negative_score_restriction", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.bidding.negative_score_restriction)
+        end)
+    end)
+
+    describe("bidding.named_contracts", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("bidding.named_contracts")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["on"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.bidding.named_contracts = "on"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("bidding.named_contracts", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.bidding.named_contracts)
         end)
     end)
 

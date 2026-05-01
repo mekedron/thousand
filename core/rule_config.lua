@@ -380,6 +380,13 @@ local SCHEMA = {
             },
         },
     },
+    -- Bidding rules and house-rule toggles. The first five fields are
+    -- "implemented" — the auction reads them. The remaining fields are
+    -- the bidding house-rule catalogue from
+    -- docs/variations/house-rules.md "Bidding house rules", landing here
+    -- as deferred entries so built-in templates and saved customs can
+    -- reference them by shape today and the auction can wire them up in
+    -- a later task without another schema migration.
     bidding = {
         kind = "section",
         field_order = {
@@ -388,6 +395,15 @@ local SCHEMA = {
             "increment_threshold",
             "increment_below_200",
             "increment_from_200",
+            "forced_opening",
+            "forced_dealer_bid",
+            "blind_bid",
+            "re_entry_after_pass",
+            "contra",
+            "forced_bid_concession",
+            "no_contract_without_marriage",
+            "negative_score_restriction",
+            "named_contracts",
         },
         fields = {
             opening_min = {
@@ -429,6 +445,133 @@ local SCHEMA = {
                 min = 1,
                 default = 10,
                 status = "implemented",
+            },
+            -- House-rule: forehand must open the auction at the
+            -- minimum bid (cannot pass on the first turn). Speeds up
+            -- the auction; eliminates the all-pass non-deal. See
+            -- docs/variations/house-rules.md "Forced opening at 100".
+            forced_opening = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "deferred",
+            },
+            -- House-rule: when every seat passes, the dealer is
+            -- forced into the minimum-100 contract (Ukrainian *бовт*).
+            -- Distinct from the zero-tricks penalty (also called
+            -- *болт* / *палка*) catalogued under the special-contract
+            -- and penalty section. See
+            -- docs/variations/house-rules.md "Forced dealer bid (Бовт /
+            -- Bolt)" and the warning in
+            -- docs/variations/house-rules.md#zero-tricks-penalty-болт--палка.
+            forced_dealer_bid = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "deferred",
+            },
+            -- House-rule: a player may make their first bid before
+            -- looking at the hand (*в тёмную* / *ciemny*). Successful
+            -- blind bids score double; failed blind bids cost double.
+            -- The Russian "blind raise after winning the auction"
+            -- variant is a separate rule and stays out of this toggle
+            -- until a future task differentiates them. See
+            -- docs/variations/house-rules.md "Dark / blind bid".
+            blind_bid = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "first_bid_double" },
+                default = "off",
+                status = "deferred",
+            },
+            -- House-rule: a player who passed in the first round may
+            -- re-enter the auction once on a later round. Relaxes the
+            -- standard permanent-pass rule. See
+            -- docs/variations/house-rules.md "Re-entry after pass".
+            re_entry_after_pass = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "deferred",
+            },
+            -- House-rule: defenders may double the declarer's bid
+            -- (*contra*) before play; the declarer may redouble
+            -- (*rekontra*) in response. `contra_only` permits the
+            -- defender double; `contra_and_redouble` adds the
+            -- declarer's response. See
+            -- docs/variations/house-rules.md "Contra (defender
+            -- doubling)".
+            contra = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "contra_only", "contra_and_redouble" },
+                default = "off",
+                status = "deferred",
+            },
+            -- House-rule: when a player has been forced into the
+            -- minimum-100 contract (forced-opening, forced-dealer-bid,
+            -- last-bidder-standing) and looks at a hopeless hand, some
+            -- tables let them concede before play. The three on-states
+            -- map to the documented distribution variants:
+            --   "equal_split":  bid divided equally among non-conceders.
+            --   "each_full":    every other player gets the full bid.
+            --   "preset_ratio": house-defined split.
+            -- Distinct from talon.pass_the_talon, which is available
+            -- to any declarer after seeing the talon. See
+            -- docs/variations/house-rules.md "Forced-bid concession".
+            forced_bid_concession = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "equal_split", "each_full", "preset_ratio" },
+                default = "off",
+                status = "deferred",
+            },
+            -- House-rule: forbid bidding 120 or higher without a
+            -- marriage in the starting hand. The stricter
+            -- `capped_by_marriages` variant caps the maximum bid at
+            -- `120 + marriage values held`. See
+            -- docs/variations/house-rules.md "No contract without
+            -- marriage".
+            no_contract_without_marriage = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = {
+                    "off",
+                    "no_120_without_marriage",
+                    "capped_by_marriages",
+                },
+                default = "off",
+                status = "deferred",
+            },
+            -- House-rule: a player with a negative running score is
+            -- barred from active bidding and may only receive the
+            -- minimum forced 100 contract. Used at tables that don't
+            -- want a falling player to escape the hole by gambling on
+            -- big bids. See docs/variations/house-rules.md
+            -- "Negative-score bidding restriction".
+            negative_score_restriction = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "deferred",
+            },
+            -- Umbrella toggle: are the named contract bids (mizère,
+            -- slam, open-hand) admissible at the auction? Each
+            -- individual contract is its own toggle in the
+            -- special-contract-and-penalty section catalogued for a
+            -- later Phase 3.2 task; this one exists so the bidding
+            -- picker can grey out the umbrella when specials are off.
+            -- See docs/variations/house-rules.md "Special contracts".
+            named_contracts = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "deferred",
             },
         },
     },
@@ -1109,6 +1252,15 @@ M.canonical_russian = M.new({
         increment_threshold = 200,
         increment_below_200 = 5,
         increment_from_200 = 10,
+        forced_opening = "off",
+        forced_dealer_bid = "off",
+        blind_bid = "off",
+        re_entry_after_pass = "off",
+        contra = "off",
+        forced_bid_concession = "off",
+        no_contract_without_marriage = "off",
+        negative_score_restriction = "off",
+        named_contracts = "off",
     },
     marriages = {
         values = { hearts = 100, diamonds = 80, clubs = 60, spades = 40 },

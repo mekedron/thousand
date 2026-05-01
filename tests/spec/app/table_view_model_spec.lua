@@ -341,6 +341,15 @@ describe("app.table_view_model", function()
                 increment_threshold = 200,
                 increment_below_200 = 5,
                 increment_from_200 = 10,
+                forced_opening = "off",
+                forced_dealer_bid = "off",
+                blind_bid = "off",
+                re_entry_after_pass = "off",
+                contra = "off",
+                forced_bid_concession = "off",
+                no_contract_without_marriage = "off",
+                negative_score_restriction = "off",
+                named_contracts = "off",
             }
             for k, v in pairs(overrides) do
                 bidding[k] = v

@@ -284,7 +284,7 @@ only for toggles marked selectable.
   - Bad-talon redeal.
   - Talon re-buy.
   - Open discard.
-- [ ] Add bidding toggles.
+- [x] Add bidding toggles.
   - Minimum opening bid.
   - Maximum first-round bid.
   - Increment below 200.
