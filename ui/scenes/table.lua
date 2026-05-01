@@ -284,33 +284,52 @@ function M:_advance_within_group(direction)
     self._focus_index = card_count + rel
 end
 
--- Up/Down jumps focus between the hand-card group and the panel
--- group. Tab still cycles through everything (including the back
--- button); arrows specifically avoid the back button so Up/Down on
--- the bid panel can't accidentally land on Menu.
-function M:_jump_focus_groups()
-    local target = self:_focus_target()
+-- Up/Down walks the three vertical focus groups in screen order:
+-- Menu (top-right) → panel buttons (mid) → hand cards (bottom). Up
+-- moves toward the top of the screen, Down toward the bottom; both
+-- wrap. Left/Right still stay inside whichever group focus is on,
+-- and Tab cycles through every focusable in declaration order.
+function M:_jump_focus_groups(direction)
+    direction = direction or 1
     local card_count = self:_focus_card_count()
     local panel_count = #self._panel_buttons
-    local on_card = target == "card" -- i18n-ok
-    local on_panel = target == "panel" -- i18n-ok
-    if on_card then
-        if panel_count > 0 then
-            self._focus_index = card_count + 1
-        end
-        return
+
+    -- Top-to-bottom screen order. The Menu button is always present;
+    -- the other groups appear only when populated.
+    local groups = { "back" } -- i18n-ok
+    if panel_count > 0 then
+        groups[#groups + 1] = "panel" -- i18n-ok
     end
-    if on_panel then
-        if card_count > 0 then
-            self._focus_index = 1
-        end
-        return
-    end
-    -- Currently on back or unfocused — jump into the primary group.
     if card_count > 0 then
+        groups[#groups + 1] = "card" -- i18n-ok
+    end
+    if #groups <= 1 then
+        return
+    end
+
+    local target = self:_focus_target()
+    local cur = 0
+    for i, g in ipairs(groups) do
+        if g == target then
+            cur = i
+            break
+        end
+    end
+
+    local next_idx
+    if cur == 0 then
+        next_idx = direction > 0 and 1 or #groups
+    else
+        next_idx = ((cur - 1 + direction) % #groups) + 1
+    end
+
+    local next_group = groups[next_idx]
+    if next_group == "card" then -- i18n-ok
         self._focus_index = 1
-    elseif panel_count > 0 then
+    elseif next_group == "panel" then -- i18n-ok
         self._focus_index = card_count + 1
+    elseif next_group == "back" then -- i18n-ok
+        self._focus_index = card_count + panel_count + 1
     end
 end
 
@@ -1438,9 +1457,12 @@ function M:keypressed(key)
     elseif key == "right" then -- i18n-ok
         self._input_mode = "keyboard" -- i18n-ok
         self:_advance_within_group(1)
-    elseif key == "up" or key == "down" then -- i18n-ok
+    elseif key == "up" then -- i18n-ok
         self._input_mode = "keyboard" -- i18n-ok
-        self:_jump_focus_groups()
+        self:_jump_focus_groups(-1)
+    elseif key == "down" then -- i18n-ok
+        self._input_mode = "keyboard" -- i18n-ok
+        self:_jump_focus_groups(1)
     elseif key == "return" or key == "space" or key == "kpenter" then -- i18n-ok
         self._input_mode = "keyboard" -- i18n-ok
         if self._focus_index then
