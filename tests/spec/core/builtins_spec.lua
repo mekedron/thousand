@@ -9,21 +9,19 @@
 --        task list, asserted programmatically via `schema_for`.
 --      * The blob round-trips through JSON unchanged.
 --
--- 2. Engine contract (varies by what the Phase 1 engine supports today):
+-- 2. Engine contract (varies by what the Phase 3.6 engine supports
+--    today):
 --      * `russian` aliases `canonical_russian` and runs a full scripted
 --        deal end-to-end.
 --      * `ukrainian` runs a full scripted deal *and* a barrel-state
 --        scenario that asserts the `barrel.deal_count = 2` override
 --        bites: a player on the barrel falls off after two failed
 --        deals (canonical takes three).
---      * `polish` and the four 2-/4-player builtins are catalogued
---        data; the engine's `dealing.lua` guard rejects their shape
---        with a typed error today. The tests pin that guard so the
---        Phase 3.6 work that lifts it has an explicit test to flip.
---
--- See docs/development/task-list.md "3.6 Toggle gameplay" for the
--- follow-up that extends the Polish, 2-player and 4-player templates
--- to full scripted deals.
+--      * `polish` runs a full scripted deal under the 2-card
+--        pass_without_taking talon (declarer never picks it up; one
+--        card goes to each opponent).
+--      * The four 2-/4-player builtins each run a full scripted deal
+--        for their canonical layout.
 
 local rule_config = require("core.rule_config")
 local deck_module = require("core.deck")
@@ -298,15 +296,63 @@ describe("core.rule_config builtins (engine integration)", function()
             assert.are.equal(110, ten_step.auction.current_bid)
         end)
 
-        it(
-            "is rejected by the Phase 1 dealer because talon.size = 2 is not yet supported",
-            function()
-                local result = dealing.deal(deck_module.build(), rule_config.builtins.polish)
-                assert.is_false(result.ok)
-                assert.are.equal("unsupported_talon_size", result.error.code)
-                assert.are.equal(2, result.error.talon_size)
+        it("deals 7-card hands, 2-card talon, and a 1-card leftover for the declarer", function()
+            local result = dealing.deal(deck_module.build(), rule_config.builtins.polish)
+            assert.is_true(result.ok)
+            assert.are.equal(3, #result.hands)
+            for i = 1, 3 do
+                assert.are.equal(7, #result.hands[i])
             end
-        )
+            assert.are.equal(2, #result.talon)
+            assert.is_nil(result.stock)
+            assert.is_table(result.leftover_for_declarer)
+            assert.are.equal(1, #result.leftover_for_declarer)
+        end)
+
+        it("plays a scripted full deal with pass_without_taking, lands at 8/8/8", function()
+            local config = rule_config.builtins.polish
+            local deal_result = dealing.deal(build_deck(42), config, { dealer = 1 })
+            assert.is_true(deal_result.ok)
+
+            -- Auction: forehand opens at 100; the other two pass.
+            local a = auction_module.new(config, 1).auction
+            a = auction_module.bid(a, 2, config.bidding.opening_min).auction
+            a = auction_module.pass(a, 3).auction
+            a = auction_module.pass(a, 1).auction
+            assert.are.equal("done", a.status)
+            assert.are.equal(2, a.declarer)
+
+            -- Talon: declarer never picks the visible talon up; two
+            -- pass_from_talon calls drain it to the opponents
+            -- (clockwise from declarer: 3, then 1). The leftover
+            -- card lands in the declarer's hand at the same moment as
+            -- the second pass closes the talon out.
+            local t = talon_module.new(config, a, deal_result.hands, deal_result.talon, {
+                leftover_for_declarer = deal_result.leftover_for_declarer,
+            }).talon
+            assert.are.equal("revealed", t.status)
+            assert.are.equal("pass_without_taking", t.distribution)
+            t = assert(talon_module.pass_from_talon(t, 3, 1).talon)
+            assert.are.equal("revealed", t.status)
+            assert.are.equal(1, #t.talon)
+            t = assert(talon_module.pass_from_talon(t, 1, 1).talon)
+            assert.are.equal("done", t.status, "Polish flow skips awaiting_raise")
+            assert.are.equal(0, #t.talon)
+            assert.are.equal(8, #t.hands[2], "declarer reached 8 via the leftover")
+            assert.are.equal(8, #t.hands[1])
+            assert.are.equal(8, #t.hands[3])
+
+            -- Trick play: standard 8-trick deal under symmetric hands.
+            local s = tricks_module.new(config, t.hands, a.declarer).tricks
+            assert.are.equal(8, s.tricks_per_deal)
+            while s.status == "in_progress" do
+                local p = s.next_to_play
+                local choice = tricks_module.legal_cards(s, p).cards[1]
+                s = tricks_module.play(s, p, choice).tricks
+            end
+            assert.are.equal("done", s.status)
+            assert.are.equal(8, s.tricks_played)
+        end)
     end)
 
     describe("two_player_a", function()

@@ -16,10 +16,18 @@ opponents.
 - The talon contains **2 cards** (some tables: 3, distributed differently).
 - After winning the auction, the declarer **passes one card face-down to
   each opponent** without first picking the talon up.
-- In a 3-card talon variant the declarer takes all three, then passes one to
-  each opponent (as in the Russian rules).
+- In a 3-card talon variant the declarer takes all three, then passes one
+  to each opponent (as in the Russian rules).
+- The dealer reserves one card off-deck during dealing; it joins the
+  declarer's hand at the same moment the second pass closes the talon
+  out. Without this leftover the math doesn't sum to a 24-card deck
+  (7+7+7 hands + 2 talon = 23), and Polish trick play assumes the
+  symmetric 8-card hands the rest of the game uses.
 
-Net effect: the declarer plays from a **7-card hand** with no extra picks.
+Net effect: each player enters trick play with **8 cards**. Declarer
+never sees the visible talon land in their hand (it goes to the
+opponents), but the reserved leftover does — there is no post-talon
+raise.
 
 ### Bidding
 

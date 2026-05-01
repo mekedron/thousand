@@ -27,10 +27,13 @@
 --       9+9 to players + a 6-card stock; the bottom card of the stock is
 --       flipped face-up as the trump indicator. The stock is consumed
 --       during tricks (see core.tricks), not by core.talon.
---
--- Polish (3-player, talon 2) and any other not-yet-supported shape still
--- fail with an `unsupported_*` typed error so the rest of Phase 3.6 has an
--- explicit pin to flip when it lands.
+--   * 3-player / talon 2 — Polish Tysiąc. Pattern:
+--       3+3+3 to players, 2 to talon, 2+2+2 to players, 2+2+2 to players,
+--       1 to the post-pass declarer pickup (`leftover_for_declarer`).
+--       Hands 7/7/7, talon 2, leftover 1. core.talon's
+--       `pass_without_taking` flow drains the talon to the two
+--       opponents (one card each) and routes the leftover to the
+--       declarer at the same moment, leaving 8/8/8 for trick play.
 --
 -- The returned hands and talon (and stock, when present) are plain Lua
 -- lists. Hands evolve through play (cards leave them as tricks resolve),
@@ -286,12 +289,46 @@ local function resolve_recipe(config, dealer)
         }
     end
 
-    -- Catch-alls. Polish (count 3, talon 2) lands here today; the
-    -- talon-variants gameplay task in Phase 3.6 lifts this guard.
-    if talon_size ~= 0 and talon_size ~= 3 then
+    if count == 3 and talon_size == 2 then
+        -- Polish Tysiąc 2-card musik: 7-card hands, 2-card talon, plus
+        -- a single "leftover" card the talon module hands to the
+        -- declarer when the Polish pass-without-taking flow completes.
+        -- Each player ends at 8 (7 dealt + 1 from talon for opponents,
+        -- 7 dealt + 1 from leftover for declarer) so the trick layer
+        -- sees a symmetric 8/8/8 layout. The companion
+        -- `talon.distribution = "pass_without_taking"` (see core.talon)
+        -- enforces the no-take, no-raise flow.
+        return {
+            ok = true,
+            recipe = {
+                schedule = {
+                    { to = "player", size = 3 },
+                    { to = "player", size = 3 },
+                    { to = "player", size = 3 },
+                    { to = "talon", size = 2 },
+                    { to = "player", size = 2 },
+                    { to = "player", size = 2 },
+                    { to = "player", size = 2 },
+                    { to = "player", size = 2 },
+                    { to = "player", size = 2 },
+                    { to = "player", size = 2 },
+                    { to = "leftover_for_declarer", size = 1 },
+                },
+                hand_size = 7,
+                talon_size = 2,
+                stock_size = 0,
+                leftover_for_declarer_size = 1,
+                active_seats = active_seats_all(),
+                sits_out = nil,
+            },
+        }
+    end
+
+    -- Catch-alls for unsupported player_count / talon.size combinations.
+    if talon_size ~= 0 and talon_size ~= 2 and talon_size ~= 3 then
         return failure(
             "unsupported_talon_size",
-            "dealer supports only 0- and 3-card talons in the active layout",
+            "dealer supports only 0-, 2- and 3-card talons in the active layout",
             { talon_size = talon_size, player_count = count }
         )
     end
@@ -336,6 +373,7 @@ function M.deal(deck, config, opts)
     end
     local talon = {}
     local stock = {}
+    local leftover_for_declarer = {}
 
     local idx = 1
     local cursor = 1
@@ -359,6 +397,11 @@ function M.deal(deck, config, opts)
                 stock[#stock + 1] = deck[idx]
                 idx = idx + 1
             end
+        elseif chunk.to == "leftover_for_declarer" then
+            for _ = 1, chunk.size do
+                leftover_for_declarer[#leftover_for_declarer + 1] = deck[idx]
+                idx = idx + 1
+            end
         end
     end
 
@@ -376,6 +419,14 @@ function M.deal(deck, config, opts)
         -- the last card drawn, exposed face-up from the start of the
         -- deal so both players know the trump suit before bidding.
         result.trump_indicator = stock[#stock]
+    end
+    if (recipe.leftover_for_declarer_size or 0) > 0 then
+        -- Polish Tysiąc reserves one card off-deck during dealing; the
+        -- talon module hands it to the declarer at the end of the
+        -- pass_without_taking flow so all hands reach 8 for symmetric
+        -- trick play. See core/talon.lua's pass_from_talon and
+        -- docs/variations/polish.md.
+        result.leftover_for_declarer = leftover_for_declarer
     end
     return result
 end

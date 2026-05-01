@@ -472,7 +472,7 @@ ships scripted engine tests covering every value.
     after the reveal.
   - `rebuy` flips to selectable; engine tests cover scripted rebuy
     scenarios end-to-end.
-- [ ] Implement Polish 2-card talon distribution.
+- [x] Implement Polish 2-card talon distribution.
   - `distribution` `pass_without_taking` runs the Polish flow where
     the declarer never picks the talon up.
   - `size = 2` lifts the engine's `unsupported_talon_size` guard for

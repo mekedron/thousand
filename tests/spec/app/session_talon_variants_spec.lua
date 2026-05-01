@@ -696,4 +696,113 @@ describe("app.session talon variants", function()
             assert.is_nil(s:rebuy_offer_state())
         end)
     end)
+
+    describe("polish pass_without_taking", function()
+        local polish_config = rule_config.builtins.polish
+        local auction_module = require("core.auction")
+        local marriages_module = require("core.marriages")
+
+        -- 7/7/7 + 2-card talon + 1-card leftover. Hands assigned so the
+        -- forehand (seat 2) opens at minimum and the others pass; seat
+        -- 2 wins as declarer with the standard clockwise order.
+        local function polish_deal_set()
+            local hands = {
+                {
+                    c("spades", "9"),
+                    c("spades", "J"),
+                    c("spades", "Q"),
+                    c("spades", "K"),
+                    c("spades", "10"),
+                    c("spades", "A"),
+                    c("clubs", "9"),
+                },
+                {
+                    c("clubs", "J"),
+                    c("clubs", "Q"),
+                    c("clubs", "K"),
+                    c("clubs", "10"),
+                    c("clubs", "A"),
+                    c("diamonds", "9"),
+                    c("diamonds", "J"),
+                },
+                {
+                    c("diamonds", "Q"),
+                    c("diamonds", "K"),
+                    c("diamonds", "10"),
+                    c("diamonds", "A"),
+                    c("hearts", "9"),
+                    c("hearts", "J"),
+                    c("hearts", "Q"),
+                },
+            }
+            local talon = { c("hearts", "K"), c("hearts", "10") }
+            local leftover_for_declarer = { c("hearts", "A") }
+            return hands, talon, leftover_for_declarer
+        end
+
+        local function polish_session_at_auction(opts)
+            opts = opts or {}
+            local hands, talon, leftover_for_declarer = polish_deal_set()
+            local dealer = opts.dealer or 1
+            local auction = auction_module.new(polish_config, dealer).auction
+            local marriages = marriages_module.new(polish_config).marriages
+            local s = Session.from_state({
+                config = polish_config,
+                seed = 1,
+                dealer = dealer,
+                hands = hands,
+                talon_cards = talon,
+                auction = auction,
+                marriages = marriages,
+                running_totals = { 0, 0, 0 },
+                deal_index = 1,
+            })
+            s._leftover_for_declarer = leftover_for_declarer
+            return s
+        end
+
+        it("constructs a Polish talon at status 'revealed' after the auction closes", function()
+            local s = polish_session_at_auction()
+            drive_auction_to_done(s, 100)
+            assert.are.equal("talon", s:current_phase())
+            assert.are.equal("revealed", s._talon.status)
+            assert.are.equal("pass_without_taking", s._talon.distribution)
+            assert.are.equal(2, #s._talon.talon)
+        end)
+
+        it("rejects take_talon under Polish with wrong_distribution_for_take", function()
+            local s = polish_session_at_auction()
+            drive_auction_to_done(s, 100)
+            local result = s:take_talon()
+            assert.is_false(result.ok)
+            assert.are.equal("wrong_distribution_for_take", result.error.code)
+        end)
+
+        it("drains the talon via pass_polish_talon and lands on tricks at 8/8/8", function()
+            local s = polish_session_at_auction()
+            drive_auction_to_done(s, 100)
+            -- Seat 2 declarer; opponents are 3 (CW) and 1 (next).
+            local first = s:pass_polish_talon(3, 1)
+            assert.is_true(first.ok)
+            assert.are.equal("revealed", s._talon.status)
+            assert.are.equal(1, #s._talon.talon)
+
+            local second = s:pass_polish_talon(1, 1)
+            assert.is_true(second.ok)
+            -- Talon transitioned to done and on_talon_end advanced into tricks.
+            assert.are.equal("tricks", s:current_phase())
+            local hands = s:hands()
+            assert.are.equal(8, #hands[1])
+            assert.are.equal(8, #hands[2])
+            assert.are.equal(8, #hands[3])
+        end)
+
+        it("rejects pass_polish_talon outside the talon phase with wrong_phase", function()
+            local s = polish_session_at_auction()
+            -- Auction not yet driven; no talon state exists.
+            local result = s:pass_polish_talon(3, 1)
+            assert.is_false(result.ok)
+            assert.are.equal("wrong_phase", result.error.code)
+        end)
+    end)
 end)

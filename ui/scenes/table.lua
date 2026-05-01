@@ -564,6 +564,33 @@ function M:_do_skip_raise()
     self:_refresh_view_model()
 end
 
+-- Polish Tysiąc direct pass. The first cut auto-distributes the two
+-- talon cards in clockwise order from the declarer (talon[1] to the
+-- next opponent, talon[2] to the one after). The engine API takes
+-- explicit `(target, talon_index)` arguments so a future agency-mode
+-- UI can hand the choice back to the player without changing
+-- core/talon.lua.
+function M:_do_pass_polish_talon()
+    local session = self:_session()
+    if not session then
+        return
+    end
+    local view = self._view_model
+    local talon_phase = view and view.talon_phase
+    if not talon_phase or not talon_phase.polish_pass_pending then
+        return
+    end
+    local remaining = talon_phase.polish_pass_remaining_seats or {}
+    for _, seat in ipairs(remaining) do
+        local result = session:pass_polish_talon(seat, 1)
+        self:_invoke(result)
+        if not result.ok then
+            break
+        end
+    end
+    self:_refresh_view_model()
+end
+
 function M:_do_concede_deal()
     local session = self:_session()
     if not session then
@@ -1019,17 +1046,29 @@ local function build_auction_panel(self, view)
 end
 
 local function build_talon_take_panel(self, view)
-    local panel = {
-        Button.new({
+    local phase_block = view and view.talon_phase
+    local panel = {}
+    if phase_block and phase_block.polish_pass_pending then
+        -- Polish Tysiąc: declarer never picks the talon up; one button
+        -- distributes both talon cards to the two opponents.
+        panel[#panel + 1] = Button.new({
+            id = "talon_pass_polish", -- i18n-ok
+            label_key = "scene.table.talon.pass_polish_button",
+            enabled = true,
+            on_press = function()
+                self:_do_pass_polish_talon()
+            end,
+        })
+    else
+        panel[#panel + 1] = Button.new({
             id = "talon_take", -- i18n-ok
             label_key = "scene.table.talon.take_button",
             enabled = true,
             on_press = function()
                 self:_do_take_talon()
             end,
-        }),
-    }
-    local phase_block = view and view.talon_phase
+        })
+    end
     if phase_block and phase_block.declarer_can_concede then
         panel[#panel + 1] = Button.new({
             id = "talon_concede", -- i18n-ok
@@ -1128,7 +1167,8 @@ local function panel_signature(view)
             local concede = view.talon_phase.declarer_can_concede and "C" or "-" -- i18n-ok
             local buyback = view.talon_phase.declarer_can_buyback
             local penalty = buyback and tostring(buyback.penalty) or "-" -- i18n-ok
-            return table.concat({ "talon", "revealed", concede, penalty }, ":") -- i18n-ok
+            local polish = view.talon_phase.polish_pass_pending and "P" or "-" -- i18n-ok
+            return table.concat({ "talon", "revealed", concede, penalty, polish }, ":") -- i18n-ok
         end
         return "talon:" .. status
     end

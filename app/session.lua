@@ -110,6 +110,7 @@ local function reset_deal_state(self, dealer, seed_bump)
     self._stock = deal_result.stock
     self._trump_indicator = deal_result.trump_indicator
     self._sits_out = deal_result.sits_out
+    self._leftover_for_declarer = deal_result.leftover_for_declarer
     self._auction = auction
     self._marriages = marriages
     self._talon = nil
@@ -222,6 +223,7 @@ function M.new(opts)
         _stock = deal_result.stock,
         _trump_indicator = deal_result.trump_indicator,
         _sits_out = deal_result.sits_out,
+        _leftover_for_declarer = deal_result.leftover_for_declarer,
         _auction = auction,
         _talon = nil,
         _marriages = marriages,
@@ -301,6 +303,9 @@ function M.from_state(state)
         _stock = state.stock and copy_list(state.stock) or nil,
         _trump_indicator = state.trump_indicator,
         _sits_out = state.sits_out,
+        _leftover_for_declarer = state.leftover_for_declarer and copy_list(
+            state.leftover_for_declarer
+        ) or nil,
         _auction = state.auction,
         _talon = state.talon,
         _marriages = state.marriages,
@@ -814,7 +819,9 @@ local function on_auction_end(self)
         return
     end
 
-    local talon_result = talon_module.new(self._config, a, self._hands, self._talon_cards)
+    local talon_result = talon_module.new(self._config, a, self._hands, self._talon_cards, {
+        leftover_for_declarer = self._leftover_for_declarer,
+    })
     if not talon_result.ok then
         local msg = "session: talon construction failed after auction: " -- i18n-ok
             .. tostring(talon_result.error.message)
@@ -1085,6 +1092,34 @@ function Session:pass_talon(target_player, card)
         return result
     end
     self._talon = result.talon
+    return { ok = true }
+end
+
+-- Polish Tysiąc 2-card direct pass. Each call pushes one talon card to
+-- one opponent without the declarer ever picking the talon up. After
+-- both opponents have received a card (`talon.opponent_count` calls)
+-- the talon module flips status to `done` directly — there is no
+-- post-talon raise — so this wrapper invokes `on_talon_end` to advance
+-- into the trick-play phase.
+function Session:pass_polish_talon(target_player, talon_index)
+    if not self._talon then
+        return failure("wrong_phase", "pass_polish_talon requires the talon phase", {
+            phase = self:current_phase(),
+        })
+    end
+    local g = bad_talon_guard(self, "pass_polish_talon") -- i18n-ok: action enum
+        or rebuy_guard(self, "pass_polish_talon") -- i18n-ok: action enum
+    if g then
+        return g
+    end
+    local result = talon_module.pass_from_talon(self._talon, target_player, talon_index)
+    if not result.ok then
+        return result
+    end
+    self._talon = result.talon
+    if self._talon.status == "done" then
+        on_talon_end(self)
+    end
     return { ok = true }
 end
 

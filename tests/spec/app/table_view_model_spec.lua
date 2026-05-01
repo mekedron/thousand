@@ -769,4 +769,100 @@ describe("app.table_view_model", function()
             end
         )
     end)
+
+    describe("polish pass_without_taking view fields", function()
+        local card = require("core.card")
+        local auction_module = require("core.auction")
+        local marriages_module = require("core.marriages")
+        local function c(suit, rank)
+            return card.new(suit, rank)
+        end
+
+        local function polish_session_at_revealed_talon()
+            local polish_config = rule_config.builtins.polish
+            local hands = {
+                {
+                    c("spades", "9"),
+                    c("spades", "J"),
+                    c("spades", "Q"),
+                    c("spades", "K"),
+                    c("spades", "10"),
+                    c("spades", "A"),
+                    c("clubs", "9"),
+                },
+                {
+                    c("clubs", "J"),
+                    c("clubs", "Q"),
+                    c("clubs", "K"),
+                    c("clubs", "10"),
+                    c("clubs", "A"),
+                    c("diamonds", "9"),
+                    c("diamonds", "J"),
+                },
+                {
+                    c("diamonds", "Q"),
+                    c("diamonds", "K"),
+                    c("diamonds", "10"),
+                    c("diamonds", "A"),
+                    c("hearts", "9"),
+                    c("hearts", "J"),
+                    c("hearts", "Q"),
+                },
+            }
+            local talon = { c("hearts", "K"), c("hearts", "10") }
+            local leftover_for_declarer = { c("hearts", "A") }
+            local dealer = 1
+            local auction = auction_module.new(polish_config, dealer).auction
+            local marriages = marriages_module.new(polish_config).marriages
+            local s = Session.from_state({
+                config = polish_config,
+                seed = 1,
+                dealer = dealer,
+                hands = hands,
+                talon_cards = talon,
+                auction = auction,
+                marriages = marriages,
+                running_totals = { 0, 0, 0 },
+                deal_index = 1,
+            })
+            s._leftover_for_declarer = leftover_for_declarer
+            assert(s:bid(2, 100).ok)
+            assert(s:pass(3).ok)
+            assert(s:pass(1).ok)
+            return s
+        end
+
+        it("surfaces distribution and polish_pass_pending at revealed status", function()
+            local s = polish_session_at_revealed_talon()
+            local view = view_model.from_session(s)
+            assert.are.equal("talon", view.phase)
+            assert.are.equal("revealed", view.talon_phase.status)
+            assert.are.equal("pass_without_taking", view.talon_phase.distribution)
+            assert.is_true(view.talon_phase.polish_pass_pending)
+            assert.is_table(view.talon_phase.polish_pass_remaining_seats)
+            -- Declarer is seat 2; clockwise from declarer the queue is [3, 1].
+            assert.are.equal(3, view.talon_phase.polish_pass_remaining_seats[1])
+            assert.are.equal(1, view.talon_phase.polish_pass_remaining_seats[2])
+        end)
+
+        it("does not expose Polish fields under canonical Russian", function()
+            local s = drive_to_talon(7)
+            local view = view_model.from_session(s)
+            assert.are.equal("talon", view.phase)
+            assert.are.equal("declarer_takes_then_passes", view.talon_phase.distribution)
+            assert.is_falsy(view.talon_phase.polish_pass_pending)
+            assert.is_nil(view.talon_phase.polish_pass_remaining_seats)
+        end)
+
+        it("clears polish_pass_pending after the first pass shrinks the remaining queue", function()
+            local s = polish_session_at_revealed_talon()
+            assert(s:pass_polish_talon(3, 1).ok)
+            local view = view_model.from_session(s)
+            assert.are.equal("revealed", view.talon_phase.status)
+            assert.is_true(view.talon_phase.polish_pass_pending)
+            -- Only seat 1 left in the queue.
+            assert.are.equal(1, #view.talon_phase.polish_pass_remaining_seats)
+            assert.are.equal(1, view.talon_phase.polish_pass_remaining_seats[1])
+        end)
+    end)
 end)

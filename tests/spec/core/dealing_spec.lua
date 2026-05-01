@@ -330,18 +330,71 @@ describe("core.dealing", function()
         end)
 
         -- Phase 3.6 lifted the count != 3 guard for 2- and 4-player
-        -- layouts. The dealer still rejects the Polish 2-card-talon
-        -- shape because the talon-variants gameplay task hasn't landed
-        -- yet — that pin lives below in the polish-shape test.
+        -- layouts and (in the Polish 2-card task) the size != 3 guard
+        -- for 3-player. The Polish positive case lives in the
+        -- "deals the Polish 2-card-talon shape" test below; the dealer
+        -- now only rejects sizes outside {0, 2, 3}, which the schema
+        -- also blocks at allowed-value validation.
+    end)
 
-        it("rejects the Polish 2-card-talon shape", function()
+    describe("polish 2-card talon", function()
+        local function polish_config()
             local t = valid_config_table()
             t.talon.size = 2
-            local odd = rule_config.new(t)
-            local result = dealing.deal(deck_module.build(), odd)
-            assert.is_false(result.ok)
-            assert.are.equal("unsupported_talon_size", result.error.code)
-            assert.are.equal(2, result.error.talon_size)
+            t.talon.distribution = "pass_without_taking"
+            return rule_config.new(t)
+        end
+
+        it("deals 7-card hands, a 2-card talon, and a 1-card leftover", function()
+            local d = deck_module.build()
+            local result = dealing.deal(d, polish_config())
+            assert.is_true(result.ok)
+            assert.is_nil(result.error)
+            assert.are.equal(3, #result.hands)
+            for i = 1, 3 do
+                assert.are.equal(7, #result.hands[i], "hand " .. i .. " has wrong size")
+            end
+            assert.are.equal(2, #result.talon)
+            assert.is_nil(result.stock)
+            assert.is_table(result.leftover_for_declarer)
+            assert.are.equal(1, #result.leftover_for_declarer)
+            -- Sanity check: 7+7+7+2+1 = 24 — the full deck is consumed,
+            -- the leftover lands in the declarer's hand later via
+            -- core/talon's pass_without_taking flow.
+            local dealt = 7 + 7 + 7 + 2 + 1
+            assert.are.equal(24, dealt)
+        end)
+
+        it("places deck positions on the Polish hand, talon, and leftover slots", function()
+            local d = deck_module.build()
+            local result = dealing.deal(d, polish_config())
+            assert.is_true(result.ok)
+
+            -- Schedule:
+            --   3+3+3 to players 1, 2, 3              (positions 1-9)
+            --   2 to talon                             (positions 10-11)
+            --   2+2+2 to players 1, 2, 3              (positions 12-17)
+            --   2+2+2 to players 1, 2, 3              (positions 18-23)
+            --   1 to leftover_for_declarer            (position  24)
+            local function expect_positions(hand, indices)
+                assert.are.equal(#indices, #hand)
+                for k, idx in ipairs(indices) do
+                    assert.is_true(
+                        card.equals(d[idx], hand[k]),
+                        "expected card at deck position "
+                            .. idx
+                            .. " ("
+                            .. card.tostring(d[idx])
+                            .. "), got "
+                            .. card.tostring(hand[k])
+                    )
+                end
+            end
+            expect_positions(result.hands[1], { 1, 2, 3, 12, 13, 18, 19 })
+            expect_positions(result.hands[2], { 4, 5, 6, 14, 15, 20, 21 })
+            expect_positions(result.hands[3], { 7, 8, 9, 16, 17, 22, 23 })
+            expect_positions(result.talon, { 10, 11 })
+            expect_positions(result.leftover_for_declarer, { 24 })
         end)
     end)
 

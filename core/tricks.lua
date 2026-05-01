@@ -212,6 +212,22 @@ local function resolve_layout(config)
             uses_stock = false,
         }
     end
+    if count == 3 and talon_size == 2 then
+        -- Polish Tysiąc 2-card pass_without_taking. The talon module
+        -- routes the dealer's reserved leftover card to the declarer
+        -- when the pass closes the talon out, so all three hands reach
+        -- 8 by the time tricks start. Standard 8-trick layout from
+        -- here on; the only Polish-specific tells are upstream
+        -- (dealing recipe + talon distribution), which are invisible
+        -- to the trick layer. See docs/variations/polish.md.
+        return {
+            ok = true,
+            hand_size = 8,
+            tricks_per_deal = 8,
+            sits_out = nil,
+            uses_stock = false,
+        }
+    end
     if count == 4 and talon_size == 0 then
         if config.players.four_player_config ~= "dealer_plays_no_talon" then
             return failure(

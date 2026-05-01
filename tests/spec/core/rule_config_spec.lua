@@ -1660,12 +1660,12 @@ describe("core.rule_config", function()
     end)
 
     describe("talon.size", function()
-        it("exposes a selectable number-leaf descriptor with allowed = {0, 2, 3}", function()
+        it("exposes an implemented number-leaf descriptor with allowed = {0, 2, 3}", function()
             local d = rule_config.schema_for("talon.size")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("number", d.lua_type)
             assert.are.equal(3, d.default)
-            assert.are.equal("selectable", d.status)
+            assert.are.equal("implemented", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -1715,12 +1715,12 @@ describe("core.rule_config", function()
     end)
 
     describe("talon.distribution", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("talon.distribution")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("declarer_takes_then_passes", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -1736,15 +1736,35 @@ describe("core.rule_config", function()
             assert.are.equal("declarer_takes_then_passes", res.config.talon.distribution)
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
-            for _, bad in ipairs({ "pass_without_taking", "stock_draw" }) do
+        it("accepts pass_without_taking when paired with talon.size = 2", function()
+            local t = valid_table()
+            t.talon.size = 2
+            t.talon.distribution = "pass_without_taking"
+            local res = rule_config.try_new(t)
+            assert.is_true(res.ok)
+            assert.are.equal("pass_without_taking", res.config.talon.distribution)
+            assert.are.equal(2, res.config.talon.size)
+        end)
+
+        it("rejects pass_without_taking with the wrong talon.size via the invariant", function()
+            for _, bad_size in ipairs({ 0, 3 }) do
                 local t = valid_table()
-                t.talon.distribution = bad
+                t.talon.size = bad_size
+                t.talon.distribution = "pass_without_taking"
                 local res = rule_config.try_new(t)
-                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
-                assert.are.equal("deferred_field_changed", res.error.code)
-                assert.are.equal("talon.distribution", res.error.path)
+                assert.is_false(res.ok, "size=" .. bad_size .. " should reject pass_without_taking")
+                assert.are.equal("incompatible_combination", res.error.code)
+                assert.are.equal("pass_without_taking_requires_two_card_talon", res.error.invariant)
             end
+        end)
+
+        it("rejects the still-deferred stock_draw value via the invariant", function()
+            local t = valid_table()
+            t.talon.distribution = "stock_draw"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("incompatible_combination", res.error.code)
+            assert.are.equal("stock_draw_distribution_deferred", res.error.invariant)
         end)
 
         it("survives a JSON round trip at its default", function()
@@ -1752,6 +1772,18 @@ describe("core.rule_config", function()
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
             assert.are.equal("declarer_takes_then_passes", res.config.talon.distribution)
+        end)
+
+        it("survives a JSON round trip with pass_without_taking + size 2", function()
+            local t = valid_table()
+            t.talon.size = 2
+            t.talon.distribution = "pass_without_taking"
+            local config_in = rule_config.new(t)
+            local s = rule_config.to_json(config_in)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("pass_without_taking", res.config.talon.distribution)
+            assert.are.equal(2, res.config.talon.size)
         end)
     end)
 

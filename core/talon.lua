@@ -6,7 +6,7 @@
 -- card to each opponent (8 / 8 / 8), and may raise their winning bid
 -- without the pre-talon 120 cap.
 --
--- Phase 3.6 generalises the talon to two more shapes:
+-- Phase 3.6 generalises the talon to three more shapes:
 --
 --   * 4-player B (count = 4, talon = 3, dealer_sits_out) — same flow as
 --     the canonical 3-player game, with the dealer's seat skipped: the
@@ -17,6 +17,14 @@
 --     (9 / 8), then discards one card face-down to the captured pile
 --     (8 / 8). The discarded card credits its point value to the
 --     declarer's captured-points total via the trick layer.
+--   * Polish Tysiąc (count = 3, talon = 2, distribution =
+--     "pass_without_taking") — declarer never picks the visible talon
+--     up. Instead, declarer passes one talon card face-down to each
+--     opponent (the declarer chooses which card goes to which
+--     opponent). At the moment the second pass closes the talon out,
+--     the dealer's reserved 1-card `leftover_for_declarer` is handed
+--     to the declarer so all hands reach the symmetric 8-card size
+--     that the trick engine expects. There is no post-talon raise.
 --
 -- Variants where there is no traditional talon (count = 4 / talon = 0,
 -- or count = 2 / talon = 0 with a draw stock) skip this module entirely
@@ -27,7 +35,9 @@
 -- → pass (opponent_count times) → [awaiting_discard → discard]
 -- → awaiting_raise → raise / skip_raise → done`. The `awaiting_discard`
 -- step is only used by 2-player B; for the other shapes the second
--- (or only) pass advances directly to `awaiting_raise`.
+-- (or only) pass advances directly to `awaiting_raise`. Polish skips
+-- both `take` and `awaiting_raise`: after two `pass_from_talon` calls
+-- (one per opponent) the status flows directly `revealed → done`.
 --
 -- Rule constants (bid increments, opening minimum) come from
 -- `RuleConfig`. The post-talon raise removes the pre-talon ceiling
@@ -121,6 +131,10 @@ local function clone_state(state)
         sits_out = state.sits_out,
         opponent_count = state.opponent_count,
         requires_discard = state.requires_discard,
+        distribution = state.distribution,
+        leftover_for_declarer = state.leftover_for_declarer and shallow_copy_list(
+            state.leftover_for_declarer
+        ) or nil,
         discards = shallow_copy_list(state.discards),
         status = state.status,
         history = copy_history(state.history),
@@ -189,9 +203,32 @@ local function resolve_layout(config)
             requires_discard = true,
         }
     end
+    if count == 3 and talon_size == 2 then
+        -- Polish Tysiąc: declarer never picks the talon up. Distribution
+        -- must be `pass_without_taking`; the cross-field invariant in
+        -- core/rule_config.lua already rejects the 2-card talon under
+        -- any other distribution at config-load time, but we re-check
+        -- here so direct talon.new callers (tests, future variants) get
+        -- a typed error rather than a silent take-then-pass.
+        if config.talon.distribution ~= "pass_without_taking" then
+            return failure(
+                "unsupported_talon_distribution",
+                "2-card talon requires talon.distribution = 'pass_without_taking'",
+                { distribution = config.talon.distribution, talon_size = talon_size }
+            )
+        end
+        return {
+            ok = true,
+            hand_size = 7,
+            opponent_count = 2,
+            sits_out = nil,
+            requires_discard = false,
+            distribution = "pass_without_taking",
+        }
+    end
     return failure(
         "unsupported_talon_size",
-        "talon module supports only 3-card talons in the active layout",
+        "talon module supports only 2- and 3-card talons in the active layout",
         { talon_size = talon_size, player_count = count }
     )
 end
@@ -264,7 +301,7 @@ local function validate_talon_cards(cards, talon_size)
     return nil
 end
 
-function M.new(config, auction, hands, talon_cards)
+function M.new(config, auction, hands, talon_cards, opts)
     if not rule_config.is_rule_config(config) then
         return failure("not_a_rule_config", "talon.new requires a RuleConfig", {
             actual = type(config),
@@ -308,6 +345,27 @@ function M.new(config, auction, hands, talon_cards)
         return talon_err
     end
 
+    local distribution = layout_result.distribution or "declarer_takes_then_passes"
+    local leftover_for_declarer
+    if distribution == "pass_without_taking" then
+        local raw = opts and opts.leftover_for_declarer
+        if type(raw) ~= "table" or #raw ~= 1 then
+            return failure(
+                "missing_leftover_for_declarer",
+                "pass_without_taking requires a 1-card leftover_for_declarer (Polish 2-card flow)",
+                { actual = type(raw) == "table" and #raw or type(raw) }
+            )
+        end
+        if not is_card_like(raw[1]) then
+            return failure(
+                "missing_leftover_for_declarer",
+                "leftover_for_declarer must contain a card-shaped value",
+                { actual = type(raw[1]) }
+            )
+        end
+        leftover_for_declarer = shallow_copy_list(raw)
+    end
+
     local state = tag_as_talon({
         schema_version = M.SCHEMA_VERSION,
         config = config,
@@ -320,6 +378,8 @@ function M.new(config, auction, hands, talon_cards)
         sits_out = sits_out,
         opponent_count = layout_result.opponent_count,
         requires_discard = layout_result.requires_discard or false,
+        distribution = distribution,
+        leftover_for_declarer = leftover_for_declarer,
         discards = {},
         status = "revealed",
         history = {},
@@ -389,6 +449,13 @@ function M.take(state)
     local phase_err = ensure_status(state, "revealed", "take")
     if phase_err then
         return phase_err
+    end
+    if state.distribution == "pass_without_taking" then
+        return failure(
+            "wrong_distribution_for_take",
+            "take is not available under pass_without_taking — use pass_from_talon",
+            { distribution = state.distribution }
+        )
     end
 
     local next_state = clone_state(state)
@@ -532,6 +599,103 @@ function M.discard(state, card)
         player = next_state.declarer,
         card = discarded_card,
     })
+    return { ok = true, talon = tag_as_talon(next_state) }
+end
+
+-- Polish Tysiąc 2-card direct pass. Distinct from `M.pass`: the source
+-- card lives in the talon, not the declarer's hand, and the declarer
+-- never takes the talon up. The talon stays publicly revealed across
+-- both passes; the declarer chooses which talon card goes to which
+-- opponent. After the second opponent has received a card the talon is
+-- empty and status flows directly `revealed → done` — no
+-- `awaiting_raise`, since the declarer has gained no new information
+-- to support a post-talon raise.
+function M.pass_from_talon(state, target_player, talon_index)
+    local talon_err = ensure_talon(state)
+    if talon_err then
+        return talon_err
+    end
+    local phase_err = ensure_status(state, "revealed", "pass_from_talon")
+    if phase_err then
+        return phase_err
+    end
+    if state.distribution ~= "pass_without_taking" then
+        return failure(
+            "wrong_distribution_for_pass_from_talon",
+            "pass_from_talon requires talon.distribution = 'pass_without_taking'",
+            { distribution = state.distribution }
+        )
+    end
+
+    local count = state.config.players.count
+    local valid_target = is_integer(target_player) and target_player >= 1 and target_player <= count
+    if not valid_target then
+        return failure(
+            "bad_target",
+            "target must be an integer in 1.." .. count,
+            { actual = target_player, player_count = count }
+        )
+    end
+    if target_player == state.declarer then
+        return failure("bad_target", "declarer cannot pass to themselves", {
+            target = target_player,
+            declarer = state.declarer,
+        })
+    end
+    if state.sits_out and target_player == state.sits_out then
+        return failure(
+            "bad_target",
+            "cannot pass to the sitting-out seat",
+            { target = target_player, sits_out = state.sits_out }
+        )
+    end
+    if state.passes_received[target_player] then
+        return failure(
+            "target_already_received",
+            "target opponent has already received a pass",
+            { target = target_player }
+        )
+    end
+
+    if not is_integer(talon_index) or talon_index < 1 or talon_index > #state.talon then
+        return failure(
+            "bad_talon_index",
+            "talon_index must be an integer in 1.." .. #state.talon,
+            { actual = talon_index, talon_size = #state.talon }
+        )
+    end
+
+    local next_state = clone_state(state)
+    local passed_card = next_state.talon[talon_index]
+    table.remove(next_state.talon, talon_index)
+    local opponent_hand = next_state.hands[target_player]
+    opponent_hand[#opponent_hand + 1] = passed_card
+    next_state.passes_received[target_player] = true
+    next_state.history = append_history(state.history, {
+        action = "pass_from_talon",
+        player = next_state.declarer,
+        target = target_player,
+        card = passed_card,
+    })
+
+    local pass_count = 0
+    for _ in pairs(next_state.passes_received) do
+        pass_count = pass_count + 1
+    end
+    if pass_count >= state.opponent_count then
+        -- Hand the dealer's reserved leftover card to the declarer so
+        -- all hands reach the symmetric 8-card size that the trick
+        -- engine expects. The leftover is consumed (cleared from
+        -- state) once delivered.
+        if next_state.leftover_for_declarer and #next_state.leftover_for_declarer > 0 then
+            local declarer_hand = next_state.hands[next_state.declarer]
+            for i = 1, #next_state.leftover_for_declarer do
+                declarer_hand[#declarer_hand + 1] = next_state.leftover_for_declarer[i]
+            end
+            next_state.leftover_for_declarer = {}
+        end
+        next_state.status = "done"
+    end
     return { ok = true, talon = tag_as_talon(next_state) }
 end
 

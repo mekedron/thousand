@@ -949,4 +949,200 @@ describe("core.talon", function()
             assert.is_false(talon.is_bad_talon(nines, 5, { cards = {} }))
         end)
     end)
+
+    describe("polish layout (pass_without_taking)", function()
+        local polish_config = rule_config.builtins.polish
+
+        local function build_polish_dealable_set()
+            -- 24 unique cards in a stable order so tests can target by
+            -- index. Polish hands are 7/7/7 + 2-card talon (drained to
+            -- the two opponents) + 1-card leftover (handed to declarer
+            -- when the second pass closes the talon out).
+            local cards = {}
+            for _, suit in ipairs(card.SUITS) do
+                for _, rank in ipairs(card.RANKS) do
+                    cards[#cards + 1] = card.new(suit, rank)
+                end
+            end
+            local hands = { {}, {}, {} }
+            for player = 1, 3 do
+                for i = 1, 7 do
+                    hands[player][i] = cards[(player - 1) * 7 + i]
+                end
+            end
+            local talon_cards = { cards[22], cards[23] }
+            local leftover_for_declarer = { cards[24] }
+            return hands, talon_cards, leftover_for_declarer
+        end
+
+        local function polish_finalized_auction(opts)
+            opts = opts or {}
+            local dealer = opts.dealer or 1
+            local final_bid = opts.final_bid or 100
+            local result = auction.new(polish_config, dealer)
+            assert.is_true(result.ok)
+            local a = result.auction
+            a = assert(auction.bid(a, a.forehand, final_bid).auction)
+            while a.status == "in_progress" do
+                a = assert(auction.pass(a, a.turn).auction)
+            end
+            return a
+        end
+
+        local function fresh_polish_talon(opts)
+            opts = opts or {}
+            local a = opts.auction or polish_finalized_auction(opts)
+            local hands, talon_cards, leftover_for_declarer = build_polish_dealable_set()
+            local result = talon.new(polish_config, a, hands, talon_cards, {
+                leftover_for_declarer = leftover_for_declarer,
+            })
+            assert.is_true(result.ok, "fixture: polish talon.new must succeed")
+            return result.talon, hands, talon_cards, leftover_for_declarer
+        end
+
+        it("constructs a 2-card talon + 1-card leftover under the Polish builtin", function()
+            local state = fresh_polish_talon()
+            assert.are.equal("revealed", state.status)
+            assert.are.equal("pass_without_taking", state.distribution)
+            assert.are.equal(2, state.opponent_count)
+            assert.is_nil(state.sits_out)
+            assert.is_false(state.requires_discard)
+            assert.are.equal(2, #state.talon)
+            assert.are.equal(7, #state.hands[1])
+            assert.are.equal(7, #state.hands[2])
+            assert.are.equal(7, #state.hands[3])
+            assert.is_table(state.leftover_for_declarer)
+            assert.are.equal(1, #state.leftover_for_declarer)
+        end)
+
+        it("rejects new() under pass_without_taking when leftover is missing", function()
+            local hands, talon_cards = build_polish_dealable_set()
+            local a = polish_finalized_auction()
+            local result = talon.new(polish_config, a, hands, talon_cards)
+            assert.is_false(result.ok)
+            assert.are.equal("missing_leftover_for_declarer", result.error.code)
+        end)
+
+        it("rejects new() under pass_without_taking when leftover has wrong size", function()
+            local hands, talon_cards = build_polish_dealable_set()
+            local a = polish_finalized_auction()
+            local result = talon.new(polish_config, a, hands, talon_cards, {
+                leftover_for_declarer = {},
+            })
+            assert.is_false(result.ok)
+            assert.are.equal("missing_leftover_for_declarer", result.error.code)
+        end)
+
+        it("rejects M.take with wrong_distribution_for_take", function()
+            local state = fresh_polish_talon()
+            local result = talon.take(state)
+            assert.is_false(result.ok)
+            assert.are.equal("wrong_distribution_for_take", result.error.code)
+            assert.are.equal("pass_without_taking", result.error.distribution)
+        end)
+
+        it("rejects M.pass (declarer-hand pass) with wrong_phase", function()
+            local state = fresh_polish_talon()
+            -- M.pass requires status `awaiting_pass`; Polish stays at
+            -- `revealed` until pass_from_talon drains the talon.
+            local declarer = state.declarer
+            local target = declarer == 3 and 1 or declarer + 1
+            local card_in_hand = state.hands[declarer][1]
+            local result = talon.pass(state, target, card_in_hand)
+            assert.is_false(result.ok)
+            assert.are.equal("wrong_phase", result.error.code)
+        end)
+
+        it("drains the talon via two pass_from_talon calls and lands at 8/8/8 done", function()
+            local state, _, _, leftover_for_declarer = fresh_polish_talon()
+            local declarer = state.declarer
+            local count = polish_config.players.count
+            local opp_a = (declarer % count) + 1
+            local opp_b = (opp_a % count) + 1
+            local leftover_card = leftover_for_declarer[1]
+
+            local first_card = state.talon[1]
+            local r1 = talon.pass_from_talon(state, opp_a, 1)
+            assert.is_true(r1.ok, r1.error and r1.error.message or "")
+            local s1 = r1.talon
+            assert.are.equal("revealed", s1.status, "still revealed after one pass")
+            assert.are.equal(1, #s1.talon)
+            assert.are.equal(8, #s1.hands[opp_a])
+            assert.are.equal(card.tostring(first_card), card.tostring(s1.hands[opp_a][8]))
+            assert.is_true(s1.passes_received[opp_a])
+            -- Declarer still at 7 between passes — leftover only lands
+            -- when the talon closes out.
+            assert.are.equal(7, #s1.hands[declarer])
+            assert.are.equal(1, #s1.leftover_for_declarer)
+
+            local second_card = s1.talon[1]
+            local r2 = talon.pass_from_talon(s1, opp_b, 1)
+            assert.is_true(r2.ok)
+            local s2 = r2.talon
+            assert.are.equal("done", s2.status, "done after both opponents received a card")
+            assert.are.equal(0, #s2.talon)
+            assert.are.equal(8, #s2.hands[opp_b])
+            assert.are.equal(card.tostring(second_card), card.tostring(s2.hands[opp_b][8]))
+            -- Declarer reaches 8 thanks to the leftover (consumed).
+            assert.are.equal(8, #s2.hands[declarer])
+            assert.are.equal(card.tostring(leftover_card), card.tostring(s2.hands[declarer][8]))
+            assert.are.equal(0, #s2.leftover_for_declarer)
+            -- History records both pass_from_talon actions.
+            assert.are.equal(2, #s2.history)
+            assert.are.equal("pass_from_talon", s2.history[1].action)
+            assert.are.equal("pass_from_talon", s2.history[2].action)
+        end)
+
+        it("rejects pass_from_talon with bad_target on declarer self-pass", function()
+            local state = fresh_polish_talon()
+            local result = talon.pass_from_talon(state, state.declarer, 1)
+            assert.is_false(result.ok)
+            assert.are.equal("bad_target", result.error.code)
+        end)
+
+        it("rejects pass_from_talon with target_already_received on duplicate seat", function()
+            local state = fresh_polish_talon()
+            local declarer = state.declarer
+            local count = polish_config.players.count
+            local opp_a = (declarer % count) + 1
+            local s1 = assert(talon.pass_from_talon(state, opp_a, 1).talon)
+            local result = talon.pass_from_talon(s1, opp_a, 1)
+            assert.is_false(result.ok)
+            assert.are.equal("target_already_received", result.error.code)
+        end)
+
+        it("rejects pass_from_talon with bad_talon_index on out-of-bounds index", function()
+            local state = fresh_polish_talon()
+            local declarer = state.declarer
+            local count = polish_config.players.count
+            local opp_a = (declarer % count) + 1
+            for _, bad in ipairs({ 0, 3, -1 }) do
+                local result = talon.pass_from_talon(state, opp_a, bad)
+                assert.is_false(result.ok, "talon_index=" .. bad .. " should be rejected")
+                assert.are.equal("bad_talon_index", result.error.code)
+            end
+        end)
+
+        it("rejects pass_from_talon under the canonical Russian distribution", function()
+            -- Build a Russian state (default distribution) and try the
+            -- new method against it. Should return the typed
+            -- wrong_distribution_for_pass_from_talon.
+            local a = finalized_auction()
+            local hands, talon_cards = build_dealable_set()
+            local state = assert(talon.new(config, a, hands, talon_cards).talon)
+            local result = talon.pass_from_talon(state, 1, 1)
+            assert.is_false(result.ok)
+            assert.are.equal("wrong_distribution_for_pass_from_talon", result.error.code)
+        end)
+
+        it("rejects M.raise/skip_raise on Polish state (never reaches awaiting_raise)", function()
+            local state = fresh_polish_talon()
+            local raise_result = talon.raise(state, 110)
+            assert.is_false(raise_result.ok)
+            assert.are.equal("wrong_phase", raise_result.error.code)
+            local skip_result = talon.skip_raise(state)
+            assert.is_false(skip_result.ok)
+            assert.are.equal("wrong_phase", skip_result.error.code)
+        end)
+    end)
 end)

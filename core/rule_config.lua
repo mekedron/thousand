@@ -307,28 +307,32 @@ local SCHEMA = {
             "open_discard",
         },
         fields = {
-            -- Phase 3.2 narrowed the allowed set to {0, 2, 3} and flipped
-            -- the status to "selectable": 0 disables the talon entirely
-            -- (some 4-player layouts), 2 is the Polish Tysiąc shape, 3 is
-            -- canonical Russian. The picker may surface all three; the
-            -- engine still gates runtime to size == 3 until the 2- and
-            -- 4-player paths land (see core/dealing.lua's
-            -- unsupported_talon_size guard).
+            -- Allowed set {0, 2, 3}: 0 disables the talon entirely (some
+            -- 4-player layouts), 2 is the Polish Tysiąc shape, 3 is
+            -- canonical Russian / Ukrainian / 2-player B / 4-player B.
+            -- Phase 3.6's Polish 2-card task wired the engine to read the
+            -- value at runtime (dealer + talon module both branch on it),
+            -- flipping this field to "implemented".
             size = {
                 kind = "leaf",
                 lua_type = "number",
                 allowed = { 0, 2, 3 },
                 default = 3,
-                status = "selectable",
+                status = "implemented",
             },
-            -- How talon cards reach the players. "declarer_takes_then_passes"
-            -- is the standard 3-card Russian flow (docs/rules/talon.md).
-            -- "pass_without_taking" matches the Polish 2-card variant where
-            -- the declarer never picks the talon up
-            -- (docs/variations/polish.md). "stock_draw" is the 2-player
-            -- Schnapsen-style closed-talon stock
-            -- (docs/variations/two-player.md). Locked to the standard
-            -- distribution until those engine paths land.
+            -- How talon cards reach the players.
+            -- Per-value status:
+            --   * "declarer_takes_then_passes" — implemented; the standard
+            --     3-card Russian flow (docs/rules/talon.md).
+            --   * "pass_without_taking" — selectable; the Polish 2-card
+            --     variant where the declarer never picks the talon up and
+            --     instead passes one card face-down to each opponent
+            --     (docs/variations/polish.md). Wired in Phase 3.6.
+            --   * "stock_draw" — deferred; the 2-player Schnapsen-style
+            --     closed-talon stock (docs/variations/two-player.md).
+            -- Field-level status reflects the most-permissive value the
+            -- picker may select; per-value gating is enforced by the
+            -- engine and the cross-field invariants below.
             distribution = {
                 kind = "leaf",
                 lua_type = "string",
@@ -338,7 +342,7 @@ local SCHEMA = {
                     "stock_draw",
                 },
                 default = "declarer_takes_then_passes",
-                status = "deferred",
+                status = "selectable",
             },
             -- House-rule: keep the talon closed during the first round of
             -- bidding and flip it only if the auction reaches a second
@@ -1472,6 +1476,46 @@ local INVARIANTS = {
             }
         end,
     },
+    -- Polish 2-card "pass_without_taking": the declarer never picks the
+    -- talon up; the two talon cards go one each to the opponents. The
+    -- distribution is meaningful only with a 2-card talon — anything
+    -- else is a configuration error caught at validation time, not a
+    -- runtime "unsupported_talon_size" surprise. See
+    -- docs/variations/polish.md.
+    {
+        name = "pass_without_taking_requires_two_card_talon",
+        predicate = function(blob)
+            if blob.talon.distribution ~= "pass_without_taking" then
+                return true
+            end
+            return blob.talon.size == 2
+        end,
+        context = function(blob)
+            return {
+                talon_distribution = blob.talon.distribution,
+                talon_size = blob.talon.size,
+            }
+        end,
+    },
+    -- The 2-player Schnapsen-style "stock_draw" distribution is reserved
+    -- for the future stock-draw engine path (docs/variations/two-player.md
+    -- "Variant A"). Until that lands, the schema-level field-status
+    -- marks `talon.distribution` as selectable so the implemented and
+    -- newly-wired values pass validation; this invariant rejects the
+    -- still-deferred `stock_draw` value at config-load time so custom
+    -- templates cannot silently ride it through.
+    {
+        name = "stock_draw_distribution_deferred",
+        predicate = function(blob)
+            return blob.talon.distribution ~= "stock_draw"
+        end,
+        context = function(blob)
+            return {
+                talon_distribution = blob.talon.distribution,
+                talon_size = blob.talon.size,
+            }
+        end,
+    },
 }
 
 -- Validation -------------------------------------------------------------
@@ -2135,15 +2179,18 @@ M.canonical_russian = M.new(canonical_russian_blob())
 M.builtins = {
     russian = M.canonical_russian,
 
-    -- Polish Tysiąc (docs/variations/polish.md): 2-card talon (declarer
-    -- never picks it up; one card goes face-down to each opponent),
-    -- bidding climbs in 10-step increments throughout the auction (no
-    -- 5-step phase below 200). The schema-deferred Polish tells —
-    -- `talon.distribution = "pass_without_taking"` and
-    -- `tricks.must_overtake_strictness = "polish_strict"` — flip to
-    -- selectable in Phase 3.6.
+    -- Polish Tysiąc (docs/variations/polish.md): 2-card talon, declarer
+    -- never picks it up — one card goes face-down to each opponent
+    -- (`distribution = "pass_without_taking"`, wired in Phase 3.6's
+    -- Polish 2-card task). Bidding climbs in 10-step increments
+    -- throughout the auction (no 5-step phase below 200). The remaining
+    -- Polish tell — `tricks.must_overtake_strictness = "polish_strict"`
+    -- — flips to selectable in Phase 3.6's trick-play house-rules task.
     polish = M.new(with_overrides(canonical_russian_blob(), {
-        talon = { size = 2 },
+        talon = {
+            size = 2,
+            distribution = "pass_without_taking",
+        },
         bidding = {
             increment_below_200 = 10,
             increment_from_200 = 10,

@@ -99,6 +99,7 @@ return {
 
     ["scene.table.talon.concede_button"] = "Concede deal",
     ["scene.table.talon.buyback_button"] = "Buy back hand (-%{penalty})",
+    ["scene.table.talon.pass_polish_button"] = "Pass talon",
     ["scene.table.bad_talon_prompt.title"] = "Redeal — bad talon",
     ["scene.table.bad_talon_prompt.body"] = "Talon has only %{points} card points. Redeal?",
     ["scene.table.bad_talon_prompt.accept"] = "Redeal",
@@ -156,6 +157,8 @@ return {
     ["rule_config.invariant.four_player_b_requires_three_card_talon"] = "Configuration B (dealer sits out) requires the canonical 3-card talon (got %{talon_size}).",
     ["rule_config.invariant.two_player_a_requires_no_talon"] = "Variant A (closed talon, draw stock) requires talon.size = 0 (got %{talon_size}).",
     ["rule_config.invariant.two_player_b_requires_three_card_talon"] = "Variant B (fixed deal, no draw) requires the canonical 3-card talon (got %{talon_size}).",
+    ["rule_config.invariant.pass_without_taking_requires_two_card_talon"] = "Polish 2-card talon (pass_without_taking) requires talon.size = 2 (got %{talon_size}).",
+    ["rule_config.invariant.stock_draw_distribution_deferred"] = "talon.distribution = 'stock_draw' is not yet supported; choose 'declarer_takes_then_passes' or 'pass_without_taking'.",
 
     ["templates.error.not_a_table"] = "Template must be a table, got %{actual}.",
     ["templates.error.unsupported_schema_version"] = "Unsupported template schema version %{version} (supported: %{supported}).",

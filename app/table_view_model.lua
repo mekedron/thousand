@@ -209,6 +209,25 @@ local function build_talon_phase_block(session)
     if pre_take and config.talon.buyback == "on" then
         declarer_can_buyback = { penalty = config.talon.buyback_penalty or 0 }
     end
+    -- Polish Tysiąc direct-pass affordance: at status "revealed" with
+    -- `distribution = "pass_without_taking"` the take button is replaced
+    -- by a "Pass talon" affordance. The remaining-opponents list orders
+    -- recipients clockwise from the declarer so the scene can render
+    -- "Pass to Player X" deterministically.
+    local distribution = talon.distribution or "declarer_takes_then_passes"
+    local polish_pass_pending = pre_take and distribution == "pass_without_taking"
+    local polish_pass_remaining_seats
+    if polish_pass_pending then
+        polish_pass_remaining_seats = {}
+        local count = config.players.count
+        local seat = (talon.declarer % count) + 1
+        for _ = 1, count - 1 do
+            if seat ~= talon.sits_out and not talon.passes_received[seat] then
+                polish_pass_remaining_seats[#polish_pass_remaining_seats + 1] = seat
+            end
+            seat = (seat % count) + 1
+        end
+    end
     return {
         status = talon.status,
         declarer = talon.declarer,
@@ -219,6 +238,9 @@ local function build_talon_phase_block(session)
         declarer_can_concede = declarer_can_concede,
         declarer_can_buyback = declarer_can_buyback,
         passes_face_up = session:talon_passes_face_up(),
+        distribution = distribution,
+        polish_pass_pending = polish_pass_pending,
+        polish_pass_remaining_seats = polish_pass_remaining_seats,
     }
 end
 
