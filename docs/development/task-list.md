@@ -698,36 +698,203 @@ ships scripted engine tests covering every value.
 
 ## Phase 4 — AI opponents (algorithmic)
 
-Goal: a single human plays against two AI seats. **No LLM yet — silent
-AI.** The hard requirement is legal play under every built-in
-`RuleConfig`; strong strategy can improve incrementally after the first
-working AI.
+Goal: a single human plays against the rest of the seats filled by
+algorithmic AI. **No LLM yet — silent AI.** The hard requirement is
+legal play under every built-in `RuleConfig`. Every selection a human
+makes at the table — every modal, every toggle-gated affordance, and
+every per-turn action introduced by Phase 3.6 — has a matching AI
+hook so a non-human seat can be driven without clicks. Strategy
+quality starts with the canonical Russian template and improves
+incrementally; legality is universal from the first commit.
+
+:::warning[AI is pure decision]
+The AI module observes a read-only session view and returns engine
+actions. It must never mutate state directly, never import from
+`ui/`, and never import from `app/llm/`. CI guards the import graph.
+Phase 7 (LLM characters) extends presentation only — moves stay
+algorithmic.
+:::
+
+### 4.1 AI interface and engine-driver loop
 
 - [ ] Define the AI player interface in `app/ai/`.
   - Interface covers `chooseBid`, `chooseTalonPass`, `chooseRaise`,
-    `chooseCard`, and `chooseMarriage`.
-  - Interface can observe game state without importing UI or LLM code.
-- [ ] Implement rule-based bidding, talon, raise, and marriage decisions.
-  - Bidding heuristic follows the [Strategy](../strategy.md) page.
-  - Decisions are legal under the active `RuleConfig`.
-  - Strategy tuning is strongest for the canonical Russian template first.
-- [ ] Implement rule-based trick play.
-  - AI obeys must-follow, must-beat, must-trump, and overtrump rules.
-  - AI move legality works under every built-in `RuleConfig`, not just
-    Russian.
-- [ ] Enforce AI legality and latency.
-  - Every AI move is validated by the same rules engine that guards human
+    `chooseCard`, and `chooseMarriage`, plus an entry for every
+    additional decision surface introduced by Phase 3.6: accept or
+    decline a redeal offer, accept or decline a bad-talon redeal,
+    claim or decline a rebuy, take the talon vs concede vs buy back,
+    pass talon cards (Russian, Polish, 2-player-B discard), raise or
+    skip raise, and start the next deal at deal-done.
+  - Each entry is a pure function over a read-only session view and
+    the active seat; it returns the action to invoke on the engine,
+    not the mutation.
+  - The view exposes only the existing read-only session accessors
+    (`hands`, `legal_cards`, `current_turn`, `current_phase`,
+    `current_bid`, `current_trick`, `trump`, `talon_cards`,
+    `redeal_offer`, `bad_talon_offer_state`, `rebuy_offer_state`,
+    `available_marriages`, `config`); no UI or LLM imports.
+  - CI guards that `app/ai/` imports nothing from `ui/` or
+    `app/llm/`.
+- [ ] Wire the AI driver into the table scene.
+  - When `current_turn()` is an AI seat, the table scene calls the
+    AI module against that seat and applies the returned action via
+    the same Session mutator a human button would call.
+  - Modal awaiting-state phases (`awaiting_redeal_decision`,
+    `awaiting_bad_talon_decision`, `awaiting_rebuy_decision`) use
+    the same path: the offer state names the responsible seat, the
+    AI decides, and the scene routes accept or decline.
+  - One-shot intra-phase affordances (talon take / concede / buy
+    back, pass talon per opponent, raise or skip raise, Polish pass,
+    2-player-B discard, declare-marriage-then-play) chain through
+    the same loop — the AI returns one action per call until the
+    phase moves on.
+  - A "thinking…" indicator runs while a seat is deciding;
+    effective decision latency is capped at 2 s including the
+    indicator.
+
+### 4.2 Single-player mode and seat assignment
+
+- [ ] Add single-player mode and per-seat AI/human assignment.
+  - Single-player is selectable from the main menu and starts a
+    game with one human seat and the rest filled by AI under the
+    active `RuleConfig`.
+  - The new-game flow also exposes per-seat AI vs human pickers so
+    mixed compositions (e.g. 2 humans + 1 AI) work for any
+    supported player count.
+  - The hot-seat privacy curtain is suppressed for AI seats — no
+    pass-the-device prompt before an AI move — but stays between
+    consecutive human seats under the existing privacy toggle.
+  - Save format records each seat's AI binding alongside the
+    `RuleConfig` snapshot so saved games restore with the same
+    composition. (Phase 5.3's "assigned characters per seat"
+    requirement extends this binding; Phase 7 fills the character
+    layer.)
+- [ ] Add AI difficulty levels.
+  - Easy, normal, and hard differ in bidding aggression, marriage
+    planning, trump leading, discard quality, and — where the rule
+    set permits it — defender cooperation.
+  - Difficulty is a per-seat setting on the new-game flow.
+
+### 4.3 Baseline-legal AI for shipped decision surfaces
+
+These tasks land legal-only AI for every surface that already
+exists after Phase 2 plus Phase 3.6's first half. Strategy tuning
+happens in 4.4.
+
+- [ ] Implement legal AI for the auction.
+  - AI bids or passes within `bidding.opening_min`,
+    `bidding.pre_talon_max`, and the active increment thresholds.
+  - AI never proposes an illegal bid and never passes when the
+    engine forbids it.
+- [ ] Implement legal AI for redeal offers.
+  - AI accepts or declines `four_nine_redeal`, `three_nine_redeal`,
+    `four_jack_redeal`, and `weak_hand_redeal` modal prompts during
+    `awaiting_redeal_decision`.
+  - Mandatory variants are auto-accepted; optional variants default
+    to accept on weak hands and decline on borderline ones,
+    configurable by difficulty.
+- [ ] Implement legal AI for the talon flow.
+  - At `talon` revealed status the AI picks one of: take talon,
+    concede deal (`pass_the_talon`), buy back hand (`buyback`), or —
+    under `pass_without_taking` — pass two talon cards directly to
+    opponents, against the active `talon.distribution`.
+  - After taking, the AI passes one card to each opponent; under
+    `closed_talon_draw_stock` it follows the 2-player Variant A
+    flow and under `fixed_deal_no_draw` it picks the discard card.
+  - The AI raises by one valid increment when the talon clearly
+    boosts the bid value, otherwise calls `skip_raise`.
+- [ ] Implement legal AI for bad-talon and rebuy modals.
+  - At `awaiting_bad_talon_decision` the AI accepts a redeal when
+    the talon points are below the active threshold and the
+    contract is in the gated range; otherwise it declines.
+  - At `awaiting_rebuy_decision` each AI defender claims rebuy at
+    `talon.rebuy_contract_value` only when the held hand justifies
+    the forced contract; otherwise it declines and the queue
+    advances to the next defender.
+- [ ] Implement legal AI for trick play.
+  - AI obeys must-follow, must-beat, must-trump, and overtrump
+    rules via the engine's `legal_cards()` helper.
+  - On lead the AI considers `available_marriages()` and can
+    declare a marriage by leading the K or Q.
+  - Under 2-player Variant A the AI continues to play through both
+    `tricks_phase()` substates (`draw` and `strict`).
+  - AI move legality holds under every built-in `RuleConfig`, not
+    just Russian.
+- [ ] Implement legal AI for deal-done.
+  - When the seat at `deal_done` is an AI, the table scene auto-
+    calls `start_next_deal()` after a short pause that lets the
+    final-deal scoreboard settle.
+
+### 4.4 Strategy tuning (canonical Russian first)
+
+- [ ] Tune AI bidding heuristics against the canonical Russian
+  template, following the [Strategy](../strategy.md) page.
+- [ ] Tune AI talon passing and raise heuristics so the declarer
+  retains marriages and trump strength when possible.
+- [ ] Tune AI trick play so the leader plans marriages, the
+  declarer pulls trumps efficiently, and defenders cooperate where
+  the rule set allows.
+- [ ] Confirm canonical-Russian tuning against scripted full-game
+  fixtures with known good and bad outcomes.
+
+### 4.5 AI for pending Phase 3.6 toggles
+
+Each task lands the AI logic alongside the matching 3.6 toggle once
+that toggle's engine and UI ship. Until the matching 3.6 task
+lands, the toggle stays deferred for AI seats too — exactly as it
+is for human seats.
+
+- [ ] Implement AI for bidding house rules.
+  - `forced_opening`, `forced_dealer_bid`, `blind_bid`,
+    `re_entry_after_pass`, `contra` and redouble,
+    `forced_bid_concession`, `no_contract_without_marriage`,
+    `negative_score_restriction`, and `named_contracts` each get
+    AI behaviour matching the new affordance.
+- [ ] Implement AI for marriage house rules.
+  - `marriage_announcement_timing` `hand_announcement` and
+    `pre_first_trick` use the new declaration affordances.
+  - `ace_marriage` AI declares the four-aces bonus when eligible.
+  - `drowned_marriage`, `trump_activation_timing`,
+    `half_marriage_capture_bonus`, and `one_trump_per_deal` are
+    automatic in the engine; AI just plays cleanly under them.
+- [ ] Implement AI for trick-play house rules.
+  - Stricter `polish_strict` legality,
+    `defender_must_overtrump_declarer`, `partial_trumping`,
+    `last_trick_bonus`, `slam_bonus`, `slam_against_penalty`,
+    `lead_trump_after_marriage`, and `lazy_revoke` each adjust
+    card-choice heuristics.
+- [ ] Implement AI for special contracts.
+  - Mizère: bid only when the held hand is clearly bid-safe; play
+    every trick to lose. Slam: bid only on hand strength
+    sufficient for an 8-trick sweep. Open hand: keep bidding
+    aware of the visible-hand penalty/bonus; play stays
+    algorithmic.
+- [ ] Implement AI for opening-game, barrel, endgame, scoring, and
+  penalty toggles.
+  - Behaviour changes are mostly bidding posture (forced 100 on
+    `golden_deal`, defensive play near `barrel.threshold`, hero-
+    bid avoidance under `overshoot_penalty`, exact-landing posture
+    under `going_over_target = exact_only`). Penalty rules are
+    automatic in the engine; AI just plays cleanly under them.
+
+### 4.6 AI legality, latency, and tests
+
+- [ ] Add the all-AI legality guarantee.
+  - Every AI move passes through the same engine that gates human
     moves.
-  - AI never produces an illegal move in tests.
-  - Move latency is capped at 2 seconds with a "thinking..." indicator.
-- [ ] Add single-player mode and difficulty levels.
-  - Single-player mode is selectable from the main menu.
-  - Easy, normal, and hard differ in marriage planning, trump leading, and
-    defender cooperation.
+  - A property-style test runs N random full games for each
+    built-in template with all-AI seats and asserts no illegal
+    action is ever proposed.
+- [ ] Add a scripted AI stub for journey tests.
+  - The stub is deterministic and ignores strategy; it returns
+    the first legal action for each surface.
+  - Journeys that script all seats by deck-seeding move to AI-
+    driven seats backed by the stub, so the journey harness no
+    longer needs to know which seats are scripted.
 - [ ] Re-test AI on supported desktop platforms.
   - macOS and Linux runs have no regressions.
-- [ ] Add AI behavior for special contracts.
-  - Mizère / no-tricks contract is played correctly when enabled.
+  - The "thinking…" indicator and 2 s latency cap hold under the
+    real Love2D loop.
 
 ---
 
