@@ -348,7 +348,7 @@ variant** — only data.
   - `Polish Tysiąc` uses 2-card talon, 10-step increments only, and strict
     *przebijanie*.
   - `Ukrainian Тисяча` includes the bolt rule and optional 2-deal barrel.
-- [ ] Add built-in 2-player and 4-player templates.
+- [x] Add built-in 2-player and 4-player templates.
   - `Two-player A` uses closed talon, 9-card hands, and draw stock.
   - `Two-player B` uses fixed deal, 7-card hands, and no draw.
   - `Four-player A` has dealer play, no talon, and 6 cards each.

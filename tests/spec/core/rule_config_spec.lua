@@ -508,6 +508,128 @@ describe("core.rule_config", function()
         end)
     end)
 
+    describe("builtins (2-player and 4-player templates)", function()
+        describe("two_player_a", function()
+            local config = rule_config.builtins.two_player_a
+
+            it("is a frozen RuleConfig", function()
+                assert.is_true(rule_config.is_rule_config(config))
+            end)
+
+            it("uses 2 players", function()
+                assert.are.equal(2, config.players.count)
+            end)
+
+            it("uses the closed-talon shape (size = 2 until 6-card stock lands)", function()
+                assert.are.equal(2, config.talon.size)
+            end)
+
+            it("keeps the deferred two_player_config default", function()
+                assert.are.equal("closed_talon_draw_stock", config.players.two_player_config)
+            end)
+
+            it("round-trips through JSON", function()
+                local round_trip = rule_config.from_json(rule_config.to_json(config))
+                assert.is_true(round_trip.ok)
+                assert.are.equal(2, round_trip.config.players.count)
+                assert.are.equal(2, round_trip.config.talon.size)
+            end)
+        end)
+
+        describe("two_player_b", function()
+            local config = rule_config.builtins.two_player_b
+
+            it("is a frozen RuleConfig", function()
+                assert.is_true(rule_config.is_rule_config(config))
+            end)
+
+            it("uses 2 players", function()
+                assert.are.equal(2, config.players.count)
+            end)
+
+            it("uses the standard 3-card talon", function()
+                assert.are.equal(3, config.talon.size)
+            end)
+
+            it("keeps the deferred two_player_config default", function()
+                -- "fixed_deal_no_draw" lands in Phase 3.6.
+                assert.are.equal("closed_talon_draw_stock", config.players.two_player_config)
+            end)
+
+            it("round-trips through JSON", function()
+                local round_trip = rule_config.from_json(rule_config.to_json(config))
+                assert.is_true(round_trip.ok)
+                assert.are.equal(2, round_trip.config.players.count)
+                assert.are.equal(3, round_trip.config.talon.size)
+            end)
+        end)
+
+        describe("four_player_a", function()
+            local config = rule_config.builtins.four_player_a
+
+            it("is a frozen RuleConfig", function()
+                assert.is_true(rule_config.is_rule_config(config))
+            end)
+
+            it("uses 4 players", function()
+                assert.are.equal(4, config.players.count)
+            end)
+
+            it("disables the talon entirely", function()
+                assert.are.equal(0, config.talon.size)
+            end)
+
+            it("keeps the deferred four_player_config default (dealer plays, no talon)", function()
+                assert.are.equal("dealer_plays_no_talon", config.players.four_player_config)
+            end)
+
+            it("round-trips through JSON", function()
+                local round_trip = rule_config.from_json(rule_config.to_json(config))
+                assert.is_true(round_trip.ok)
+                assert.are.equal(4, round_trip.config.players.count)
+                assert.are.equal(0, round_trip.config.talon.size)
+            end)
+        end)
+
+        describe("four_player_b", function()
+            local config = rule_config.builtins.four_player_b
+
+            it("is a frozen RuleConfig", function()
+                assert.is_true(rule_config.is_rule_config(config))
+            end)
+
+            it("uses 4 players", function()
+                assert.are.equal(4, config.players.count)
+            end)
+
+            it("uses the standard 3-card talon", function()
+                assert.are.equal(3, config.talon.size)
+            end)
+
+            it("keeps the deferred four_player_config default", function()
+                -- "dealer_sits_out" lands in Phase 3.6.
+                assert.are.equal("dealer_plays_no_talon", config.players.four_player_config)
+            end)
+
+            it("round-trips through JSON", function()
+                local round_trip = rule_config.from_json(rule_config.to_json(config))
+                assert.is_true(round_trip.ok)
+                assert.are.equal(4, round_trip.config.players.count)
+                assert.are.equal(3, round_trip.config.talon.size)
+            end)
+        end)
+
+        it("registers every player-count variant under builtins", function()
+            local ids = { "two_player_a", "two_player_b", "four_player_a", "four_player_b" }
+            for _, id in ipairs(ids) do
+                assert.is_true(
+                    rule_config.is_rule_config(rule_config.builtins[id]),
+                    "builtins." .. id .. " must be a RuleConfig"
+                )
+            end
+        end)
+    end)
+
     describe("is_rule_config", function()
         it("returns true for canonical_russian", function()
             assert.is_true(rule_config.is_rule_config(rule_config.canonical_russian))

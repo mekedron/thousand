@@ -1979,6 +1979,54 @@ M.builtins = {
     ukrainian = M.new(with_overrides(canonical_russian_blob(), {
         barrel = { deal_count = 2 },
     })),
+
+    -- Two-player Variant A — closed talon, draw stock
+    -- (docs/variations/two-player.md). The 6-card draw stock is not yet
+    -- representable in the Phase 3.2 schema (talon.size's `allowed`
+    -- set is {0, 2, 3}); a sibling `talon.draw_stock_size` field will
+    -- arrive with the gameplay implementation in Phase 3.6's
+    -- "Implement talon variants" task. Until then the template uses
+    -- the closest selectable shape (size = 2) and stays at the
+    -- deferred `players.two_player_config = "closed_talon_draw_stock"`
+    -- default that already names this variant.
+    two_player_a = M.new(with_overrides(canonical_russian_blob(), {
+        players = { count = 2 },
+        talon = { size = 2 },
+    })),
+
+    -- Two-player Variant B — fixed deal, no draw, 7-card hands and the
+    -- standard 3-card talon (docs/variations/two-player.md). The
+    -- selector `players.two_player_config = "fixed_deal_no_draw"` is
+    -- still deferred in the Phase 3.2 schema; Phase 3.6's
+    -- "Implement players and seating gameplay" task flips it to
+    -- selectable and the template will be updated then.
+    two_player_b = M.new(with_overrides(canonical_russian_blob(), {
+        players = { count = 2 },
+    })),
+
+    -- Four-player Variant A — dealer plays, no talon, 6 cards each
+    -- (docs/variations/four-player.md). Setting `talon.size = 0`
+    -- already reflects the no-talon shape; the deferred
+    -- `players.four_player_config = "dealer_plays_no_talon"` default
+    -- already names this variant. Hand size and trick count fall out
+    -- of the player count once dealing/tricks support 4 players, which
+    -- lands in Phase 3.6's "Implement players and seating gameplay"
+    -- task.
+    four_player_a = M.new(with_overrides(canonical_russian_blob(), {
+        players = { count = 4 },
+        talon = { size = 0 },
+    })),
+
+    -- Four-player Variant B — dealer sits out, otherwise standard
+    -- 3-player rules (docs/variations/four-player.md). The selector
+    -- `players.four_player_config = "dealer_sits_out"` is still
+    -- deferred in the Phase 3.2 schema; Phase 3.6's "Implement
+    -- players and seating gameplay" task flips it to selectable and
+    -- the template will be updated then. The standard 3-card talon is
+    -- preserved here so the 3-active-seats deal pattern carries over.
+    four_player_b = M.new(with_overrides(canonical_russian_blob(), {
+        players = { count = 4 },
+    })),
 }
 
 return M
