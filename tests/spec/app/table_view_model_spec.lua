@@ -378,7 +378,9 @@ describe("app.table_view_model", function()
                     three_nine_redeal = "off",
                     four_jack_redeal = "off",
                     weak_hand_redeal = "off",
+                    weak_hand_threshold = 14,
                     misdeal_handling = "standard",
+                    misdeal_flat_penalty = 20,
                     all_pass_handling = "redeal",
                 },
                 talon = {
@@ -505,6 +507,156 @@ describe("app.table_view_model", function()
             assert.is_table(view.stock.trump_indicator)
             assert.is_nil(view.partnership)
             assert.is_nil(view.sits_out)
+        end)
+    end)
+
+    describe("dealing & redeal view fields", function()
+        local function canonical_with_dealing(overrides)
+            overrides = overrides or {}
+            local d = {
+                four_nine_redeal = "off",
+                three_nine_redeal = "off",
+                four_jack_redeal = "off",
+                weak_hand_redeal = "off",
+                weak_hand_threshold = 14,
+                misdeal_handling = "standard",
+                misdeal_flat_penalty = 20,
+                all_pass_handling = "redeal",
+            }
+            for k, v in pairs(overrides) do
+                d[k] = v
+            end
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            local blob = {
+                schema_version = 1,
+                cards = res.config.cards,
+                players = res.config.players,
+                dealing = d,
+                talon = res.config.talon,
+                bidding = res.config.bidding,
+                marriages = res.config.marriages,
+                tricks = res.config.tricks,
+                scoring = res.config.scoring,
+                opening_game = res.config.opening_game,
+                barrel = res.config.barrel,
+                endgame = res.config.endgame,
+                specials = res.config.specials,
+                penalties = res.config.penalties,
+            }
+            return rule_config.new(blob)
+        end
+
+        it("leaves all four blocks nil for a fresh canonical session", function()
+            local s = Session.new({ seed = 42, dealer = 1 })
+            local view = view_model.from_session(s)
+            assert.is_nil(view.redeal_prompt)
+            assert.is_nil(view.misdeal_banner)
+            assert.is_nil(view.all_pass_banner)
+            assert.is_false(view.raspassy_active)
+        end)
+
+        it("populates redeal_prompt while a session is awaiting a decision", function()
+            local cfg = canonical_with_dealing({ weak_hand_redeal = "strict" })
+            local auction_module = require("core.auction")
+            local marriages_module = require("core.marriages")
+            local card = require("core.card")
+            local s = Session.from_state({
+                config = cfg,
+                seed = 1,
+                dealer = 1,
+                hands = {
+                    {
+                        card.new("spades", "K"),
+                        card.new("clubs", "K"),
+                        card.new("diamonds", "K"),
+                        card.new("hearts", "K"),
+                        card.new("spades", "Q"),
+                        card.new("clubs", "Q"),
+                        card.new("diamonds", "Q"),
+                    },
+                    {
+                        card.new("spades", "9"),
+                        card.new("clubs", "9"),
+                        card.new("diamonds", "9"),
+                        card.new("hearts", "9"),
+                        card.new("spades", "10"),
+                        card.new("clubs", "10"),
+                        card.new("diamonds", "10"),
+                    },
+                    {
+                        card.new("hearts", "Q"),
+                        card.new("hearts", "10"),
+                        card.new("spades", "J"),
+                        card.new("clubs", "J"),
+                        card.new("diamonds", "J"),
+                        card.new("hearts", "J"),
+                        card.new("spades", "A"),
+                    },
+                },
+                talon_cards = {
+                    card.new("clubs", "A"),
+                    card.new("diamonds", "A"),
+                    card.new("hearts", "A"),
+                },
+                auction = auction_module.new(cfg, 1).auction,
+                marriages = marriages_module.new(cfg).marriages,
+                running_totals = { 0, 0, 0 },
+                redeal_offer = { seat = 2, kind = "weak_hand", forced = false },
+            })
+            local view = view_model.from_session(s)
+            assert.is_table(view.redeal_prompt)
+            assert.are.equal("weak_hand", view.redeal_prompt.kind)
+            assert.are.equal(2, view.redeal_prompt.seat)
+            assert.is_false(view.redeal_prompt.forced)
+            assert.are.equal("awaiting_redeal_decision", view.phase)
+        end)
+
+        it("populates misdeal_banner with handling, dealer, and penalty", function()
+            local cfg = canonical_with_dealing({
+                misdeal_handling = "flat_penalty",
+                misdeal_flat_penalty = 30,
+            })
+            local s = Session.new({ config = cfg, seed = 1, dealer = 2 })
+            assert.is_true(s:report_misdeal().ok)
+            local view = view_model.from_session(s)
+            assert.is_table(view.misdeal_banner)
+            assert.are.equal("flat_penalty", view.misdeal_banner.handling)
+            assert.are.equal(2, view.misdeal_banner.dealer)
+            assert.are.equal(30, view.misdeal_banner.penalty)
+        end)
+
+        it("renders an all_pass_banner with mode = redeal under the default", function()
+            local s = Session.new({ seed = 1, dealer = 1 })
+            assert.is_true(s:pass(s:current_turn()).ok)
+            assert.is_true(s:pass(s:current_turn()).ok)
+            local view = view_model.from_session(s)
+            assert.is_table(view.all_pass_banner)
+            assert.are.equal("redeal", view.all_pass_banner.mode)
+        end)
+
+        it("renders an all_pass_banner with mode = pass_out when configured", function()
+            local cfg = canonical_with_dealing({ all_pass_handling = "pass_out" })
+            local s = Session.new({ config = cfg, seed = 1, dealer = 1 })
+            assert.is_true(s:pass(s:current_turn()).ok)
+            assert.is_true(s:pass(s:current_turn()).ok)
+            local view = view_model.from_session(s)
+            assert.are.equal("pass_out", view.all_pass_banner.mode)
+        end)
+
+        it("renders raspassy_active = true with all_pass_banner mode = raspassy", function()
+            local cfg = canonical_with_dealing({ all_pass_handling = "raspassy" })
+            local s = Session.new({ config = cfg, seed = 1, dealer = 1 })
+            assert.is_true(s:pass(s:current_turn()).ok)
+            assert.is_true(s:pass(s:current_turn()).ok)
+            local view = view_model.from_session(s)
+            assert.is_true(view.raspassy_active)
+            assert.are.equal("raspassy", view.all_pass_banner.mode)
+            -- Bid/leader/trump indicators are hidden in raspassy mode.
+            assert.is_nil(view.current_bid)
+            assert.is_nil(view.leader)
+            assert.is_nil(view.trump)
+            assert.are.equal("raspassy_play", view.phase)
         end)
     end)
 end)

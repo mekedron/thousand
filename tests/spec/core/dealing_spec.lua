@@ -32,7 +32,9 @@ local function valid_config_table()
             three_nine_redeal = "off",
             four_jack_redeal = "off",
             weak_hand_redeal = "off",
+            weak_hand_threshold = 14,
             misdeal_handling = "standard",
+            misdeal_flat_penalty = 20,
             all_pass_handling = "redeal",
         },
         talon = {

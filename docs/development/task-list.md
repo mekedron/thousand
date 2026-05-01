@@ -411,7 +411,7 @@ ships scripted engine tests covering every value.
     `two_player_config` all flip to selectable.
   - Engine tests run scripted full deals for every player-count and
     seating-config combination.
-- [ ] Implement dealing and redeal triggers.
+- [x] Implement dealing and redeal triggers.
   - `four_nine_redeal` `optional` offers the entitled player a redeal;
     `mandatory` forces it.
   - `three_nine_redeal` `optional` offers the entitled player a redeal.

@@ -28,7 +28,9 @@ local function valid_table()
             three_nine_redeal = "off",
             four_jack_redeal = "off",
             weak_hand_redeal = "off",
+            weak_hand_threshold = 14,
             misdeal_handling = "standard",
+            misdeal_flat_penalty = 20,
             all_pass_handling = "redeal",
         },
         talon = {
@@ -291,7 +293,9 @@ describe("core.rule_config", function()
             assert.are.equal("off", config.dealing.three_nine_redeal)
             assert.are.equal("off", config.dealing.four_jack_redeal)
             assert.are.equal("off", config.dealing.weak_hand_redeal)
+            assert.are.equal(14, config.dealing.weak_hand_threshold)
             assert.are.equal("standard", config.dealing.misdeal_handling)
+            assert.are.equal(20, config.dealing.misdeal_flat_penalty)
             assert.are.equal("redeal", config.dealing.all_pass_handling)
         end)
 
@@ -735,7 +739,9 @@ describe("core.rule_config", function()
                         "three_nine_redeal",
                         "four_jack_redeal",
                         "weak_hand_redeal",
+                        "weak_hand_threshold",
                         "misdeal_handling",
+                        "misdeal_flat_penalty",
                         "all_pass_handling",
                     },
                 },
@@ -1286,12 +1292,12 @@ describe("core.rule_config", function()
     end)
 
     describe("dealing.four_nine_redeal", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("dealing.four_nine_redeal")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -1307,32 +1313,43 @@ describe("core.rule_config", function()
             assert.are.equal("off", res.config.dealing.four_nine_redeal)
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
-            for _, bad in ipairs({ "optional", "mandatory" }) do
+        it("accepts every allowed value through try_new", function()
+            for _, ok_value in ipairs({ "off", "optional", "mandatory" }) do
                 local t = valid_table()
-                t.dealing.four_nine_redeal = bad
+                t.dealing.four_nine_redeal = ok_value
                 local res = rule_config.try_new(t)
-                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
-                assert.are.equal("deferred_field_changed", res.error.code)
-                assert.are.equal("dealing.four_nine_redeal", res.error.path)
+                assert.is_true(res.ok, "value " .. ok_value .. " should be accepted")
+                assert.are.equal(ok_value, res.config.dealing.four_nine_redeal)
             end
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
+        it("rejects an unknown value with value_not_allowed", function()
+            local t = valid_table()
+            t.dealing.four_nine_redeal = "always"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("value_not_allowed", res.error.code)
+            assert.are.equal("dealing.four_nine_redeal", res.error.path)
+        end)
+
+        it("survives a JSON round trip at mandatory", function()
+            local t = valid_table()
+            t.dealing.four_nine_redeal = "mandatory"
+            local config_in = rule_config.new(t)
+            local s = rule_config.to_json(config_in)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.dealing.four_nine_redeal)
+            assert.are.equal("mandatory", res.config.dealing.four_nine_redeal)
         end)
     end)
 
     describe("dealing.three_nine_redeal", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("dealing.three_nine_redeal")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -1341,30 +1358,43 @@ describe("core.rule_config", function()
             assert.is_true(allowed["optional"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts every allowed value through try_new", function()
+            for _, ok_value in ipairs({ "off", "optional" }) do
+                local t = valid_table()
+                t.dealing.three_nine_redeal = ok_value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. ok_value .. " should be accepted")
+                assert.are.equal(ok_value, res.config.dealing.three_nine_redeal)
+            end
+        end)
+
+        it("rejects an unknown value with value_not_allowed", function()
             local t = valid_table()
-            t.dealing.three_nine_redeal = "optional"
+            t.dealing.three_nine_redeal = "mandatory"
             local res = rule_config.try_new(t)
             assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("value_not_allowed", res.error.code)
             assert.are.equal("dealing.three_nine_redeal", res.error.path)
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
+        it("survives a JSON round trip at optional", function()
+            local t = valid_table()
+            t.dealing.three_nine_redeal = "optional"
+            local config_in = rule_config.new(t)
+            local s = rule_config.to_json(config_in)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.dealing.three_nine_redeal)
+            assert.are.equal("optional", res.config.dealing.three_nine_redeal)
         end)
     end)
 
     describe("dealing.four_jack_redeal", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("dealing.four_jack_redeal")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -1373,30 +1403,43 @@ describe("core.rule_config", function()
             assert.is_true(allowed["on"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts every allowed value through try_new", function()
+            for _, ok_value in ipairs({ "off", "on" }) do
+                local t = valid_table()
+                t.dealing.four_jack_redeal = ok_value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. ok_value .. " should be accepted")
+                assert.are.equal(ok_value, res.config.dealing.four_jack_redeal)
+            end
+        end)
+
+        it("rejects an unknown value with value_not_allowed", function()
             local t = valid_table()
-            t.dealing.four_jack_redeal = "on"
+            t.dealing.four_jack_redeal = "mandatory"
             local res = rule_config.try_new(t)
             assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("value_not_allowed", res.error.code)
             assert.are.equal("dealing.four_jack_redeal", res.error.path)
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
+        it("survives a JSON round trip at on", function()
+            local t = valid_table()
+            t.dealing.four_jack_redeal = "on"
+            local config_in = rule_config.new(t)
+            local s = rule_config.to_json(config_in)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.dealing.four_jack_redeal)
+            assert.are.equal("on", res.config.dealing.four_jack_redeal)
         end)
     end)
 
     describe("dealing.weak_hand_redeal", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("dealing.weak_hand_redeal")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -1407,32 +1450,84 @@ describe("core.rule_config", function()
             assert.is_true(allowed["counted"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
-            for _, bad in ipairs({ "strict", "loose", "counted" }) do
+        it("accepts every allowed value through try_new", function()
+            for _, ok_value in ipairs({ "off", "strict", "loose", "counted" }) do
                 local t = valid_table()
-                t.dealing.weak_hand_redeal = bad
+                t.dealing.weak_hand_redeal = ok_value
                 local res = rule_config.try_new(t)
-                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
-                assert.are.equal("deferred_field_changed", res.error.code)
-                assert.are.equal("dealing.weak_hand_redeal", res.error.path)
+                assert.is_true(res.ok, "value " .. ok_value .. " should be accepted")
+                assert.are.equal(ok_value, res.config.dealing.weak_hand_redeal)
             end
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
+        it("rejects an unknown value with value_not_allowed", function()
+            local t = valid_table()
+            t.dealing.weak_hand_redeal = "permissive"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("value_not_allowed", res.error.code)
+            assert.are.equal("dealing.weak_hand_redeal", res.error.path)
+        end)
+
+        it("survives a JSON round trip at counted with a custom threshold", function()
+            local t = valid_table()
+            t.dealing.weak_hand_redeal = "counted"
+            t.dealing.weak_hand_threshold = 12
+            local config_in = rule_config.new(t)
+            local s = rule_config.to_json(config_in)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.dealing.weak_hand_redeal)
+            assert.are.equal("counted", res.config.dealing.weak_hand_redeal)
+            assert.are.equal(12, res.config.dealing.weak_hand_threshold)
+        end)
+    end)
+
+    describe("dealing.weak_hand_threshold", function()
+        it("exposes a selectable number-leaf descriptor with a 0..120 range", function()
+            local d = rule_config.schema_for("dealing.weak_hand_threshold")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(14, d.default)
+            assert.are.equal(0, d.min)
+            assert.are.equal(120, d.max)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("accepts the default value through try_new", function()
+            local res = rule_config.try_new(valid_table())
+            assert.is_true(res.ok)
+            assert.are.equal(14, res.config.dealing.weak_hand_threshold)
+        end)
+
+        it("accepts both range endpoints", function()
+            for _, ok_value in ipairs({ 0, 1, 14, 60, 120 }) do
+                local t = valid_table()
+                t.dealing.weak_hand_threshold = ok_value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "threshold=" .. ok_value .. " should be accepted")
+                assert.are.equal(ok_value, res.config.dealing.weak_hand_threshold)
+            end
+        end)
+
+        it("rejects out-of-range values with value_out_of_range", function()
+            for _, bad in ipairs({ -1, 121, 9999 }) do
+                local t = valid_table()
+                t.dealing.weak_hand_threshold = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "threshold=" .. bad .. " should be rejected")
+                assert.are.equal("value_out_of_range", res.error.code)
+                assert.are.equal("dealing.weak_hand_threshold", res.error.path)
+            end
         end)
     end)
 
     describe("dealing.misdeal_handling", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("dealing.misdeal_handling")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("standard", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -1442,32 +1537,84 @@ describe("core.rule_config", function()
             assert.is_true(allowed["flat_penalty"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
-            for _, bad in ipairs({ "soft_penalty", "flat_penalty" }) do
+        it("accepts every allowed value through try_new", function()
+            for _, ok_value in ipairs({ "standard", "soft_penalty", "flat_penalty" }) do
                 local t = valid_table()
-                t.dealing.misdeal_handling = bad
+                t.dealing.misdeal_handling = ok_value
                 local res = rule_config.try_new(t)
-                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
-                assert.are.equal("deferred_field_changed", res.error.code)
-                assert.are.equal("dealing.misdeal_handling", res.error.path)
+                assert.is_true(res.ok, "value " .. ok_value .. " should be accepted")
+                assert.are.equal(ok_value, res.config.dealing.misdeal_handling)
             end
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
+        it("rejects an unknown value with value_not_allowed", function()
+            local t = valid_table()
+            t.dealing.misdeal_handling = "harsh"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("value_not_allowed", res.error.code)
+            assert.are.equal("dealing.misdeal_handling", res.error.path)
+        end)
+
+        it("survives a JSON round trip at flat_penalty with a custom amount", function()
+            local t = valid_table()
+            t.dealing.misdeal_handling = "flat_penalty"
+            t.dealing.misdeal_flat_penalty = 60
+            local config_in = rule_config.new(t)
+            local s = rule_config.to_json(config_in)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("standard", res.config.dealing.misdeal_handling)
+            assert.are.equal("flat_penalty", res.config.dealing.misdeal_handling)
+            assert.are.equal(60, res.config.dealing.misdeal_flat_penalty)
+        end)
+    end)
+
+    describe("dealing.misdeal_flat_penalty", function()
+        it("exposes a selectable number-leaf descriptor with a 0..240 range", function()
+            local d = rule_config.schema_for("dealing.misdeal_flat_penalty")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(20, d.default)
+            assert.are.equal(0, d.min)
+            assert.are.equal(240, d.max)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("accepts the default value through try_new", function()
+            local res = rule_config.try_new(valid_table())
+            assert.is_true(res.ok)
+            assert.are.equal(20, res.config.dealing.misdeal_flat_penalty)
+        end)
+
+        it("accepts both range endpoints", function()
+            for _, ok_value in ipairs({ 0, 20, 60, 120, 240 }) do
+                local t = valid_table()
+                t.dealing.misdeal_flat_penalty = ok_value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "penalty=" .. ok_value .. " should be accepted")
+                assert.are.equal(ok_value, res.config.dealing.misdeal_flat_penalty)
+            end
+        end)
+
+        it("rejects out-of-range values with value_out_of_range", function()
+            for _, bad in ipairs({ -1, 241, 9999 }) do
+                local t = valid_table()
+                t.dealing.misdeal_flat_penalty = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "penalty=" .. bad .. " should be rejected")
+                assert.are.equal("value_out_of_range", res.error.code)
+                assert.are.equal("dealing.misdeal_flat_penalty", res.error.path)
+            end
         end)
     end)
 
     describe("dealing.all_pass_handling", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("dealing.all_pass_handling")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("redeal", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -1477,22 +1624,33 @@ describe("core.rule_config", function()
             assert.is_true(allowed["raspassy"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
-            for _, bad in ipairs({ "pass_out", "raspassy" }) do
+        it("accepts every allowed value through try_new", function()
+            for _, ok_value in ipairs({ "redeal", "pass_out", "raspassy" }) do
                 local t = valid_table()
-                t.dealing.all_pass_handling = bad
+                t.dealing.all_pass_handling = ok_value
                 local res = rule_config.try_new(t)
-                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
-                assert.are.equal("deferred_field_changed", res.error.code)
-                assert.are.equal("dealing.all_pass_handling", res.error.path)
+                assert.is_true(res.ok, "value " .. ok_value .. " should be accepted")
+                assert.are.equal(ok_value, res.config.dealing.all_pass_handling)
             end
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
+        it("rejects an unknown value with value_not_allowed", function()
+            local t = valid_table()
+            t.dealing.all_pass_handling = "redeal_with_bonus"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("value_not_allowed", res.error.code)
+            assert.are.equal("dealing.all_pass_handling", res.error.path)
+        end)
+
+        it("survives a JSON round trip at raspassy", function()
+            local t = valid_table()
+            t.dealing.all_pass_handling = "raspassy"
+            local config_in = rule_config.new(t)
+            local s = rule_config.to_json(config_in)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("redeal", res.config.dealing.all_pass_handling)
+            assert.are.equal("raspassy", res.config.dealing.all_pass_handling)
         end)
     end)
 

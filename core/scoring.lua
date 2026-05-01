@@ -298,6 +298,140 @@ function M.score_deal(config, opts)
     return { ok = true, scoring = state }
 end
 
+-- Raspassy scoring. Triggered when `dealing.all_pass_handling = "raspassy"`
+-- and the auction terminates with no contract: the deal plays out as 8
+-- tricks without trump or marriages, then each seat's captured
+-- card-points are *subtracted* from their running total. The convention
+-- chosen for this engine — every player loses what they took — captures
+-- the spirit of the doc-listed traditions ("fewest scores theirs" /
+-- "most loses theirs") without introducing tiebreaker rules. See
+-- docs/variations/house-rules.md "All-pass handling".
+--
+-- Inputs: { captured_points, running_totals }; declarer/bid/marriages are
+-- absent because raspassy has no contract and the engine forbids
+-- marriages during the deal. Output mirrors `score_deal`'s state shape
+-- so the table view-model and tests can read the same fields, with
+-- `declarer = nil`, `bid = 0`, `made_contract = nil`,
+-- `marriage_bonuses = zeros`.
+function M.score_raspassy(config, opts)
+    if not rule_config.is_rule_config(config) then
+        return failure("not_a_rule_config", "scoring.score_raspassy requires a RuleConfig", {
+            actual = type(config),
+        })
+    end
+    if type(opts) ~= "table" then
+        return failure("bad_opts", "scoring.score_raspassy requires an opts table", {
+            actual = type(opts),
+        })
+    end
+
+    local player_count = config.players.count
+    local nearest = config.scoring.round_to_nearest
+    if not (is_integer(nearest) and nearest >= 1) then
+        return failure(
+            "bad_round_to_nearest",
+            "config.scoring.round_to_nearest must be a positive integer",
+            { actual = nearest }
+        )
+    end
+
+    local captured_err = validate_player_list("captured_points", opts.captured_points, player_count)
+    if captured_err then
+        return captured_err
+    end
+    local totals_err = validate_player_list("running_totals", opts.running_totals, player_count)
+    if totals_err then
+        return totals_err
+    end
+
+    local rank_total = 0
+    for _, rank in ipairs(config.cards.trick_rank_order) do
+        rank_total = rank_total + config.cards.point_values[rank]
+    end
+    local deck_point_total = rank_total * #card.SUITS
+
+    local captured_sum = 0
+    for i = 1, player_count do
+        if opts.captured_points[i] < 0 then
+            return failure(
+                "bad_captured_points",
+                "captured_points entries must be non-negative",
+                { player = i, actual = opts.captured_points[i] }
+            )
+        end
+        captured_sum = captured_sum + opts.captured_points[i]
+    end
+    if captured_sum > deck_point_total then
+        return failure(
+            "captured_points_exceed_deck",
+            "captured card points sum must not exceed the deck total",
+            { actual = captured_sum, max = deck_point_total }
+        )
+    end
+
+    local card_points_rounded = {}
+    local marriage_bonuses = {}
+    local deal_scores = {}
+    local deltas = {}
+    for i = 1, player_count do
+        card_points_rounded[i] = round_to_nearest(opts.captured_points[i], nearest)
+        marriage_bonuses[i] = 0
+        deal_scores[i] = card_points_rounded[i]
+        deltas[i] = -card_points_rounded[i]
+    end
+
+    local running_totals_after = {}
+    for i = 1, player_count do
+        running_totals_after[i] = opts.running_totals[i] + deltas[i]
+    end
+
+    local partnership_mode = config.players.partnership_mode
+    local sides
+    local side_deal_scores
+    local side_running_totals_before
+    local side_running_totals_after
+    local side_deltas
+    if partnership_mode == "fixed_across_table" and player_count == 4 then
+        sides = { 1, 2, 1, 2 }
+        side_deal_scores = { 0, 0 }
+        side_running_totals_before = { 0, 0 }
+        side_deltas = { 0, 0 }
+        for i = 1, player_count do
+            local s = sides[i]
+            side_deal_scores[s] = side_deal_scores[s] + deal_scores[i]
+            side_running_totals_before[s] = side_running_totals_before[s] + opts.running_totals[i]
+            side_deltas[s] = side_deltas[s] + deltas[i]
+        end
+        side_running_totals_after = {
+            side_running_totals_before[1] + side_deltas[1],
+            side_running_totals_before[2] + side_deltas[2],
+        }
+    end
+
+    local state = tag_as_scoring({
+        schema_version = M.SCHEMA_VERSION,
+        config = config,
+        declarer = nil,
+        bid = 0,
+        captured_points = copy_int_list(opts.captured_points, player_count),
+        card_points_rounded = card_points_rounded,
+        marriage_bonuses = marriage_bonuses,
+        deal_scores = deal_scores,
+        made_contract = nil,
+        deltas = deltas,
+        running_totals_before = copy_int_list(opts.running_totals, player_count),
+        running_totals = running_totals_after,
+        partnership_mode = partnership_mode,
+        sides = sides,
+        side_deal_scores = side_deal_scores,
+        side_deltas = side_deltas,
+        side_running_totals_before = side_running_totals_before,
+        side_running_totals = side_running_totals_after,
+        raspassy = true,
+    })
+    return { ok = true, scoring = state }
+end
+
 function M.is_scoring(value)
     if type(value) ~= "table" then
         return false

@@ -37,6 +37,7 @@ describe("core.scoring", function()
     describe("module shape", function()
         it("exposes the documented public surface", function()
             assert.is_function(scoring.score_deal)
+            assert.is_function(scoring.score_raspassy)
             assert.is_function(scoring.is_scoring)
             assert.is_function(scoring.advance_game)
             assert.is_function(scoring.is_game)
@@ -212,7 +213,9 @@ describe("core.scoring", function()
                     three_nine_redeal = "off",
                     four_jack_redeal = "off",
                     weak_hand_redeal = "off",
+                    weak_hand_threshold = 14,
                     misdeal_handling = "standard",
+                    misdeal_flat_penalty = 20,
                     all_pass_handling = "redeal",
                 },
                 talon = {
@@ -1289,6 +1292,140 @@ describe("core.scoring", function()
             assert.are_not.equal(opts.running_totals_before, g.running_totals)
             assert.are_not.equal(opts.barrel_state_before, g.barrel_state)
             assert.are_not.equal(opts.barrel_state_before[1], g.barrel_state[1])
+        end)
+    end)
+
+    describe("score_raspassy()", function()
+        it("rejects a non-RuleConfig", function()
+            for _, bad in ipairs({ 42, "config", {}, true }) do
+                local result = scoring.score_raspassy(bad, {
+                    captured_points = { 0, 0, 0 },
+                    running_totals = { 0, 0, 0 },
+                })
+                assert.is_false(result.ok)
+                assert.are.equal("not_a_rule_config", result.error.code)
+            end
+        end)
+
+        it("rejects a non-table opts", function()
+            local result = scoring.score_raspassy(config, "nope")
+            assert.is_false(result.ok)
+            assert.are.equal("bad_opts", result.error.code)
+        end)
+
+        it("rejects negative captured_points entries", function()
+            local result = scoring.score_raspassy(config, {
+                captured_points = { 50, -1, 50 },
+                running_totals = { 0, 0, 0 },
+            })
+            assert.is_false(result.ok)
+            assert.are.equal("bad_captured_points", result.error.code)
+        end)
+
+        it("rejects captured-point sums that exceed the deck total", function()
+            local result = scoring.score_raspassy(config, {
+                captured_points = { 60, 60, 60 },
+                running_totals = { 0, 0, 0 },
+            })
+            assert.is_false(result.ok)
+            assert.are.equal("captured_points_exceed_deck", result.error.code)
+        end)
+
+        it("negates each rounded captured-points total at zero captures", function()
+            local result = scoring.score_raspassy(config, {
+                captured_points = { 0, 0, 0 },
+                running_totals = { 100, 50, 0 },
+            })
+            assert.is_true(result.ok)
+            assert.are.same({ 0, 0, 0 }, result.scoring.deltas)
+            assert.are.same({ 100, 50, 0 }, result.scoring.running_totals)
+            assert.are.same({ 0, 0, 0 }, result.scoring.deal_scores)
+        end)
+
+        it("negates each rounded captured-points total at a mixed split", function()
+            -- 73 rounds to 75; 22 rounds to 20; 25 stays at 25. Sum 120.
+            local result = scoring.score_raspassy(config, {
+                captured_points = { 73, 22, 25 },
+                running_totals = { 200, 200, 200 },
+            })
+            assert.is_true(result.ok)
+            assert.are.same({ -75, -20, -25 }, result.scoring.deltas)
+            assert.are.same({ 75, 20, 25 }, result.scoring.deal_scores)
+            assert.are.same({ 125, 180, 175 }, result.scoring.running_totals)
+        end)
+
+        it("negates the full deck when one player took every trick", function()
+            local result = scoring.score_raspassy(config, {
+                captured_points = { 120, 0, 0 },
+                running_totals = { 500, 500, 500 },
+            })
+            assert.is_true(result.ok)
+            assert.are.same({ -120, 0, 0 }, result.scoring.deltas)
+            assert.are.same({ 380, 500, 500 }, result.scoring.running_totals)
+        end)
+
+        it("respects scoring.round_to_nearest = 10 (coarse house rule)", function()
+            -- Build a config with round_to_nearest = 10. 73 rounds to 70.
+            local s = rule_config.to_json(config)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            local sc = res.config.scoring
+            local round_before_check = sc.declarer_rounding_before_contract_check
+            local blob = {
+                schema_version = 1,
+                cards = res.config.cards,
+                players = res.config.players,
+                dealing = res.config.dealing,
+                talon = res.config.talon,
+                bidding = res.config.bidding,
+                marriages = res.config.marriages,
+                tricks = res.config.tricks,
+                scoring = {
+                    round_to_nearest = 10,
+                    actual_points_on_success = sc.actual_points_on_success,
+                    defender_contributions = sc.defender_contributions,
+                    failed_contract_distribution = sc.failed_contract_distribution,
+                    declarer_rounding_before_contract_check = round_before_check,
+                },
+                opening_game = res.config.opening_game,
+                barrel = res.config.barrel,
+                endgame = res.config.endgame,
+                specials = res.config.specials,
+                penalties = res.config.penalties,
+            }
+            local coarse_config = rule_config.new(blob)
+            local result = scoring.score_raspassy(coarse_config, {
+                captured_points = { 73, 22, 25 },
+                running_totals = { 0, 0, 0 },
+            })
+            assert.is_true(result.ok)
+            -- 73 → 70; 22 → 20; 25 → 30 (half-up rounding).
+            assert.are.same({ -70, -20, -30 }, result.scoring.deltas)
+        end)
+
+        it("zeroes the marriage_bonuses and made_contract fields", function()
+            local result = scoring.score_raspassy(config, {
+                captured_points = { 40, 40, 40 },
+                running_totals = { 0, 0, 0 },
+            })
+            assert.is_true(result.ok)
+            assert.are.same({ 0, 0, 0 }, result.scoring.marriage_bonuses)
+            assert.is_nil(result.scoring.declarer)
+            assert.is_nil(result.scoring.made_contract)
+            assert.is_true(result.scoring.raspassy)
+        end)
+
+        it("pools partner deltas under partnership_mode = fixed_across_table", function()
+            local partnership_config = rule_config.builtins.four_player_b
+            local result = scoring.score_raspassy(partnership_config, {
+                captured_points = { 30, 30, 30, 30 },
+                running_totals = { 0, 0, 0, 0 },
+            })
+            assert.is_true(result.ok)
+            local s = result.scoring
+            assert.are.same({ 1, 2, 1, 2 }, s.sides)
+            assert.are.same({ -30, -30, -30, -30 }, s.deltas)
+            assert.are.same({ -60, -60 }, s.side_deltas)
         end)
     end)
 

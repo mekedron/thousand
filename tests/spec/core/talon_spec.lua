@@ -539,7 +539,9 @@ describe("core.talon", function()
                     three_nine_redeal = "off",
                     four_jack_redeal = "off",
                     weak_hand_redeal = "off",
+                    weak_hand_threshold = 14,
                     misdeal_handling = "standard",
+                    misdeal_flat_penalty = 20,
                     all_pass_handling = "redeal",
                 },
                 talon = {

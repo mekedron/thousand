@@ -166,12 +166,15 @@ local SCHEMA = {
             },
         },
     },
-    -- Dealing & redeal house rules. Every toggle here is "deferred" until
-    -- the engine learns to honour an alternative; the locked-in default of
-    -- each field is the value that matches the engine's current behaviour,
-    -- so canonical_russian carries the new section without any gameplay
-    -- change. See docs/variations/house-rules.md "Dealing & redeal house
-    -- rules" for the spec each toggle maps to.
+    -- Dealing & redeal house rules. Phase 3.6's dealing-and-redeal
+    -- gameplay task flipped each toggle here to "selectable" and added
+    -- two sibling fields (`weak_hand_threshold`, `misdeal_flat_penalty`)
+    -- the dependent variants reference. The locked-in default of every
+    -- field is the value that matches the engine's pre-flip behaviour,
+    -- so canonical_russian's gameplay is unchanged unless a custom
+    -- template moves a field off its default. See
+    -- docs/variations/house-rules.md "Dealing & redeal house rules" for
+    -- the spec each toggle maps to.
     dealing = {
         kind = "section",
         field_order = {
@@ -179,7 +182,9 @@ local SCHEMA = {
             "three_nine_redeal",
             "four_jack_redeal",
             "weak_hand_redeal",
+            "weak_hand_threshold",
             "misdeal_handling",
+            "misdeal_flat_penalty",
             "all_pass_handling",
         },
         fields = {
@@ -191,7 +196,7 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "optional", "mandatory" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
             -- A player dealt three 9s may optionally request a redeal.
             -- See house-rules.md "3-nine optional redeal".
@@ -200,7 +205,7 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "optional" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
             -- A player dealt all four Jacks may request a redeal.
             -- See house-rules.md "Four-jack redeal".
@@ -209,35 +214,60 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
             -- "Weak hand" entitles the player to request a redeal.
             --   "strict":  no marriage, no Ace, no card above 10.
             --   "loose":   no marriage and no Ace.
-            --   "counted": card-point sum below a house-defined threshold;
-            --              the threshold sibling field lands with the
-            --              gameplay task that flips this to selectable.
+            --   "counted": card-point sum below `weak_hand_threshold`.
             -- See house-rules.md "Weak-hand redeal".
             weak_hand_redeal = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "off", "strict", "loose", "counted" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
+            },
+            -- Card-point threshold for `weak_hand_redeal = "counted"`.
+            -- A hand with strictly fewer card-points than this value
+            -- is eligible for a redeal request. Inert under any other
+            -- `weak_hand_redeal` value; carried in the schema so saved
+            -- templates round-trip cleanly. The deck holds 120 card
+            -- points, so the field is bounded in [0, 120].
+            weak_hand_threshold = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 0,
+                max = 120,
+                default = 14,
+                status = "selectable",
             },
             -- Misdeal recovery branch.
             --   "standard":     same dealer redeals, no penalty.
             --   "soft_penalty": deal moves clockwise.
-            --   "flat_penalty": dealer pays a fixed penalty (typically 20)
-            --                   and redeals; the amount is a sibling field
-            --                   that lands with the gameplay task.
+            --   "flat_penalty": dealer pays `misdeal_flat_penalty` and
+            --                   redeals.
             -- See house-rules.md "Misdeal handling".
             misdeal_handling = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "standard", "soft_penalty", "flat_penalty" },
                 default = "standard",
-                status = "deferred",
+                status = "selectable",
+            },
+            -- Penalty applied when `misdeal_handling = "flat_penalty"`
+            -- triggers. Subtracted from the offending dealer's running
+            -- total. Inert under any other `misdeal_handling` value;
+            -- carried in the schema so saved templates round-trip
+            -- cleanly. Bounded in [0, 240] so a single misdeal cannot
+            -- exceed the deal's maximum bid range.
+            misdeal_flat_penalty = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 0,
+                max = 240,
+                default = 20,
+                status = "selectable",
             },
             -- Behaviour when nobody bids and no forced-opening / bolt rule
             -- is in effect.
@@ -252,7 +282,7 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "redeal", "pass_out", "raspassy" },
                 default = "redeal",
-                status = "deferred",
+                status = "selectable",
             },
         },
     },
@@ -1921,7 +1951,9 @@ local function canonical_russian_blob()
             three_nine_redeal = "off",
             four_jack_redeal = "off",
             weak_hand_redeal = "off",
+            weak_hand_threshold = 14,
             misdeal_handling = "standard",
+            misdeal_flat_penalty = 20,
             all_pass_handling = "redeal",
         },
         talon = {

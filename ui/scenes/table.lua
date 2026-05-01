@@ -102,8 +102,14 @@ function M.new(manager)
         _panel_buttons = {},
         _panel_signature = nil,
         _modal_buttons = {},
-        _modal = nil, -- nil | "marriage"
+        _modal = nil, -- i18n-ok: nil | "marriage" | "redeal" enum
         _marriage_payload = nil,
+        -- Redeal prompt modal state. _redeal_payload mirrors the
+        -- view-model's redeal_prompt block while the modal is open;
+        -- _redeal_signature is the prompt's identity (kind+seat+forced)
+        -- so a re-render with the same offer leaves the modal alone.
+        _redeal_payload = nil,
+        _redeal_signature = nil,
         _toast = nil,
         _hand_card_rects = {},
         _opponent_seat_rects = {},
@@ -205,7 +211,7 @@ function M:_hand_is_interactive(view)
     if not view then
         return false
     end
-    if view.phase == "tricks" then
+    if view.phase == "tricks" or view.phase == "raspassy_play" then -- i18n-ok: phase enums
         return view.turn_player ~= nil
             and view.hands[view.turn_player]
             and view.hands[view.turn_player].perspective == "self"
@@ -617,6 +623,106 @@ function M:_close_marriage_modal()
     self._marriage_payload = nil
     self._modal_buttons = {}
     self._modal_focus = nil
+end
+
+-- Redeal prompt modal -------------------------------------------------
+
+local function redeal_signature(prompt)
+    if not prompt then
+        return nil
+    end
+    -- i18n-ok: internal signature, joined with ":" and never rendered.
+    local parts = { tostring(prompt.kind), tostring(prompt.seat), tostring(prompt.forced) }
+    return table.concat(parts, ":") -- i18n-ok: ":" is a separator, never rendered
+end
+
+function M:_do_accept_redeal()
+    local session = self:_session()
+    if not session then
+        return
+    end
+    self:_invoke(session:accept_redeal())
+end
+
+function M:_do_decline_redeal()
+    local session = self:_session()
+    if not session then
+        return
+    end
+    self:_invoke(session:decline_redeal())
+end
+
+function M:_open_redeal_modal(prompt)
+    self._modal = "redeal" -- i18n-ok
+    self._redeal_payload = {
+        kind = prompt.kind,
+        seat = prompt.seat,
+        forced = prompt.forced or false,
+    }
+    self._redeal_signature = redeal_signature(prompt)
+    if self._redeal_payload.forced then
+        -- Forced offers are shown as a non-dismissible banner with no
+        -- buttons. The session auto-applies them in
+        -- evaluate_entitlement_with_forced_loop, so production code
+        -- never reaches this branch — but tests can inject a forced
+        -- offer through Session.from_state, and the UI must render
+        -- something rather than crashing.
+        self._modal_buttons = {}
+        self._modal_focus = nil
+        return
+    end
+    local accept = Button.new({
+        id = "redeal_accept", -- i18n-ok
+        label_key = "scene.table.redeal_prompt.accept",
+        enabled = true,
+        on_press = function()
+            self:_do_accept_redeal()
+            self:_close_redeal_modal()
+        end,
+    })
+    local decline = Button.new({
+        id = "redeal_decline", -- i18n-ok
+        label_key = "scene.table.redeal_prompt.decline",
+        enabled = true,
+        on_press = function()
+            self:_do_decline_redeal()
+            self:_close_redeal_modal()
+        end,
+    })
+    self._modal_buttons = { accept, decline }
+    self._modal_focus = FocusGroup.new(self._modal_buttons)
+    -- Default focus on Accept — the entitled player tapped a redeal
+    -- option deliberately, so the high-information branch is to redeal
+    -- (the alternative is to play out a documented bad hand).
+    self._modal_focus:focus(accept)
+end
+
+function M:_close_redeal_modal()
+    if self._modal == "redeal" then
+        self._modal = nil
+    end
+    self._redeal_payload = nil
+    self._redeal_signature = nil
+    self._modal_buttons = {}
+    self._modal_focus = nil
+end
+
+-- Open / close the redeal modal in lock-step with the view-model. Called
+-- once per draw before the panel is rebuilt so the modal reflects the
+-- session's current redeal_offer state.
+function M:_apply_redeal_modal_trigger(view)
+    local prompt = view and view.redeal_prompt
+    if not prompt then
+        if self._modal == "redeal" then
+            self:_close_redeal_modal()
+        end
+        return
+    end
+    local sig = redeal_signature(prompt)
+    if self._modal == "redeal" and self._redeal_signature == sig then
+        return
+    end
+    self:_open_redeal_modal(prompt)
 end
 
 -- Privacy curtain ------------------------------------------------------
@@ -1406,6 +1512,39 @@ local function draw_pass_target_label(view, regions)
     end
 end
 
+-- Pick the localised deal-done banner key for the given view-model. The
+-- legacy reasons "scored" and "all_pass" map to existing keys; the
+-- all-pass house-rule reasons (pass_out, raspassy_scored) reuse the
+-- shared `scene.table.all_pass_banner.*` namespace via the view-model's
+-- `all_pass_banner.mode` field.
+local function deal_done_banner_key(view)
+    local payload = view.deal_done
+    if not payload then
+        return nil
+    end
+    if payload.reason == "scored" then
+        return "scene.table.deal_done.scored"
+    end
+    if view.all_pass_banner then
+        local mode = view.all_pass_banner.mode
+        if mode == "redeal" then
+            return "scene.table.all_pass_banner.redeal"
+        end
+        if mode == "pass_out" then
+            return "scene.table.all_pass_banner.pass_out"
+        end
+        if mode == "raspassy" then
+            return "scene.table.all_pass_banner.raspassy"
+        end
+    end
+    -- Legacy fallback for older save-game payloads without the banner
+    -- view-model field.
+    if payload.reason == "all_pass" then
+        return "scene.table.deal_done.all_pass"
+    end
+    return "scene.table.deal_done.scored"
+end
+
 local function draw_deal_done_banner(view, regions)
     if not view or not view.deal_done then
         return
@@ -1414,10 +1553,10 @@ local function draw_deal_done_banner(view, regions)
     love.graphics.setColor(0, 0, 0, 0.45)
     love.graphics.rectangle("fill", centre.x, centre.y, centre.w, centre.h)
     love.graphics.setColor(1, 1, 1, 1)
-    local key = view.deal_done.reason == "all_pass" -- i18n-ok
-            and "scene.table.deal_done.all_pass"
-        or "scene.table.deal_done.scored"
-    love.graphics.print(t(key), centre.x + 24, centre.y + 24)
+    local key = deal_done_banner_key(view)
+    if key then
+        love.graphics.print(t(key), centre.x + 24, centre.y + 24)
+    end
     if view.deal_done.running_totals then
         local totals = view.deal_done.running_totals
         for i, total in ipairs(totals) do
@@ -1428,6 +1567,43 @@ local function draw_deal_done_banner(view, regions)
             )
         end
     end
+end
+
+-- Persistent misdeal banner. Sits above the centre band so it stays
+-- visible across the auction phase the misdeal redealt into.
+local function draw_misdeal_banner(view, regions)
+    if not view or not view.misdeal_banner then
+        return
+    end
+    local mb = view.misdeal_banner
+    local key
+    if mb.handling == "soft_penalty" then
+        key = "scene.table.misdeal_banner.soft_penalty"
+    elseif mb.handling == "flat_penalty" then
+        key = "scene.table.misdeal_banner.flat_penalty"
+    else
+        key = "scene.table.misdeal_banner.standard"
+    end
+    local centre = regions.centre
+    local y = centre.y - 26
+    love.graphics.setColor(0, 0, 0, 0.55)
+    love.graphics.rectangle("fill", centre.x, y, centre.w, 22)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.print(t(key, { dealer = mb.dealer, penalty = mb.penalty }), centre.x + 12, y + 4)
+end
+
+-- In-progress raspassy banner. Active during the raspassy_play phase so
+-- the player can see they are in a no-contract reverse-scoring deal.
+local function draw_raspassy_status_banner(view, regions)
+    if not view or not view.raspassy_active then
+        return
+    end
+    local centre = regions.centre
+    local y = centre.y - 26
+    love.graphics.setColor(0.30, 0.10, 0.10, 0.85)
+    love.graphics.rectangle("fill", centre.x, y, centre.w, 22)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.print(t("scene.table.all_pass_banner.raspassy"), centre.x + 12, y + 4)
 end
 
 local function draw_marriage_modal(self, w, h)
@@ -1452,6 +1628,48 @@ local function draw_marriage_modal(self, w, h)
     cards.draw_suit(self._marriage_payload.suit, px + 40 + 160, py + 68, 16)
 
     local btn_w, btn_h, btn_gap = 200, 48, 24
+    local total_w = btn_w * 2 + btn_gap
+    local btn_y = py + panel_h - btn_h - 28
+    local left_x = px + math.floor(panel_w * 0.5 - total_w * 0.5)
+    self._modal_buttons[1]:set_rect(left_x, btn_y, btn_w, btn_h)
+    self._modal_buttons[2]:set_rect(left_x + btn_w + btn_gap, btn_y, btn_w, btn_h)
+    for _, b in ipairs(self._modal_buttons) do
+        b:draw()
+    end
+end
+
+local function draw_redeal_modal(self, w, h)
+    if self._modal ~= "redeal" or not self._redeal_payload then
+        return
+    end
+    love.graphics.setColor(MODAL_DIM)
+    love.graphics.rectangle("fill", 0, 0, w, h)
+
+    local panel_w, panel_h = 520, 240
+    local px = math.floor(w * 0.5 - panel_w * 0.5)
+    local py = math.floor(h * 0.5 - panel_h * 0.5)
+    love.graphics.setColor(MODAL_BG)
+    love.graphics.rectangle("fill", px, py, panel_w, panel_h)
+    love.graphics.setColor(1, 1, 1, 1)
+
+    local payload = self._redeal_payload
+    local body_key = "scene.table.redeal_prompt.body." .. tostring(payload.kind)
+    if payload.forced then
+        love.graphics.print(
+            t("scene.table.redeal_prompt.forced_banner", { seat = payload.seat }),
+            px + 32,
+            py + 40
+        )
+    else
+        love.graphics.print(t("scene.table.redeal_prompt.title"), px + 32, py + 40)
+    end
+    love.graphics.print(t(body_key, { seat = payload.seat }), px + 32, py + 80)
+
+    if payload.forced or #self._modal_buttons == 0 then
+        return
+    end
+
+    local btn_w, btn_h, btn_gap = 220, 48, 24
     local total_w = btn_w * 2 + btn_gap
     local btn_y = py + panel_h - btn_h - 28
     local left_x = px + math.floor(panel_w * 0.5 - total_w * 0.5)
@@ -1536,6 +1754,7 @@ function M:draw(w, h)
 
     self:_refresh_view_model()
     self:_apply_curtain_trigger()
+    self:_apply_redeal_modal_trigger(self._view_model)
     self:_rebuild_panel_if_needed(self._view_model)
 
     local regions = layout.table_regions(w, h, {
@@ -1550,8 +1769,13 @@ function M:draw(w, h)
     draw_scoreboard(self._view_model, regions.scoreboard)
     draw_pass_target_label(self._view_model, regions)
     draw_panel_label(self._view_model, regions.centre)
-    -- Banner first so its backdrop sits *under* the Next-deal button
-    -- the panel renders next; otherwise the button is invisible.
+    -- Phase 3.6 banners. The deal_done banner renders first so its
+    -- backdrop sits *under* the Next-deal button the panel renders
+    -- next. The misdeal and raspassy status banners are persistent
+    -- one-line indicators above the centre band; they don't block
+    -- input on the panel area.
+    draw_misdeal_banner(self._view_model, regions)
+    draw_raspassy_status_banner(self._view_model, regions)
     draw_deal_done_banner(self._view_model, regions)
 
     lay_out_panel_buttons(self, regions)
@@ -1568,9 +1792,10 @@ function M:draw(w, h)
 
     draw_toast(self, regions)
     draw_marriage_modal(self, w, h)
+    draw_redeal_modal(self, w, h)
     -- Privacy curtain renders last so its full-opacity backdrop sits
-    -- above every other layer, including the marriage modal — though
-    -- those two states are mutually exclusive in practice.
+    -- above every other layer, including the marriage and redeal
+    -- modals — those states are mutually exclusive in practice.
     draw_privacy_curtain(self, w, h)
 
     love.graphics.setColor(1, 1, 1, 1)
@@ -1586,7 +1811,7 @@ function M:_active_buttons()
     if self._curtain and self._curtain_button then
         return { self._curtain_button }
     end
-    if self._modal == "marriage" then
+    if self._modal == "marriage" or self._modal == "redeal" then -- i18n-ok: modal enum
         return self._modal_buttons
     end
     local list = {}
@@ -1647,6 +1872,14 @@ function M:_handle_card_tap(view, entry)
                     end
                 end
             end
+            self:_do_play(turn, entry.card)
+        end
+    end
+    if view.phase == "raspassy_play" then
+        local turn = view.turn_player
+        if turn and view.hands[turn] and view.hands[turn].perspective == "self" then
+            -- Marriages are disabled in raspassy; card plays go straight
+            -- to the tricks engine.
             self:_do_play(turn, entry.card)
         end
     end

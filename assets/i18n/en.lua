@@ -82,6 +82,21 @@ return {
     ["scene.table.deal_done.all_pass"] = "All players passed",
     ["scene.table.deal_done.next_deal"] = "Next deal",
 
+    ["scene.table.redeal_prompt.title"] = "Redeal?",
+    ["scene.table.redeal_prompt.body.four_nine"] = "Player %{seat} holds all four 9s.",
+    ["scene.table.redeal_prompt.body.three_nine"] = "Player %{seat} holds three 9s.",
+    ["scene.table.redeal_prompt.body.four_jack"] = "Player %{seat} holds all four Jacks.",
+    ["scene.table.redeal_prompt.body.weak_hand"] = "Player %{seat} has a weak hand.",
+    ["scene.table.redeal_prompt.forced_banner"] = "Forced redeal — Player %{seat}",
+    ["scene.table.redeal_prompt.accept"] = "Redeal",
+    ["scene.table.redeal_prompt.decline"] = "Play this hand",
+    ["scene.table.misdeal_banner.standard"] = "Misdeal — same dealer redeals",
+    ["scene.table.misdeal_banner.soft_penalty"] = "Misdeal — deal moves to Player %{dealer}",
+    ["scene.table.misdeal_banner.flat_penalty"] = "Misdeal — Player %{dealer} pays %{penalty}",
+    ["scene.table.all_pass_banner.redeal"] = "All passed — same dealer redeals",
+    ["scene.table.all_pass_banner.pass_out"] = "All passed — deal rotates",
+    ["scene.table.all_pass_banner.raspassy"] = "Raspassy — reverse-scoring deal",
+
     ["scene.table.toast.illegal_play"] = "Illegal play: %{reason}",
     ["scene.table.toast.not_your_turn"] = "Not your turn",
     ["scene.table.toast.must_follow"] = "You must follow %{suit}",
@@ -235,7 +250,11 @@ return {
     ["templates.field.dealing.three_nine_redeal.label"] = "3-nine redeal",
     ["templates.field.dealing.four_jack_redeal.label"] = "4-jack redeal",
     ["templates.field.dealing.weak_hand_redeal.label"] = "Weak-hand redeal",
+    ["templates.field.dealing.weak_hand_threshold.label"] = "Weak-hand threshold (counted)",
+    ["templates.field.dealing.weak_hand_threshold.help"] = "Card-points threshold for the counted variant. Hands strictly below this value are eligible.",
     ["templates.field.dealing.misdeal_handling.label"] = "Misdeal handling",
+    ["templates.field.dealing.misdeal_flat_penalty.label"] = "Misdeal flat penalty",
+    ["templates.field.dealing.misdeal_flat_penalty.help"] = "Penalty deducted from the offending dealer when misdeal handling is set to flat penalty.",
     ["templates.field.dealing.all_pass_handling.label"] = "All-pass handling",
 
     -- Talon.

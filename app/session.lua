@@ -44,6 +44,7 @@ local marriages_module = require("core.marriages")
 local scoring = require("core.scoring")
 local rule_config = require("core.rule_config")
 local card_module = require("core.card")
+local redeal = require("core.redeal")
 
 local Session = {}
 Session.__index = Session
@@ -94,6 +95,58 @@ local function build_initial_state(config, dealer, seed)
     return deal_result, auction_result.auction, marriages_result.marriages
 end
 
+-- Replace the session's deal-time state with a fresh shuffle/deal/auction
+-- against the active config. Used by accept_redeal, report_misdeal, the
+-- forced-redeal loop and start_next_deal — every code path that needs to
+-- restart the deal in place. Bumps the seed by `seed_bump` so each
+-- successive call produces a different shuffle.
+local function reset_deal_state(self, dealer, seed_bump)
+    self._dealer = dealer or self._dealer
+    self._seed = (self._seed or os.time()) + (seed_bump or 0)
+    local deal_result, auction, marriages =
+        build_initial_state(self._config, self._dealer, self._seed)
+    self._hands = deal_result.hands
+    self._talon_cards = deal_result.talon
+    self._stock = deal_result.stock
+    self._trump_indicator = deal_result.trump_indicator
+    self._sits_out = deal_result.sits_out
+    self._auction = auction
+    self._marriages = marriages
+    self._talon = nil
+    self._tricks = nil
+    self._scoring = nil
+    self._raspassy_active = false
+    self._pending_trump_apply = nil
+end
+
+-- Walk the entitlement detector and, for forced redeals, re-deal in
+-- place. Stops on the first non-forced offer (recorded as
+-- `_redeal_offer`) or when no offer is found. The 16-iteration cap is
+-- a safety belt against a configuration that would loop forever — in
+-- practice a forced 4-nine redeal fires once per ~1300 deals, so two
+-- iterations is already pathological.
+local function evaluate_entitlement_with_forced_loop(self)
+    for _ = 1, 16 do
+        local offer = redeal.entitled_offer(self._hands, self._config)
+        if offer == nil then
+            self._redeal_offer = nil
+            return
+        end
+        if not offer.forced then
+            self._redeal_offer = offer
+            return
+        end
+        self._redeal_log[#self._redeal_log + 1] = {
+            kind = offer.kind,
+            seat = offer.seat,
+            forced = true,
+            dealer = self._dealer,
+        }
+        reset_deal_state(self, self._dealer, 1)
+    end
+    self._redeal_offer = nil
+end
+
 -- Build a fresh session with a freshly shuffled deck, deal, opened auction,
 -- empty marriage state and zero scores. `seed` is optional — if absent we
 -- use os.time() so two consecutive launches don't replay the same hands.
@@ -134,7 +187,27 @@ function M.new(opts)
         -- consequent trick resolves. Drives the "trump engages from
         -- the next trick" timing rule from core/marriages.lua.
         _pending_trump_apply = nil,
+        -- Phase 3.6 dealing-and-redeal state.
+        --   _redeal_offer: nil when no entitlement is open, otherwise
+        --       { seat, kind, forced }. Forced offers are applied
+        --       automatically by `evaluate_entitlement_with_forced_loop`;
+        --       optional offers wait on accept_redeal/decline_redeal.
+        --   _redeal_log:   list of every redeal that fired in this
+        --       game, including forced auto-applies. Surfaced to the
+        --       table view-model for "Redeal — four 9s" banners.
+        --   _misdeal_log:  list of every misdeal report routed by
+        --       report_misdeal. Banners are taken from the latest
+        --       entry.
+        --   _raspassy_active: true when the deal is being played out
+        --       under all_pass_handling = "raspassy". Drives the
+        --       raspassy_play phase, the score_raspassy hand-off,
+        --       and the marriage-rejection guard.
+        _redeal_offer = nil,
+        _redeal_log = {},
+        _misdeal_log = {},
+        _raspassy_active = false,
     }, Session)
+    evaluate_entitlement_with_forced_loop(self)
     return self
 end
 
@@ -171,6 +244,10 @@ function M.from_state(state)
         _deal_done = state.deal_done,
         _deal_index = state.deal_index or 1,
         _pending_trump_apply = nil,
+        _redeal_offer = state.redeal_offer,
+        _redeal_log = state.redeal_log or {},
+        _misdeal_log = state.misdeal_log or {},
+        _raspassy_active = state.raspassy_active or false,
     }, Session)
     return self
 end
@@ -219,9 +296,10 @@ function Session:talon_face_down()
     return self._talon == nil and self._tricks == nil
 end
 
--- "auction" / "talon" / "tricks" / "deal_done" / "done". Derived from
--- which engine objects the session holds, so callers can't ask for a
--- phase that contradicts the underlying state.
+-- "auction" / "awaiting_redeal_decision" / "talon" / "tricks" /
+-- "raspassy_play" / "deal_done" / "done". Derived from which engine
+-- objects the session holds, so callers can't ask for a phase that
+-- contradicts the underlying state.
 function Session:current_phase()
     if self._winner then
         return "done"
@@ -230,10 +308,16 @@ function Session:current_phase()
         return "deal_done"
     end
     if self._tricks then
+        if self._raspassy_active then
+            return "raspassy_play"
+        end
         return "tricks"
     end
     if self._talon then
         return "talon"
+    end
+    if self._redeal_offer then
+        return "awaiting_redeal_decision"
     end
     return "auction"
 end
@@ -247,7 +331,7 @@ function Session:current_turn()
         return self._auction and self._auction.turn or nil
     elseif phase == "talon" then
         return self._talon and self._talon.declarer or nil
-    elseif phase == "tricks" then
+    elseif phase == "tricks" or phase == "raspassy_play" then -- i18n-ok: phase enums
         return self._tricks and self._tricks.next_to_play or nil
     end
     return nil
@@ -501,13 +585,75 @@ end
 -- constructs the talon state for the standard flow, or — for talon.size
 -- == 0 layouts (4-player A no-talon, 2-player A closed-talon stock-draw)
 -- — bypasses the talon phase and goes straight to tricks. An all-pass
--- auction stops the deal: there is no contract to play.
+-- auction routes via `dealing.all_pass_handling`:
+--   * "redeal":   stop the deal so the next-deal hand-off keeps the same
+--                 dealer (per house-rules.md "Standard").
+--   * "pass_out": stop the deal; start_next_deal rotates the dealer.
+--   * "raspassy": play out the deal under reverse-scoring with no
+--                 trump and no marriages.
 local function on_auction_end(self)
     local a = self._auction
     if not a or a.status == "in_progress" then
         return
     end
     if a.status == "all_pass" then
+        local mode = self._config.dealing.all_pass_handling
+        if mode == "raspassy" then
+            -- Raspassy turns the all-pass deal into a no-trump
+            -- no-marriage trick-play deal. The trick engine expects
+            -- 8-card hands under the canonical 3-player layout, so the
+            -- 3 talon cards are distributed one each to the active
+            -- seats (forehand first). Layouts where the talon doesn't
+            -- divide evenly into the active-seat count are not yet
+            -- supported and fall back to the redeal banner.
+            local count = self._config.players.count
+            local forehand = (self._dealer % count) + 1
+            local sits_out = self._sits_out
+            local active = {}
+            local seat = forehand
+            for _ = 1, count do
+                if seat ~= sits_out then
+                    active[#active + 1] = seat
+                end
+                seat = (seat % count) + 1
+            end
+            local talon_cards = self._talon_cards or {}
+            local active_count = #active
+            if active_count == 0 or (#talon_cards > 0 and #talon_cards % active_count ~= 0) then
+                -- Layout cannot host raspassy under this distribution
+                -- rule; fall back to the standard all-pass redeal so
+                -- the deal_done banner still has a meaningful reason.
+                self._deal_done = { reason = "all_pass" }
+                return
+            end
+            if #talon_cards > 0 then
+                local hands = self._hands
+                local cursor = 1
+                for i = 1, #talon_cards do
+                    local target = active[cursor]
+                    local hand = hands[target]
+                    hand[#hand + 1] = talon_cards[i]
+                    cursor = (cursor % active_count) + 1
+                end
+                self._talon_cards = {}
+            end
+            self._raspassy_active = true
+            local tricks_result = tricks_module.new(self._config, self._hands, forehand, {
+                dealer = self._dealer,
+            })
+            if not tricks_result.ok then
+                local msg = "session: raspassy tricks construction failed: " -- i18n-ok
+                    .. tostring(tricks_result.error.message)
+                error(msg, 2)
+            end
+            self._tricks = tricks_result.tricks
+            return
+        end
+        if mode == "pass_out" then
+            self._deal_done = { reason = "all_pass_pass_out" }
+            return
+        end
+        -- "redeal" (default).
         self._deal_done = { reason = "all_pass" }
         return
     end
@@ -556,6 +702,52 @@ local function on_talon_end(self)
         opts.initial_captured_points = seeded
     end
     start_tricks(self, t.hands, t.declarer, opts)
+end
+
+-- Raspassy tricks → scoring transition. Runs scoring.score_raspassy
+-- (negate captured card-points) + scoring.advance_game with synthetic
+-- declarer = forehand seat (the tiebreaker case it guards never fires
+-- under raspassy because every delta is non-positive). Sets the
+-- deal_done sentinel with reason "raspassy_scored" so start_next_deal
+-- knows to rotate the dealer.
+local function on_raspassy_end(self)
+    local t = self._tricks
+    if not t or t.status ~= "done" then
+        return
+    end
+    local player_count = self._config.players.count
+    local forehand = (self._dealer % player_count) + 1
+
+    local sr = scoring.score_raspassy(self._config, {
+        captured_points = t.captured_points,
+        running_totals = self._running_totals,
+    })
+    if not sr.ok then
+        error("session: score_raspassy failed: " .. tostring(sr.error.message), 2)
+    end
+    self._scoring = sr.scoring
+
+    local g = scoring.advance_game(self._config, {
+        declarer = forehand,
+        deal_index = self._deal_index,
+        deltas = sr.scoring.deltas,
+        running_totals_before = self._running_totals,
+        barrel_state_before = self._barrel_state,
+    })
+    if not g.ok then
+        error("session: advance_game failed (raspassy): " .. tostring(g.error.message), 2)
+    end
+    self._running_totals = g.game.running_totals
+    self._barrel_state = g.game.barrel_state
+    if g.game.winner then
+        self._winner = g.game.winner
+    else
+        self._deal_done = {
+            reason = "raspassy_scored",
+            deal_scores = sr.scoring.deal_scores,
+        }
+    end
+    self._raspassy_active = false
 end
 
 -- Tricks → scoring transition. Runs scoring.score_deal +
@@ -609,6 +801,12 @@ end
 -- Auction mutators ------------------------------------------------------
 
 function Session:bid(player, amount)
+    if self._redeal_offer then
+        return failure("awaiting_redeal_decision", "resolve the pending redeal offer first", {
+            kind = self._redeal_offer.kind,
+            seat = self._redeal_offer.seat,
+        })
+    end
     if not self._auction or self._auction.status ~= "in_progress" then
         return failure("auction_already_done", "auction has already terminated", {
             status = self._auction and self._auction.status or "unknown",
@@ -624,6 +822,12 @@ function Session:bid(player, amount)
 end
 
 function Session:pass(player)
+    if self._redeal_offer then
+        return failure("awaiting_redeal_decision", "resolve the pending redeal offer first", {
+            kind = self._redeal_offer.kind,
+            seat = self._redeal_offer.seat,
+        })
+    end
     if not self._auction or self._auction.status ~= "in_progress" then
         return failure("auction_already_done", "auction has already terminated", {
             status = self._auction and self._auction.status or "unknown",
@@ -720,6 +924,11 @@ end
 -- Marriage + trick mutators --------------------------------------------
 
 function Session:declare_marriage(player, suit)
+    if self._raspassy_active then
+        return failure("marriages_disabled_in_raspassy", "raspassy plays without marriages", {
+            phase = self:current_phase(),
+        })
+    end
     if not self._tricks or self._tricks.status ~= "in_progress" then
         return failure("wrong_phase", "declare_marriage requires the tricks phase", {
             phase = self:current_phase(),
@@ -777,47 +986,181 @@ function Session:play(player, card)
             self._pending_trump_apply = nil
         end
         if self._tricks.status == "done" then
-            on_tricks_end(self)
+            if self._raspassy_active then
+                on_raspassy_end(self)
+            else
+                on_tricks_end(self)
+            end
         end
     end
     return { ok = true }
 end
 
+-- Redeal / misdeal API -------------------------------------------------
+
+-- The current open redeal offer. nil unless an optional 4-nine /
+-- 4-jack / 3-nine / weak-hand entitlement is waiting on the player's
+-- accept-or-decline call. Forced 4-nine redeals are auto-applied and
+-- recorded in `redeal_log()` instead of being surfaced here.
+function Session:redeal_offer()
+    return self._redeal_offer
+end
+
+-- Apply the current redeal offer. Re-shuffles the deck (with a bumped
+-- seed) and re-deals at the same dealer, then re-evaluates entitlement
+-- so the player can chain optional offers if a follow-up condition
+-- fires. Records the acceptance in `_redeal_log` for the banner.
+function Session:accept_redeal()
+    if not self._redeal_offer then
+        return failure("no_redeal_pending", "accept_redeal needs an open offer", {
+            phase = self:current_phase(),
+        })
+    end
+    self._redeal_log[#self._redeal_log + 1] = {
+        kind = self._redeal_offer.kind,
+        seat = self._redeal_offer.seat,
+        forced = false,
+        accepted = true,
+        dealer = self._dealer,
+    }
+    self._redeal_offer = nil
+    reset_deal_state(self, self._dealer, 1)
+    evaluate_entitlement_with_forced_loop(self)
+    return { ok = true }
+end
+
+-- Decline the current redeal offer. Clears `_redeal_offer` and leaves
+-- the auction in place; the player can now bid or pass as normal.
+-- Recorded in `_redeal_log` so the UI's "Optional redeal: declined"
+-- banner has a hook.
+function Session:decline_redeal()
+    if not self._redeal_offer then
+        return failure("no_redeal_pending", "decline_redeal needs an open offer", {
+            phase = self:current_phase(),
+        })
+    end
+    self._redeal_log[#self._redeal_log + 1] = {
+        kind = self._redeal_offer.kind,
+        seat = self._redeal_offer.seat,
+        forced = false,
+        accepted = false,
+        dealer = self._dealer,
+    }
+    self._redeal_offer = nil
+    return { ok = true }
+end
+
+-- Report a misdeal. Routed by `dealing.misdeal_handling`:
+--   * "standard":     same dealer redeals, no penalty.
+--   * "soft_penalty": rotate dealer, redeal.
+--   * "flat_penalty": deduct `dealing.misdeal_flat_penalty` from the
+--                     current dealer's running total, redeal with the
+--                     same dealer.
+-- Records the event in `_misdeal_log` for the banner.
+function Session:report_misdeal()
+    if self._winner then
+        return failure("game_over", "cannot report a misdeal once the game is won", {
+            winner = self._winner,
+        })
+    end
+    if self._tricks or self._talon then
+        return failure("wrong_phase", "report_misdeal must run before the auction resolves", {
+            phase = self:current_phase(),
+        })
+    end
+    local mode = self._config.dealing.misdeal_handling
+    local player_count = self._config.players.count
+    local entry = {
+        handling = mode,
+        dealer = self._dealer,
+        penalty = 0,
+    }
+    local new_dealer = self._dealer
+    if mode == "soft_penalty" then
+        new_dealer = (self._dealer % player_count) + 1
+    elseif mode == "flat_penalty" then
+        local penalty = self._config.dealing.misdeal_flat_penalty
+        local totals = {}
+        for i = 1, player_count do
+            totals[i] = self._running_totals[i]
+        end
+        totals[self._dealer] = totals[self._dealer] - penalty
+        self._running_totals = totals
+        entry.penalty = penalty
+    end
+    self._misdeal_log[#self._misdeal_log + 1] = entry
+    -- Drop any pending redeal offer; the dealer just changed (or the
+    -- penalty just landed) and the about-to-fire deal will produce a
+    -- fresh entitlement evaluation anyway.
+    self._redeal_offer = nil
+    reset_deal_state(self, new_dealer, 1)
+    evaluate_entitlement_with_forced_loop(self)
+    return { ok = true }
+end
+
+-- Read-only access to the running redeal log. The table view-model
+-- consumes this to render the latest banner (auto-applied forced
+-- redeals appear here; optional accept/decline events too). Each
+-- entry: { kind, seat, forced, accepted?, dealer }.
+function Session:redeal_log()
+    return self._redeal_log
+end
+
+-- Read-only access to the misdeal log. Each entry:
+-- { handling, dealer, penalty }. The banner derives from the latest
+-- entry until the next deal starts.
+function Session:misdeal_log()
+    return self._misdeal_log
+end
+
+-- True while the deal is being played out under
+-- `all_pass_handling = "raspassy"`. The table view-model uses this to
+-- hide bid/contract/trump indicators and the table scene to render the
+-- raspassy banner.
+function Session:raspassy_active()
+    return self._raspassy_active
+end
+
 -- Game-loop hand-off ----------------------------------------------------
 
 -- Construct a fresh deal under the same rules, with the dealer rotated
--- clockwise and running totals carried forward. Used by the deal-done
--- banner's "Next deal" button. Refuses once a winner exists — the game
--- is over and the table scene should hand off to the end-of-game scene
--- instead.
+-- per `dealing.all_pass_handling` and running totals carried forward.
+-- Used by the deal-done banner's "Next deal" button. Refuses once a
+-- winner exists — the game is over and the table scene should hand off
+-- to the end-of-game scene instead.
+--
+-- Dealer rotation:
+--   * reason "all_pass" (i.e. all_pass_handling = "redeal")  → keep
+--     same dealer (per house-rules.md "Standard").
+--   * reasons "all_pass_pass_out" / "raspassy_scored" / "scored" →
+--     rotate dealer clockwise.
 function Session:start_next_deal()
     if self._winner then
         return failure("game_over", "cannot start a new deal once the game is won", {
             winner = self._winner,
         })
     end
-    local config = self._config
-    local player_count = config.players.count
-    local next_dealer = (self._dealer % player_count) + 1
-    local seed = (self._seed or os.time()) + self._deal_index
+    local player_count = self._config.players.count
+    -- "all_pass" means dealing.all_pass_handling = "redeal": same
+    -- dealer redeals (per house-rules.md "Standard"). Every other
+    -- reason rotates clockwise.
+    local prev_reason = self._deal_done and self._deal_done.reason or "scored"
+    local next_dealer
+    if prev_reason == "all_pass" then
+        next_dealer = self._dealer
+    else
+        next_dealer = (self._dealer % player_count) + 1
+    end
 
-    local deal_result, auction, marriages = build_initial_state(config, next_dealer, seed)
-
-    self._dealer = next_dealer
-    self._seed = seed
-    self._hands = deal_result.hands
-    self._talon_cards = deal_result.talon
-    self._stock = deal_result.stock
-    self._trump_indicator = deal_result.trump_indicator
-    self._sits_out = deal_result.sits_out
-    self._auction = auction
-    self._talon = nil
-    self._marriages = marriages
-    self._tricks = nil
-    self._scoring = nil
     self._deal_done = nil
     self._deal_index = self._deal_index + 1
-    self._pending_trump_apply = nil
+    -- The redeal/misdeal banners are per-deal; clear them before the
+    -- next deal so a previous deal's events don't leak into the new
+    -- one's view-model.
+    self._redeal_log = {}
+    self._misdeal_log = {}
+    reset_deal_state(self, next_dealer, self._deal_index)
+    evaluate_entitlement_with_forced_loop(self)
     return { ok = true }
 end
 

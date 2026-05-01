@@ -60,7 +60,8 @@ local function sort_cards_for_display(cards)
 end
 
 local function legal_card_set(session)
-    if session:current_phase() ~= "tricks" then
+    local phase = session:current_phase()
+    if phase ~= "tricks" and phase ~= "raspassy_play" then -- i18n-ok: phase enums
         return nil
     end
     local turn = session:current_turn()
@@ -223,6 +224,64 @@ local function build_marriage_offer_block(session)
     return { suits = copy_list(suits) }
 end
 
+-- Phase 3.6: dealing-and-redeal banner blocks. Each block is nil when
+-- the corresponding event isn't currently visible to the player; the
+-- table scene branches on presence to render or not.
+
+-- The active redeal prompt, surfaced while the session is in
+-- `awaiting_redeal_decision`. Forced offers also land here so the scene
+-- can show a non-dismissible banner before the auto-redeal fires.
+local function build_redeal_prompt_block(session)
+    local offer = session:redeal_offer()
+    if not offer then
+        return nil
+    end
+    return {
+        kind = offer.kind,
+        seat = offer.seat,
+        forced = offer.forced or false,
+    }
+end
+
+-- The latest misdeal-event row, taken from `Session:misdeal_log()`.
+-- Cleared when the next deal starts (the session resets the log on
+-- `start_next_deal`).
+local function build_misdeal_banner_block(session)
+    local log = session:misdeal_log()
+    if not log or #log == 0 then
+        return nil
+    end
+    local entry = log[#log]
+    return {
+        handling = entry.handling,
+        dealer = entry.dealer,
+        penalty = entry.penalty or 0,
+    }
+end
+
+-- The all-pass banner: present when the deal ended on all-pass under
+-- one of the three handlings, OR while a raspassy_play deal is in
+-- progress. The scene reads `mode` to pick the localised body text.
+local function build_all_pass_banner_block(session)
+    if session:raspassy_active() then
+        return { mode = "raspassy" }
+    end
+    local payload = session:deal_done()
+    if not payload then
+        return nil
+    end
+    if payload.reason == "all_pass" then
+        return { mode = "redeal" }
+    end
+    if payload.reason == "all_pass_pass_out" then
+        return { mode = "pass_out" }
+    end
+    if payload.reason == "raspassy_scored" then
+        return { mode = "raspassy" }
+    end
+    return nil
+end
+
 local function build_deal_done_block(session)
     local payload = session:deal_done()
     if not payload then
@@ -362,13 +421,22 @@ function M.from_session(session)
         }
     end
 
+    local raspassy_active = session:raspassy_active()
+    -- Hide bid/leader/trump indicators while raspassy is in play —
+    -- raspassy lacks a contract and a trump, and the scene's normal
+    -- chrome (current-bid pill, trump suit indicator) would show stale
+    -- values from the abandoned auction otherwise.
+    local current_bid = raspassy_active and nil or session:current_bid()
+    local leader = raspassy_active and nil or session:current_leader()
+    local trump = raspassy_active and nil or session:trump()
+
     return {
         phase = session:current_phase(),
         turn_player = turn,
         dealer = dealer,
-        current_bid = session:current_bid(),
-        leader = session:current_leader(),
-        trump = session:trump(),
+        current_bid = current_bid,
+        leader = leader,
+        trump = trump,
         scoreboard = scoreboard,
         hands = hands,
         talon = talon,
@@ -383,6 +451,10 @@ function M.from_session(session)
         current_trick = build_current_trick_block(session),
         marriage_offer = build_marriage_offer_block(session),
         deal_done = build_deal_done_block(session),
+        redeal_prompt = build_redeal_prompt_block(session),
+        misdeal_banner = build_misdeal_banner_block(session),
+        all_pass_banner = build_all_pass_banner_block(session),
+        raspassy_active = raspassy_active,
     }
 end
 
