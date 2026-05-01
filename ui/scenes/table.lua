@@ -39,6 +39,7 @@ local FocusGroup = require("ui.focus_group")
 local layout = require("ui.layout")
 local cards = require("ui.cards")
 local view_model = require("app.table_view_model")
+local settings = require("app.settings")
 local t = i18n.t
 
 local M = {}
@@ -593,8 +594,17 @@ end
 -- When the active seat is nil (deal_done or done), we clear the
 -- last-revealed seat so the next non-nil turn always re-curtains —
 -- the device sat on the table during the score banner, so any seat
--- picking it up next is a hand-off.
+-- picking it up next is a hand-off. The Settings scene exposes a
+-- toggle that disables this entirely so a tester can drive every seat
+-- without dismissing a curtain on each turn.
 function M:_apply_curtain_trigger()
+    if not settings.get("hot_seat_privacy") then
+        if self._curtain then
+            self:_close_curtain()
+        end
+        self._last_revealed_seat = nil
+        return
+    end
     local view = self._view_model
     if not view or view.turn_player == nil then
         self._last_revealed_seat = nil

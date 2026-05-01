@@ -16,6 +16,7 @@ return {
     ["scene.menu.new_game"] = "New Game",
     ["scene.menu.continue"] = "Continue",
     ["scene.menu.abandon"] = "Abandon Game",
+    ["scene.menu.settings"] = "Settings",
     ["scene.menu.quit"] = "Quit",
     ["scene.menu.confirm_abandon.prompt"] = "Abandon the current game?",
     ["scene.menu.confirm_abandon.yes"] = "Yes, abandon",
@@ -60,6 +61,13 @@ return {
     ["scene.table.privacy.prompt"] = "Pass the device to Player %{n}.",
     ["scene.table.privacy.subtitle"] = "Tap when ready.",
     ["scene.table.privacy.ready_button"] = "Ready",
+
+    ["scene.settings.title"] = "Settings",
+    ["scene.settings.hot_seat_privacy.label"] = "Hot-seat privacy",
+    ["scene.settings.hot_seat_privacy.description"] = "Show a pass-to-next-player overlay between turns.",
+    ["scene.settings.toggle.on"] = "On",
+    ["scene.settings.toggle.off"] = "Off",
+    ["scene.settings.back_to_menu"] = "Back",
 
     ["scene.table.deal_done.scored"] = "Deal complete",
     ["scene.table.deal_done.all_pass"] = "All players passed",

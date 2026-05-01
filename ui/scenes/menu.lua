@@ -73,6 +73,14 @@ function M:_build_buttons()
             end,
         }),
         Button.new({
+            id = "settings", -- i18n-ok
+            label_key = "scene.menu.settings",
+            enabled = true,
+            on_press = function()
+                self._manager:switch_to("settings")
+            end,
+        }),
+        Button.new({
             id = "quit", -- i18n-ok
             label_key = "scene.menu.quit",
             enabled = true,

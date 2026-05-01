@@ -204,6 +204,16 @@ porting pass later, not a UI rewrite.
 - [x] Add hot-seat privacy and hand-off flow.
   - A pass-to-next-player overlay hides inactive hands.
   - Each player only sees their own hand during private decisions.
+- [x] Add a Settings scene with a hot-seat privacy toggle.
+  - `app/settings.lua` persists user preferences to `settings.json` via
+    `love.filesystem`, validated by `schemaVersion`.
+  - `app/json.lua` provides the minimal encoder/decoder reused by Phase 2
+    auto-save and Phase 3 templates.
+  - Settings scene exposes one row + Back; Phase 4's full settings
+    screen extends this scene with locale, sound, theme, and animation
+    speed.
+  - Disabling the toggle suppresses the privacy curtain entirely so a
+    single tester can drive every seat without dismissing between turns.
 - [ ] Add legal-action affordances.
   - Cards that are legal under must-follow, must-beat, and must-trump rules
     can be visually distinguished.

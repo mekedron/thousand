@@ -13,6 +13,8 @@ local function reset_modules()
         "ui.layout",
         "app.i18n",
         "app.session",
+        "app.settings",
+        "app.json",
         "app.table_view_model",
     }
     for _, mod in ipairs(to_reset) do
@@ -424,6 +426,51 @@ describe("ui.scenes.table", function()
                     "no privacy prompt expected during deal_done for seat " .. seat
                 )
             end
+        end)
+
+        it("does not raise the curtain when settings.hot_seat_privacy is off", function()
+            local settings = require("app.settings")
+            -- Swap in an in-memory storage hook so the toggle write
+            -- does not touch love.filesystem, then turn the curtain off.
+            local store = {}
+            settings._set_storage(function(p)
+                return store[p]
+            end, function(p, v)
+                store[p] = v
+                return true
+            end)
+            settings.set("hot_seat_privacy", false)
+
+            -- Re-create the scene so its first draw runs through the
+            -- gated trigger from a clean state.
+            local table_scene = require("ui.scenes.table")
+            local sc = table_scene.new(fake_manager(session))
+            sc:enter(nil, nil)
+            sc:draw(1024, 720)
+            assert.is_nil(sc._curtain, "no curtain expected when privacy is disabled")
+            assert.is_nil(
+                find_text(mock, t("scene.table.privacy.prompt", { n = 2 })),
+                "no privacy prompt expected when privacy is disabled"
+            )
+        end)
+
+        it("clears an existing curtain if the setting flips off mid-game", function()
+            scene:draw(1024, 720)
+            assert.is_not_nil(scene._curtain, "expected curtain on first frame")
+
+            local settings = require("app.settings")
+            local store = {}
+            settings._set_storage(function(p)
+                return store[p]
+            end, function(p, v)
+                store[p] = v
+                return true
+            end)
+            settings.set("hot_seat_privacy", false)
+
+            mock.graphics.clear_recording()
+            scene:draw(1024, 720)
+            assert.is_nil(scene._curtain, "curtain should clear once the setting flips off")
         end)
 
         it("raises a curtain after Next deal kicks off the next deal", function()

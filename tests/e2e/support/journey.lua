@@ -40,11 +40,24 @@ local function reset_i18n(locale)
     return i18n
 end
 
+-- Drop settings module state so each journey starts with the default
+-- toggle values. We can't simply unload the package — scenes capture
+-- the module reference at require time and would still see the old
+-- table — so call its test-only _reset hook on whichever instance
+-- they captured.
+local function reset_settings()
+    local ok, settings = pcall(require, "app.settings")
+    if ok and settings and settings._reset then
+        settings._reset()
+    end
+end
+
 function M.start(opts)
     opts = opts or {}
     local locale = opts.locale or "en"
 
     local i18n = reset_i18n(locale)
+    reset_settings()
 
     local mock = love_mock.new({
         width = opts.width or 800,
