@@ -153,13 +153,30 @@ end
 local CARD_GAP = 6
 local LABEL_BAND = 28
 
--- Compute per-card rectangles for the active player's hand. The hand
--- region's leftmost padding mirrors what the table scene already uses
--- (8 px on each side). Cards are sized to fill the hand region while
--- staying at or above MIN_HIT_TARGET on both axes; if the hand has too
--- many cards to fit at the touch-safe minimum width, the rects extend
--- past the right edge — the scene clamps the visible region but the
--- hit-test math stays correct.
+-- Canonical playing-card aspect — height ÷ width. A real bridge card is
+-- 2.25" × 3.5" so the natural ratio is ~1.56; we use 1.4 to keep face
+-- artwork legible at small sizes. The talon and opponent stack
+-- constants in ui/scenes/table.lua use the same ratio.
+local CARD_ASPECT_H_OVER_W = 1.4
+
+-- Compute per-card rectangles for the active player's hand. Cards are
+-- sized to stay portrait (h = w × 1.4) while filling whichever axis is
+-- the binding constraint, then the row is centred horizontally inside
+-- the hand region.
+--
+-- Sizing order:
+--   1. width-from-horizontal-space — how wide each card is if the row
+--      fills the available width;
+--   2. aspect cap — if `card_w * 1.4` would exceed the hand region's
+--      vertical headroom, derive width from height instead so cards
+--      stay portrait rather than going square;
+--   3. touch-target floor — if either step lands below MIN_HIT_TARGET,
+--      bump that axis to the floor (the scene's reflowable layout
+--      normally avoids this case but the hit-test must stay
+--      predictable).
+--
+-- The row is then centred: any horizontal slack between the row width
+-- and the hand region width is split evenly on both sides.
 function M.hand_card_rects(hand_region, count, opts)
     if count <= 0 then
         return {}
@@ -168,26 +185,44 @@ function M.hand_card_rects(hand_region, count, opts)
     local gap = opts.gap or CARD_GAP
     local label_band = opts.label_band or LABEL_BAND
     local available_w = hand_region.w - 16
+    local max_h = hand_region.h - label_band - 8
     local card_w = math.floor((available_w - (count - 1) * gap) / count)
+    -- Aspect cap. When the hand region is wider than tall (the common
+    -- desktop case) the natural width-from-horizontal-space derivation
+    -- would give cards that are nearly square once height is clamped
+    -- to the region. Cap card_w by the aspect ratio so cards keep
+    -- their portrait silhouette and the spare horizontal room becomes
+    -- centring slack.
+    if max_h > 0 then
+        local aspect_capped_w = math.floor(max_h / CARD_ASPECT_H_OVER_W)
+        if aspect_capped_w > 0 and card_w > aspect_capped_w then
+            card_w = aspect_capped_w
+        end
+    end
     if card_w < M.MIN_HIT_TARGET then
         card_w = M.MIN_HIT_TARGET
     end
-    local max_h = hand_region.h - label_band - 8
-    local card_h = math.min(max_h, math.floor(card_w * 1.4))
+    local card_h = math.min(max_h, math.floor(card_w * CARD_ASPECT_H_OVER_W))
     if card_h < M.MIN_HIT_TARGET then
         card_h = math.min(max_h, M.MIN_HIT_TARGET)
     end
     if card_h < M.MIN_HIT_TARGET then
-        -- Hand region is too short to host a touch-safe rect. Honour
-        -- the floor anyway so the hit-test stays predictable; the
-        -- scene's reflowable layout will normally avoid this case.
         card_h = M.MIN_HIT_TARGET
+    end
+    -- Centre the row horizontally inside the hand region. The aspect
+    -- cap usually leaves a meaningful chunk of slack on a wide window;
+    -- without centring the cards would left-align with all of it
+    -- pooled on the right.
+    local row_w = count * card_w + (count - 1) * gap
+    local lead = floor((hand_region.w - row_w) * 0.5)
+    if lead < 0 then
+        lead = 0
     end
     local rects = {}
     local y = floor(hand_region.y + label_band)
     for i = 1, count do
         rects[i] = {
-            x = floor(hand_region.x + 8 + (i - 1) * (card_w + gap)),
+            x = floor(hand_region.x + lead + (i - 1) * (card_w + gap)),
             y = y,
             w = card_w,
             h = card_h,

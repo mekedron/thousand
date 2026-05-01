@@ -181,6 +181,45 @@ describe("ui.layout", function()
                 assert.are.equal(math.floor(r.h), r.h)
             end
         end)
+
+        it("keeps cards portrait — height stays at least 1.3x width", function()
+            -- A wide hand region with plenty of horizontal slack used to
+            -- yield nearly square rects because card_h was capped at the
+            -- region height while card_w grew unchecked. With the
+            -- aspect cap in place, height should be a clear majority
+            -- over width whenever both axes are above the touch floor.
+            local rects = layout.hand_card_rects({ x = 0, y = 0, w = 800, h = 140 }, 7)
+            for i, r in ipairs(rects) do
+                if r.w > layout.MIN_HIT_TARGET and r.h > layout.MIN_HIT_TARGET then
+                    assert.is_true(
+                        r.h >= math.floor(r.w * 1.3),
+                        "rect "
+                            .. i
+                            .. " aspect: w="
+                            .. r.w
+                            .. " h="
+                            .. r.h
+                            .. " — expected h >= w * 1.3"
+                    )
+                end
+            end
+        end)
+
+        it("centres the row horizontally — equal slack on both sides", function()
+            -- The aspect cap leaves the row narrower than the region;
+            -- the leading and trailing slack should match within a
+            -- pixel of each other.
+            local region = { x = 100, y = 0, w = 800, h = 140 }
+            local rects = layout.hand_card_rects(region, 7)
+            local first = rects[1]
+            local last = rects[#rects]
+            local left_slack = first.x - region.x
+            local right_slack = (region.x + region.w) - (last.x + last.w)
+            assert.is_true(
+                math.abs(left_slack - right_slack) <= 1,
+                "row not centred: left=" .. left_slack .. " right=" .. right_slack
+            )
+        end)
     end)
 
     describe("talon_card_rects()", function()
