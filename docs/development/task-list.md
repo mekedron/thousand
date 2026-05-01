@@ -329,7 +329,7 @@ only for toggles marked selectable.
     rule, overshoot penalty, and reverse barrel.
   - Target score, going-over-target rule, tiebreaker, and dump truck /
     самосвал settings.
-- [ ] Add special-contract and penalty toggles.
+- [x] Add special-contract and penalty toggles.
   - Mizère / no-tricks.
   - Slam contract.
   - Open-hand contract.

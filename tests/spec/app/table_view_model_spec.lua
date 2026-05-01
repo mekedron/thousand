@@ -440,6 +440,18 @@ describe("app.table_view_model", function()
                     tiebreaker = "declarer_wins",
                     dump_truck = "off",
                 },
+                specials = {
+                    mizere = "off",
+                    slam_contract = "off",
+                    open_hand = "off",
+                },
+                penalties = {
+                    revoke = "standard",
+                    talon_look = "standard",
+                    showing_hand = "standard",
+                    zero_tricks = "off",
+                    cross = "off",
+                },
             })
         end
 

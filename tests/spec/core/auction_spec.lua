@@ -541,6 +541,18 @@ describe("core.auction", function()
                     tiebreaker = "declarer_wins",
                     dump_truck = "off",
                 },
+                specials = {
+                    mizere = "off",
+                    slam_contract = "off",
+                    open_hand = "off",
+                },
+                penalties = {
+                    revoke = "standard",
+                    talon_look = "standard",
+                    showing_hand = "standard",
+                    zero_tricks = "off",
+                    cross = "off",
+                },
             })
         end
 
@@ -654,6 +666,18 @@ describe("core.auction", function()
                     going_over_target = "win_immediately",
                     tiebreaker = "declarer_wins",
                     dump_truck = "off",
+                },
+                specials = {
+                    mizere = "off",
+                    slam_contract = "off",
+                    open_hand = "off",
+                },
+                penalties = {
+                    revoke = "standard",
+                    talon_look = "standard",
+                    showing_hand = "standard",
+                    zero_tricks = "off",
+                    cross = "off",
                 },
             })
             local a = auction.new(cfg_open, 1).auction

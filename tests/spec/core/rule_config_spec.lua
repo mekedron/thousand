@@ -105,6 +105,18 @@ local function valid_table()
             tiebreaker = "declarer_wins",
             dump_truck = "off",
         },
+        specials = {
+            mizere = "off",
+            slam_contract = "off",
+            open_hand = "off",
+        },
+        penalties = {
+            revoke = "standard",
+            talon_look = "standard",
+            showing_hand = "standard",
+            zero_tricks = "off",
+            cross = "off",
+        },
     }
 end
 
@@ -176,6 +188,8 @@ describe("core.rule_config", function()
                 "opening_game",
                 "barrel",
                 "endgame",
+                "specials",
+                "penalties",
             }
             for _, name in ipairs(sections) do
                 local t = valid_table()
@@ -381,6 +395,20 @@ describe("core.rule_config", function()
             assert.are.equal("declarer_wins", config.endgame.tiebreaker)
             assert.are.equal("off", config.endgame.dump_truck)
         end)
+
+        it("encodes the canonical special-contract toggles at their defaults", function()
+            assert.are.equal("off", config.specials.mizere)
+            assert.are.equal("off", config.specials.slam_contract)
+            assert.are.equal("off", config.specials.open_hand)
+        end)
+
+        it("encodes the canonical penalty toggles at their defaults", function()
+            assert.are.equal("standard", config.penalties.revoke)
+            assert.are.equal("standard", config.penalties.talon_look)
+            assert.are.equal("standard", config.penalties.showing_hand)
+            assert.are.equal("off", config.penalties.zero_tricks)
+            assert.are.equal("off", config.penalties.cross)
+        end)
     end)
 
     describe("is_rule_config", function()
@@ -551,6 +579,17 @@ describe("core.rule_config", function()
                         "going_over_target",
                         "tiebreaker",
                         "dump_truck",
+                    },
+                },
+                { "specials", { "mizere", "slam_contract", "open_hand" } },
+                {
+                    "penalties",
+                    {
+                        "revoke",
+                        "talon_look",
+                        "showing_hand",
+                        "zero_tricks",
+                        "cross",
                     },
                 },
             }
@@ -2726,6 +2765,268 @@ describe("core.rule_config", function()
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
             assert.are.equal("off", res.config.scoring.declarer_rounding_before_contract_check)
+        end)
+    end)
+
+    describe("specials.mizere", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("specials.mizere")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["on"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.specials.mizere = "on"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("specials.mizere", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.specials.mizere)
+        end)
+    end)
+
+    describe("specials.slam_contract", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("specials.slam_contract")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["on"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.specials.slam_contract = "on"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("specials.slam_contract", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.specials.slam_contract)
+        end)
+    end)
+
+    describe("specials.open_hand", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("specials.open_hand")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["on"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.specials.open_hand = "on"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("specials.open_hand", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.specials.open_hand)
+        end)
+    end)
+
+    describe("penalties.revoke", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("penalties.revoke")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("standard", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["standard"])
+            assert.is_true(allowed["flat"])
+            assert.is_true(allowed["configurable"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            for _, bad in ipairs({ "flat", "configurable" }) do
+                local t = valid_table()
+                t.penalties.revoke = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
+                assert.are.equal("deferred_field_changed", res.error.code)
+                assert.are.equal("penalties.revoke", res.error.path)
+            end
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("standard", res.config.penalties.revoke)
+        end)
+    end)
+
+    describe("penalties.talon_look", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("penalties.talon_look")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("standard", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["standard"])
+            assert.is_true(allowed["stricter"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.penalties.talon_look = "stricter"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("penalties.talon_look", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("standard", res.config.penalties.talon_look)
+        end)
+    end)
+
+    describe("penalties.showing_hand", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("penalties.showing_hand")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("standard", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["standard"])
+            assert.is_true(allowed["strict"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.penalties.showing_hand = "strict"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("penalties.showing_hand", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("standard", res.config.penalties.showing_hand)
+        end)
+    end)
+
+    describe("penalties.zero_tricks", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("penalties.zero_tricks")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["consecutive_three"])
+            assert.is_true(allowed["any_three"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            for _, bad in ipairs({ "consecutive_three", "any_three" }) do
+                local t = valid_table()
+                t.penalties.zero_tricks = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
+                assert.are.equal("deferred_field_changed", res.error.code)
+                assert.are.equal("penalties.zero_tricks", res.error.path)
+            end
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.penalties.zero_tricks)
+        end)
+    end)
+
+    describe("penalties.cross", function()
+        it("exposes a deferred string-leaf descriptor", function()
+            local d = rule_config.schema_for("penalties.cross")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("deferred", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["on"])
+        end)
+
+        it("rejects any non-default value with deferred_field_changed", function()
+            local t = valid_table()
+            t.penalties.cross = "on"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("penalties.cross", res.error.path)
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.penalties.cross)
         end)
     end)
 

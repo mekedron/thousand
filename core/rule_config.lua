@@ -75,6 +75,8 @@ local SCHEMA = {
         "opening_game",
         "barrel",
         "endgame",
+        "specials",
+        "penalties",
     },
     schema_version = {
         kind = "leaf",
@@ -1129,6 +1131,133 @@ local SCHEMA = {
             },
         },
     },
+    -- Special-contract toggles. Each named contract is a single
+    -- on/off here; the bidding-section umbrella `named_contracts`
+    -- gates whether any of them are admissible at the auction. The
+    -- contract values (mizère = 120, slam = 240/300/double, etc.)
+    -- are sibling fields that land with the gameplay task. See
+    -- docs/variations/house-rules.md "Special contracts" and the
+    -- bidding.named_contracts comment.
+    specials = {
+        kind = "section",
+        field_order = { "mizere", "slam_contract", "open_hand" },
+        fields = {
+            -- Mizère / минимум: declarer commits to taking zero
+            -- tricks in a no-trump deal. Fixed contract value
+            -- (commonly 120). See docs/variations/house-rules.md
+            -- "Mizère / Минимум".
+            mizere = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "deferred",
+            },
+            -- Slam: declarer commits to taking all 8 tricks. Common
+            -- contract values are 240, 300, or simply double the
+            -- highest numeric bid. See
+            -- docs/variations/house-rules.md "Slam contract".
+            slam_contract = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "deferred",
+            },
+            -- Open hand: declarer plays the entire deal face-up.
+            -- Scoring is doubled on both success and failure. Almost
+            -- exclusively a tournament curiosity. See
+            -- docs/variations/house-rules.md "Open hand".
+            open_hand = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "deferred",
+            },
+        },
+    },
+    -- Penalty house-rule toggles. Phase 3.2 catalogues the shape;
+    -- penalty amounts (e.g. flat 120 for revoke, 20 for showing
+    -- hand) are sibling fields that land with the gameplay task.
+    -- See docs/variations/house-rules.md "Penalty house rules".
+    penalties = {
+        kind = "section",
+        field_order = {
+            "revoke",
+            "talon_look",
+            "showing_hand",
+            "zero_tricks",
+            "cross",
+        },
+        fields = {
+            -- House-rule: penalty for revoking. `standard` awards
+            -- the declarer's full bid to the opposing side; `flat`
+            -- awards 120 regardless of bid; `configurable` lets the
+            -- house pick a fixed amount (the amount is a sibling
+            -- field that lands with the gameplay task). See
+            -- docs/variations/house-rules.md "Revoke penalty".
+            revoke = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "standard", "flat", "configurable" },
+                default = "standard",
+                status = "deferred",
+            },
+            -- House-rule: penalty for looking at the talon before
+            -- the auction ends. `standard` deducts 120 and redeals;
+            -- `stricter` forfeits the deal and awards the bid to
+            -- the opposing side. See
+            -- docs/variations/house-rules.md "Talon-look penalty".
+            talon_look = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "standard", "stricter" },
+                default = "standard",
+                status = "deferred",
+            },
+            -- House-rule: penalty for showing one's hand to an
+            -- opponent. `standard` is a small fixed penalty
+            -- (typically 20); `strict` deducts the full bid. See
+            -- docs/variations/house-rules.md "Showing-hand penalty".
+            showing_hand = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "standard", "strict" },
+                default = "standard",
+                status = "deferred",
+            },
+            -- House-rule: zero-tricks penalty / болт / палка.
+            -- `consecutive_three` resets the bolt counter on any
+            -- trick taken; `any_three` is cumulative across the
+            -- game. The variant flags (declarer exempt, doubled in
+            -- golden deal) are sibling fields that land with the
+            -- gameplay task. See docs/variations/house-rules.md
+            -- "Zero-tricks penalty (Болт / Палка)" — distinct from
+            -- the bidding-section forced_dealer_bid (also called
+            -- бовт/болт but a forced 100 contract, not a zero-tricks
+            -- penalty).
+            zero_tricks = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "consecutive_three", "any_three" },
+                default = "off",
+                status = "deferred",
+            },
+            -- House-rule: cross / крест — alternative penalty path
+            -- for failed contracts. After accumulating two crosses,
+            -- the declarer receives a fixed penalty and the cross
+            -- counter clears. See docs/variations/house-rules.md
+            -- "Cross / Крест".
+            cross = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "deferred",
+            },
+        },
+    },
 }
 
 -- Cross-field invariants. Each entry's `predicate` returns true when the
@@ -1768,6 +1897,18 @@ M.canonical_russian = M.new({
         going_over_target = "win_immediately",
         tiebreaker = "declarer_wins",
         dump_truck = "off",
+    },
+    specials = {
+        mizere = "off",
+        slam_contract = "off",
+        open_hand = "off",
+    },
+    penalties = {
+        revoke = "standard",
+        talon_look = "standard",
+        showing_hand = "standard",
+        zero_tricks = "off",
+        cross = "off",
     },
 })
 
