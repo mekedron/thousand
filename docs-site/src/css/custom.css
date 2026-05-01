@@ -135,10 +135,7 @@ html,
 body {
   font-feature-settings: 'ss01', 'cv11';
   -webkit-font-smoothing: antialiased;
-}
-
-body {
-  background: var(--ds-bg);
+  background: var(--ds-paper);
   color: var(--ds-ink);
 }
 
