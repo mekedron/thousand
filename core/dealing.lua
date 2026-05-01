@@ -1,38 +1,42 @@
--- The Thousand standard 3-player deal.
+-- The Thousand dealer.
 --
 -- Given a 24-card deck (already shuffled by the caller — we want `deal` to
--- be pure and reproducible) and a `RuleConfig`, returns three 7-card hands
--- and a 3-card talon. The walk follows the canonical pattern documented in
--- docs/rules/dealing.md:
+-- be pure and reproducible) and a `RuleConfig`, returns hands sized for the
+-- active layout, the talon (where one exists), and an optional draw stock
+-- for the 2-player closed-talon variant.
 --
---   3 + 3 + 3   to each player                (9 in hands, 0 in talon)
---   2           to the talon
---   2 + 2       to each player                (15 in hands, 2 in talon)
---   1           to the talon
---   2 + 2       to each player                (21 in hands, 3 in talon)
+-- Phase 3.6 generalises the dealer beyond the canonical 3-player Russian
+-- shape. The schedule is selected from a small lookup keyed on
+-- `(players.count, talon.size, players.four_player_config,
+-- players.two_player_config)`:
 --
--- Each "x to each player" step is encoded as a per-player chunk of x cards
--- handed to player 1, then to player 2, then to player 3, before the next
--- step starts. This is the simplest reading consistent with the documented
--- totals (7 / 7 / 7 / 3) and is what the engine encodes.
+--   * 3-player / talon 3 — canonical Russian / Ukrainian. Pattern:
+--       3+3+3 to players, 2 to talon, 2+2+2 to players, 1 to talon,
+--       2+2+2 to players. Hands 7/7/7, talon 3.
+--   * 4-player / talon 0 (`dealer_plays_no_talon`) — Configuration A.
+--       6+6+6+6 to players, no talon. Six tricks per deal.
+--   * 4-player / talon 3 (`dealer_sits_out`) — Configuration B.
+--       The three non-dealer seats run the 3-player canonical schedule;
+--       the dealer's hand stays empty for the deal. Hands 7/7/7 + empty,
+--       talon 3.
+--   * 2-player / talon 3 (`fixed_deal_no_draw`) — Variant B.
+--       7+7 to players, 3 to talon. Declarer takes the talon, passes one
+--       card to the opponent and discards one face-down to their captured
+--       pile in core.talon, reaching 8/8 before trick play.
+--   * 2-player / talon 0 (`closed_talon_draw_stock`) — Variant A.
+--       9+9 to players + a 6-card stock; the bottom card of the stock is
+--       flipped face-up as the trump indicator. The stock is consumed
+--       during tricks (see core.tricks), not by core.talon.
 --
--- Player count and talon size are read from `RuleConfig` so this module
--- never hard-codes a value a future variant could change. Phase 1 ships
--- support for the canonical 3-player / 3-card-talon shape; non-canonical
--- shapes (Phase 3 variants) are explicitly rejected with typed errors and
--- will gain real support when their pattern lands alongside the variant.
+-- Polish (3-player, talon 2) and any other not-yet-supported shape still
+-- fail with an `unsupported_*` typed error so the rest of Phase 3.6 has an
+-- explicit pin to flip when it lands.
 --
--- "Misdeal" in the rules doc covers a handful of physical-table accidents
--- (a card flipped, the wrong number dealt, an exposed talon card). At the
--- engine level the analogue is "deck integrity error": the input deck is
--- the wrong size, contains duplicates, or contains non-card entries. Each
--- failure returns a typed error rather than raising, so callers can
--- surface the misdeal without an exception path.
---
--- The returned hands and talon are plain Lua lists. Hands evolve through
--- play (cards leave them as tricks resolve), so it is the calling layer's
--- job to manage immutability via update-and-replace rather than the engine
--- locking the lists down. The input deck is never mutated.
+-- The returned hands and talon (and stock, when present) are plain Lua
+-- lists. Hands evolve through play (cards leave them as tricks resolve),
+-- so it is the calling layer's job to manage immutability via
+-- update-and-replace rather than the engine locking the lists down. The
+-- input deck is never mutated.
 
 local card = require("core.card")
 local rule_config = require("core.rule_config")
@@ -40,8 +44,6 @@ local rule_config = require("core.rule_config")
 local M = {}
 
 local EXPECTED_DECK_SIZE = 24
-local SUPPORTED_PLAYER_COUNT = 3
-local SUPPORTED_TALON_SIZE = 3
 
 local SUIT_SET = {}
 for _, suit in ipairs(card.SUITS) do
@@ -52,23 +54,6 @@ local RANK_SET = {}
 for _, rank in ipairs(card.RANKS) do
     RANK_SET[rank] = true
 end
-
--- The deal pattern as a flat schedule. Reading top-to-bottom, the dealer
--- hands chunks of cards either to the next player in rotation (`to =
--- "player"`) or to the talon (`to = "talon"`). Sizes sum to 24.
-local DEAL_SCHEDULE = {
-    { to = "player", size = 3 },
-    { to = "player", size = 3 },
-    { to = "player", size = 3 },
-    { to = "talon", size = 2 },
-    { to = "player", size = 2 },
-    { to = "player", size = 2 },
-    { to = "player", size = 2 },
-    { to = "talon", size = 1 },
-    { to = "player", size = 2 },
-    { to = "player", size = 2 },
-    { to = "player", size = 2 },
-}
 
 local function failure(code, message, extra)
     local err = { code = code, message = message }
@@ -122,26 +107,223 @@ local function validate_deck(deck)
     return nil
 end
 
-function M.deal(deck, config)
+-- Resolve the deal recipe for the given config. Returns either
+--   { ok = true, recipe = { schedule, hand_size, talon_size, stock_size,
+--                           active_seats, sits_out } }
+-- or a typed failure for shapes the dealer does not yet support.
+--
+-- `active_seats` is the ordered list of seats the schedule cycles
+-- through; `sits_out` is the seat (if any) that stays at zero cards
+-- because they are dealing and the variant excludes them. Both depend
+-- on `dealer` so the caller passes it in via `opts`.
+local function resolve_recipe(config, dealer)
+    local count = config.players.count
+    local talon_size = config.talon.size
+
+    local function active_seats_skipping(skip)
+        local list = {}
+        local seat = (skip % count) + 1
+        for _ = 1, count - 1 do
+            list[#list + 1] = seat
+            seat = (seat % count) + 1
+        end
+        return list
+    end
+
+    local function active_seats_all()
+        local list = {}
+        for i = 1, count do
+            list[i] = i
+        end
+        return list
+    end
+
+    if count == 3 and talon_size == 3 then
+        return {
+            ok = true,
+            recipe = {
+                schedule = {
+                    { to = "player", size = 3 },
+                    { to = "player", size = 3 },
+                    { to = "player", size = 3 },
+                    { to = "talon", size = 2 },
+                    { to = "player", size = 2 },
+                    { to = "player", size = 2 },
+                    { to = "player", size = 2 },
+                    { to = "talon", size = 1 },
+                    { to = "player", size = 2 },
+                    { to = "player", size = 2 },
+                    { to = "player", size = 2 },
+                },
+                hand_size = 7,
+                talon_size = 3,
+                stock_size = 0,
+                active_seats = active_seats_all(),
+                sits_out = nil,
+            },
+        }
+    end
+
+    if count == 4 and talon_size == 0 then
+        if config.players.four_player_config ~= "dealer_plays_no_talon" then
+            return failure(
+                "unsupported_four_player_config",
+                "4-player no-talon dealing requires four_player_config = 'dealer_plays_no_talon'",
+                { four_player_config = config.players.four_player_config }
+            )
+        end
+        return {
+            ok = true,
+            recipe = {
+                schedule = {
+                    { to = "player", size = 3 },
+                    { to = "player", size = 3 },
+                    { to = "player", size = 3 },
+                    { to = "player", size = 3 },
+                    { to = "player", size = 3 },
+                    { to = "player", size = 3 },
+                    { to = "player", size = 3 },
+                    { to = "player", size = 3 },
+                },
+                hand_size = 6,
+                talon_size = 0,
+                stock_size = 0,
+                active_seats = active_seats_all(),
+                sits_out = nil,
+            },
+        }
+    end
+
+    if count == 4 and talon_size == 3 then
+        if config.players.four_player_config ~= "dealer_sits_out" then
+            return failure(
+                "unsupported_four_player_config",
+                "4-player 3-card-talon dealing requires four_player_config = 'dealer_sits_out'",
+                { four_player_config = config.players.four_player_config }
+            )
+        end
+        return {
+            ok = true,
+            recipe = {
+                schedule = {
+                    { to = "player", size = 3 },
+                    { to = "player", size = 3 },
+                    { to = "player", size = 3 },
+                    { to = "talon", size = 2 },
+                    { to = "player", size = 2 },
+                    { to = "player", size = 2 },
+                    { to = "player", size = 2 },
+                    { to = "talon", size = 1 },
+                    { to = "player", size = 2 },
+                    { to = "player", size = 2 },
+                    { to = "player", size = 2 },
+                },
+                hand_size = 7,
+                talon_size = 3,
+                stock_size = 0,
+                active_seats = active_seats_skipping(dealer),
+                sits_out = dealer,
+            },
+        }
+    end
+
+    if count == 2 and talon_size == 3 then
+        if config.players.two_player_config ~= "fixed_deal_no_draw" then
+            return failure(
+                "unsupported_two_player_config",
+                "2-player 3-card-talon dealing requires two_player_config = 'fixed_deal_no_draw'",
+                { two_player_config = config.players.two_player_config }
+            )
+        end
+        return {
+            ok = true,
+            recipe = {
+                schedule = {
+                    { to = "player", size = 3 },
+                    { to = "player", size = 3 },
+                    { to = "talon", size = 2 },
+                    { to = "player", size = 2 },
+                    { to = "player", size = 2 },
+                    { to = "talon", size = 1 },
+                    { to = "player", size = 2 },
+                    { to = "player", size = 2 },
+                },
+                hand_size = 7,
+                talon_size = 3,
+                stock_size = 0,
+                active_seats = active_seats_all(),
+                sits_out = nil,
+            },
+        }
+    end
+
+    if count == 2 and talon_size == 0 then
+        if config.players.two_player_config ~= "closed_talon_draw_stock" then
+            return failure(
+                "unsupported_two_player_config",
+                "2-player no-talon dealing requires two_player_config = 'closed_talon_draw_stock'",
+                { two_player_config = config.players.two_player_config }
+            )
+        end
+        return {
+            ok = true,
+            recipe = {
+                schedule = {
+                    { to = "player", size = 3 },
+                    { to = "player", size = 3 },
+                    { to = "player", size = 3 },
+                    { to = "player", size = 3 },
+                    { to = "player", size = 3 },
+                    { to = "player", size = 3 },
+                    { to = "stock", size = 6 },
+                },
+                hand_size = 9,
+                talon_size = 0,
+                stock_size = 6,
+                active_seats = active_seats_all(),
+                sits_out = nil,
+            },
+        }
+    end
+
+    -- Catch-alls. Polish (count 3, talon 2) lands here today; the
+    -- talon-variants gameplay task in Phase 3.6 lifts this guard.
+    if talon_size ~= 0 and talon_size ~= 3 then
+        return failure(
+            "unsupported_talon_size",
+            "dealer supports only 0- and 3-card talons in the active layout",
+            { talon_size = talon_size, player_count = count }
+        )
+    end
+    return failure(
+        "unsupported_player_count",
+        "dealer does not yet support this player_count / talon.size combination",
+        { player_count = count, talon_size = talon_size }
+    )
+end
+
+function M.deal(deck, config, opts)
     if not rule_config.is_rule_config(config) then
         return failure("not_a_rule_config", "deal requires a RuleConfig", {
             actual = type(config),
         })
     end
-    if config.players.count ~= SUPPORTED_PLAYER_COUNT then
-        return failure(
-            "unsupported_player_count",
-            "Phase 1 dealer supports only 3-player Thousand",
-            { player_count = config.players.count }
-        )
+
+    opts = opts or {}
+    local dealer = opts.dealer or 1
+    local count = config.players.count
+    if type(dealer) ~= "number" or dealer ~= math.floor(dealer) or dealer < 1 or dealer > count then
+        return failure("bad_dealer_position", "dealer must be an integer in 1.." .. count, {
+            actual = dealer,
+            player_count = count,
+        })
     end
-    if config.talon.size ~= SUPPORTED_TALON_SIZE then
-        return failure(
-            "unsupported_talon_size",
-            "Phase 1 dealer supports only a 3-card talon",
-            { talon_size = config.talon.size }
-        )
+
+    local recipe_result = resolve_recipe(config, dealer)
+    if not recipe_result.ok then
+        return recipe_result
     end
+    local recipe = recipe_result.recipe
 
     local deck_error = validate_deck(deck)
     if deck_error then
@@ -149,30 +331,53 @@ function M.deal(deck, config)
     end
 
     local hands = {}
-    for i = 1, SUPPORTED_PLAYER_COUNT do
+    for i = 1, count do
         hands[i] = {}
     end
     local talon = {}
+    local stock = {}
 
     local idx = 1
-    local current_player = 1
-    for _, chunk in ipairs(DEAL_SCHEDULE) do
+    local cursor = 1
+    local active = recipe.active_seats
+    for _, chunk in ipairs(recipe.schedule) do
         if chunk.to == "player" then
-            local hand = hands[current_player]
+            local seat = active[cursor]
+            local hand = hands[seat]
             for _ = 1, chunk.size do
                 hand[#hand + 1] = deck[idx]
                 idx = idx + 1
             end
-            current_player = current_player % SUPPORTED_PLAYER_COUNT + 1
-        else
+            cursor = (cursor % #active) + 1
+        elseif chunk.to == "talon" then
             for _ = 1, chunk.size do
                 talon[#talon + 1] = deck[idx]
+                idx = idx + 1
+            end
+        elseif chunk.to == "stock" then
+            for _ = 1, chunk.size do
+                stock[#stock + 1] = deck[idx]
                 idx = idx + 1
             end
         end
     end
 
-    return { ok = true, hands = hands, talon = talon }
+    local result = {
+        ok = true,
+        hands = hands,
+        talon = talon,
+        sits_out = recipe.sits_out,
+        hand_size = recipe.hand_size,
+    }
+    if recipe.stock_size > 0 then
+        result.stock = stock
+        -- The bottom card of the stock is the trump indicator in
+        -- 2-player Variant A. The Schnapsen convention: bottom card is
+        -- the last card drawn, exposed face-up from the start of the
+        -- deal so both players know the trump suit before bidding.
+        result.trump_indicator = stock[#stock]
+    end
+    return result
 end
 
 return M

@@ -132,35 +132,37 @@ local SCHEMA = {
                 status = "selectable",
             },
             -- Partnership applies only to the 4-player table (see
-            -- docs/variations/four-player.md). Locked to "none" until the
-            -- 4-player engine path lands.
+            -- docs/variations/four-player.md). Phase 3.6 flipped this to
+            -- selectable: 4-player builtins set it to "fixed_across_table"
+            -- and the engine pools partner scores.
             partnership_mode = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "none", "fixed_across_table" },
                 default = "none",
-                status = "deferred",
+                status = "selectable",
             },
             -- 4-player seating layout (see docs/variations/four-player.md).
             -- "dealer_plays_no_talon" is Configuration A, the docs' reference;
-            -- "dealer_sits_out" is Configuration B.
+            -- "dealer_sits_out" is Configuration B. Phase 3.6 flipped this
+            -- to selectable; both values run end-to-end.
             four_player_config = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "dealer_plays_no_talon", "dealer_sits_out" },
                 default = "dealer_plays_no_talon",
-                status = "deferred",
+                status = "selectable",
             },
             -- 2-player layout (see docs/variations/two-player.md).
             -- "closed_talon_draw_stock" is Variant A (Schnapsen-style draw);
             -- "fixed_deal_no_draw" is Variant B (8 tricks, identical pattern
-            -- to the 3-player game).
+            -- to the 3-player game). Phase 3.6 flipped this to selectable.
             two_player_config = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "closed_talon_draw_stock", "fixed_deal_no_draw" },
                 default = "closed_talon_draw_stock",
-                status = "deferred",
+                status = "selectable",
             },
         },
     },
@@ -1289,11 +1291,9 @@ local INVARIANTS = {
             }
         end,
     },
-    -- Silent under the production schema today: partnership_mode is
-    -- deferred, so deferred_field_changed short-circuits any non-default
-    -- attempt before this predicate runs. The invariant lives here so the
-    -- task that flips partnership_mode to "selectable" gets the constraint
-    -- for free. See docs/variations/four-player.md.
+    -- Phase 3.6 flipped partnership_mode to selectable; the invariant
+    -- lives here so 4-player partnerships are the only legal place for
+    -- "fixed_across_table". See docs/variations/four-player.md.
     {
         name = "partnership_mode_requires_four_players",
         predicate = function(blob)
@@ -1303,6 +1303,91 @@ local INVARIANTS = {
             return {
                 partnership_mode = blob.players.partnership_mode,
                 count = blob.players.count,
+            }
+        end,
+    },
+    -- Configuration A is "no talon, 6 cards each" by spec — flag a
+    -- talon.size mismatch loudly rather than dealing nonsense at
+    -- runtime. See docs/variations/four-player.md "Configuration A".
+    {
+        name = "four_player_a_requires_no_talon",
+        predicate = function(blob)
+            if blob.players.count ~= 4 then
+                return true
+            end
+            if blob.players.four_player_config ~= "dealer_plays_no_talon" then
+                return true
+            end
+            return blob.talon.size == 0
+        end,
+        context = function(blob)
+            return {
+                four_player_config = blob.players.four_player_config,
+                talon_size = blob.talon.size,
+            }
+        end,
+    },
+    -- Configuration B is "dealer sits out, otherwise standard 3-player"
+    -- — must keep the canonical 3-card talon. See
+    -- docs/variations/four-player.md "Configuration B".
+    {
+        name = "four_player_b_requires_three_card_talon",
+        predicate = function(blob)
+            if blob.players.count ~= 4 then
+                return true
+            end
+            if blob.players.four_player_config ~= "dealer_sits_out" then
+                return true
+            end
+            return blob.talon.size == 3
+        end,
+        context = function(blob)
+            return {
+                four_player_config = blob.players.four_player_config,
+                talon_size = blob.talon.size,
+            }
+        end,
+    },
+    -- Variant A's 6-card stock is dealt separately from any traditional
+    -- talon — the schema's talon.size is 0 in this layout. The stock
+    -- itself is fixed at 6 cards (24 - 9 - 9). See
+    -- docs/variations/two-player.md "Variant A".
+    {
+        name = "two_player_a_requires_no_talon",
+        predicate = function(blob)
+            if blob.players.count ~= 2 then
+                return true
+            end
+            if blob.players.two_player_config ~= "closed_talon_draw_stock" then
+                return true
+            end
+            return blob.talon.size == 0
+        end,
+        context = function(blob)
+            return {
+                two_player_config = blob.players.two_player_config,
+                talon_size = blob.talon.size,
+            }
+        end,
+    },
+    -- Variant B keeps the canonical 3-card talon (declarer takes, passes
+    -- one to the opponent, discards one to the captured pile). See
+    -- docs/variations/two-player.md "Variant B".
+    {
+        name = "two_player_b_requires_three_card_talon",
+        predicate = function(blob)
+            if blob.players.count ~= 2 then
+                return true
+            end
+            if blob.players.two_player_config ~= "fixed_deal_no_draw" then
+                return true
+            end
+            return blob.talon.size == 3
+        end,
+        context = function(blob)
+            return {
+                two_player_config = blob.players.two_player_config,
+                talon_size = blob.talon.size,
             }
         end,
     },
@@ -1989,51 +2074,56 @@ M.builtins = {
     })),
 
     -- Two-player Variant A — closed talon, draw stock
-    -- (docs/variations/two-player.md). The 6-card draw stock is not yet
-    -- representable in the Phase 3.2 schema (talon.size's `allowed`
-    -- set is {0, 2, 3}); a sibling `talon.draw_stock_size` field will
-    -- arrive with the gameplay implementation in Phase 3.6's
-    -- "Implement talon variants" task. Until then the template uses
-    -- the closest selectable shape (size = 2) and stays at the
-    -- deferred `players.two_player_config = "closed_talon_draw_stock"`
-    -- default that already names this variant.
+    -- (docs/variations/two-player.md). The 6-card stock is dealt
+    -- separately from any traditional talon, so `talon.size = 0`; the
+    -- draw mechanic and trump-from-stock-bottom rule live in the
+    -- engine's two-player path keyed off
+    -- `players.two_player_config = "closed_talon_draw_stock"`.
     two_player_a = M.new(with_overrides(canonical_russian_blob(), {
-        players = { count = 2 },
-        talon = { size = 2 },
+        players = {
+            count = 2,
+            two_player_config = "closed_talon_draw_stock",
+        },
+        talon = { size = 0 },
     })),
 
     -- Two-player Variant B — fixed deal, no draw, 7-card hands and the
-    -- standard 3-card talon (docs/variations/two-player.md). The
-    -- selector `players.two_player_config = "fixed_deal_no_draw"` is
-    -- still deferred in the Phase 3.2 schema; Phase 3.6's
-    -- "Implement players and seating gameplay" task flips it to
-    -- selectable and the template will be updated then.
+    -- standard 3-card talon (docs/variations/two-player.md). Declarer
+    -- takes the 3-card talon, passes 1 to the opponent face-down, and
+    -- discards 1 to the captured pile to reach 8/8 before the first
+    -- trick.
     two_player_b = M.new(with_overrides(canonical_russian_blob(), {
-        players = { count = 2 },
+        players = {
+            count = 2,
+            two_player_config = "fixed_deal_no_draw",
+        },
     })),
 
-    -- Four-player Variant A — dealer plays, no talon, 6 cards each
-    -- (docs/variations/four-player.md). Setting `talon.size = 0`
-    -- already reflects the no-talon shape; the deferred
-    -- `players.four_player_config = "dealer_plays_no_talon"` default
-    -- already names this variant. Hand size and trick count fall out
-    -- of the player count once dealing/tricks support 4 players, which
-    -- lands in Phase 3.6's "Implement players and seating gameplay"
-    -- task.
+    -- Four-player Variant A — dealer plays, no talon, 6 cards each;
+    -- played in fixed across-the-table partnerships
+    -- (docs/variations/four-player.md). `talon.size = 0` reflects the
+    -- no-talon shape; `partnership_mode = "fixed_across_table"` pools
+    -- partner scores at deal-end.
     four_player_a = M.new(with_overrides(canonical_russian_blob(), {
-        players = { count = 4 },
+        players = {
+            count = 4,
+            four_player_config = "dealer_plays_no_talon",
+            partnership_mode = "fixed_across_table",
+        },
         talon = { size = 0 },
     })),
 
     -- Four-player Variant B — dealer sits out, otherwise standard
-    -- 3-player rules (docs/variations/four-player.md). The selector
-    -- `players.four_player_config = "dealer_sits_out"` is still
-    -- deferred in the Phase 3.2 schema; Phase 3.6's "Implement
-    -- players and seating gameplay" task flips it to selectable and
-    -- the template will be updated then. The standard 3-card talon is
-    -- preserved here so the 3-active-seats deal pattern carries over.
+    -- 3-player rules; played in fixed across-the-table partnerships
+    -- (docs/variations/four-player.md). The dealer's seat is inactive
+    -- for the deal; the three remaining seats run the canonical 3-card
+    -- talon flow but the dealer's partner still pools captured points.
     four_player_b = M.new(with_overrides(canonical_russian_blob(), {
-        players = { count = 4 },
+        players = {
+            count = 4,
+            four_player_config = "dealer_sits_out",
+            partnership_mode = "fixed_across_table",
+        },
     })),
 }
 

@@ -691,4 +691,42 @@ describe("core.auction", function()
             assert.is_true(accepted.ok)
         end)
     end)
+
+    describe("4-player Configuration B (dealer sits out)", function()
+        local sits_out_config = rule_config.builtins.four_player_b
+
+        it("marks the dealer as sits_out and pre-passes them", function()
+            local result = auction.new(sits_out_config, 2)
+            assert.is_true(result.ok)
+            local a = result.auction
+            assert.are.equal(2, a.sits_out)
+            assert.is_true(a.passed[2])
+            assert.are.equal(1, a.pass_count)
+            -- Forehand is the seat clockwise from the dealer.
+            assert.are.equal(3, a.forehand)
+            assert.are.equal(3, a.turn)
+        end)
+
+        it("never lands a turn on the sitting-out seat", function()
+            local a = auction.new(sits_out_config, 2).auction
+            -- Forehand bids; rest of cycle should skip dealer = 2.
+            a = auction.bid(a, 3, 100).auction
+            assert.are.equal(4, a.turn)
+            a = auction.bid(a, 4, 105).auction
+            assert.are.equal(1, a.turn)
+            a = auction.bid(a, 1, 110).auction
+            -- Clockwise next would be 2, but 2 sits out — wrap to 3.
+            assert.are.equal(3, a.turn)
+        end)
+
+        it("terminates after two active passes (dealer pre-pass plus two more)", function()
+            local a = auction.new(sits_out_config, 2).auction
+            a = auction.bid(a, 3, 100).auction
+            a = auction.pass(a, 4).auction
+            a = auction.pass(a, 1).auction
+            assert.are.equal("done", a.status)
+            assert.are.equal(3, a.declarer)
+            assert.are.equal(100, a.final_bid)
+        end)
+    end)
 end)

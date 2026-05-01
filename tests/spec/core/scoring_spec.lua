@@ -1291,4 +1291,63 @@ describe("core.scoring", function()
             assert.are_not.equal(opts.barrel_state_before[1], g.barrel_state[1])
         end)
     end)
+
+    describe("partnership_mode = fixed_across_table", function()
+        local partnership_config = rule_config.builtins.four_player_b
+
+        it("pools captured points and bonuses by side for the contract check", function()
+            -- Declarer is seat 1 (side 1). Side 1 deal-pool is 50 + 20 =
+            -- 70 captured points. Bid is 100. The pool falls short →
+            -- contract failed.
+            local result = scoring.score_deal(partnership_config, {
+                declarer = 1,
+                bid = 100,
+                captured_points = { 50, 30, 20, 20 },
+                marriage_bonuses = { 0, 0, 0, 0 },
+                running_totals = { 0, 0, 0, 0 },
+            })
+            assert.is_true(result.ok)
+            local s = result.scoring
+            assert.is_table(s.sides)
+            assert.are.equal(1, s.sides[1])
+            assert.are.equal(2, s.sides[2])
+            assert.are.equal(70, s.side_deal_scores[1])
+            assert.are.equal(50, s.side_deal_scores[2])
+            assert.is_false(s.made_contract)
+            assert.are.equal(-100, s.deltas[1])
+            assert.are.equal(0, s.deltas[3]) -- partner contributes 0 at the seat level
+        end)
+
+        it("credits the side with +bid when the partnership pool meets the bid", function()
+            -- Side 1 pool = 60 + 60 = 120 ≥ 100. Contract made.
+            local result = scoring.score_deal(partnership_config, {
+                declarer = 1,
+                bid = 100,
+                captured_points = { 60, 0, 60, 0 },
+                marriage_bonuses = { 0, 0, 0, 0 },
+                running_totals = { 0, 0, 0, 0 },
+            })
+            assert.is_true(result.ok)
+            local s = result.scoring
+            assert.is_true(s.made_contract)
+            assert.are.equal(100, s.deltas[1])
+            assert.are.equal(0, s.deltas[3])
+            assert.are.equal(100, s.side_deltas[1])
+        end)
+
+        it("propagates side-level barrel and winner through advance_game", function()
+            local g = scoring.advance_game(partnership_config, {
+                declarer = 1,
+                deal_index = 1,
+                deltas = { 100, 0, 0, 0 },
+                running_totals_before = { 900, 900, 900, 900 },
+                barrel_state_before = scoring.initial_barrel_state(partnership_config),
+            }).game
+            assert.is_table(g.sides)
+            assert.are.equal(1, g.winning_side)
+            assert.are.equal(1, g.winner)
+            -- Partner seats end the deal at the same side total.
+            assert.are.equal(g.running_totals[1], g.running_totals[3])
+        end)
+    end)
 end)

@@ -310,38 +310,225 @@ describe("core.rule_config builtins (engine integration)", function()
     end)
 
     describe("two_player_a", function()
-        it("is rejected by the Phase 1 dealer because count = 2 is not yet supported", function()
-            local result = dealing.deal(deck_module.build(), rule_config.builtins.two_player_a)
-            assert.is_false(result.ok)
-            assert.are.equal("unsupported_player_count", result.error.code)
-            assert.are.equal(2, result.error.player_count)
+        it("deals 9-card hands and a 6-card stock with a face-up trump indicator", function()
+            local result =
+                dealing.deal(build_deck(42), rule_config.builtins.two_player_a, { dealer = 1 })
+            assert.is_true(result.ok)
+            assert.are.equal(2, #result.hands)
+            assert.are.equal(9, #result.hands[1])
+            assert.are.equal(9, #result.hands[2])
+            assert.are.equal(0, #result.talon)
+            assert.is_table(result.stock)
+            assert.are.equal(6, #result.stock)
+            assert.is_table(result.trump_indicator)
+            assert.are.equal(result.stock[#result.stock], result.trump_indicator)
+        end)
+
+        it("plays a scripted full deal with stock-driven draws", function()
+            local config = rule_config.builtins.two_player_a
+            local deal_result = dealing.deal(build_deck(42), config, { dealer = 1 })
+            assert.is_true(deal_result.ok)
+
+            local a = auction_module.new(config, 1).auction
+            -- Forehand bids opening_min, dealer passes — auction ends.
+            a = auction_module.bid(a, 2, config.bidding.opening_min).auction
+            a = auction_module.pass(a, 1).auction
+            assert.are.equal("done", a.status)
+            assert.are.equal(2, a.declarer)
+
+            -- 2-player A skips the talon flow entirely; the stock is
+            -- consumed during tricks, and trump comes from the
+            -- indicator's suit.
+            local trump_suit = deal_result.trump_indicator.suit
+            local s = tricks_module.new(config, deal_result.hands, a.declarer, {
+                trump = trump_suit,
+                stock = deal_result.stock,
+                trump_indicator = deal_result.trump_indicator,
+            }).tricks
+            assert.are.equal("draw", s.phase)
+            assert.are.equal(12, s.tricks_per_deal)
+
+            while s.status == "in_progress" do
+                local p = s.next_to_play
+                local choice = tricks_module.legal_cards(s, p).cards[1]
+                s = tricks_module.play(s, p, choice).tricks
+            end
+            assert.are.equal("done", s.status)
+            assert.are.equal(12, s.tricks_played)
+            assert.are.equal(0, #s.stock)
+            assert.are.equal("strict", s.phase)
         end)
     end)
 
     describe("two_player_b", function()
-        it("is rejected by the Phase 1 dealer because count = 2 is not yet supported", function()
-            local result = dealing.deal(deck_module.build(), rule_config.builtins.two_player_b)
-            assert.is_false(result.ok)
-            assert.are.equal("unsupported_player_count", result.error.code)
-            assert.are.equal(2, result.error.player_count)
+        it("deals 7-card hands and a 3-card talon (with 7 cards unused)", function()
+            local result =
+                dealing.deal(build_deck(42), rule_config.builtins.two_player_b, { dealer = 1 })
+            assert.is_true(result.ok)
+            assert.are.equal(2, #result.hands)
+            assert.are.equal(7, #result.hands[1])
+            assert.are.equal(7, #result.hands[2])
+            assert.are.equal(3, #result.talon)
+            assert.is_nil(result.stock)
+        end)
+
+        it("plays a scripted full deal with declarer take/pass/discard", function()
+            local config = rule_config.builtins.two_player_b
+            local deal_result = dealing.deal(build_deck(42), config, { dealer = 1 })
+            assert.is_true(deal_result.ok)
+
+            local a = auction_module.new(config, 1).auction
+            a = auction_module.bid(a, 2, config.bidding.opening_min).auction
+            a = auction_module.pass(a, 1).auction
+            assert.are.equal("done", a.status)
+
+            local t = talon_module.new(config, a, deal_result.hands, deal_result.talon).talon
+            t = talon_module.take(t).talon
+            -- One pass to the single opponent, then discard.
+            local pass_card = t.hands[a.declarer][1]
+            t = talon_module.pass(t, 1, pass_card).talon
+            assert.are.equal("awaiting_discard", t.status)
+            local discard_card = t.hands[a.declarer][1]
+            t = talon_module.discard(t, discard_card).talon
+            assert.are.equal("awaiting_raise", t.status)
+            t = talon_module.skip_raise(t).talon
+            assert.are.equal("done", t.status)
+            assert.are.equal(8, #t.hands[a.declarer])
+            assert.are.equal(8, #t.hands[1])
+
+            local s = tricks_module.new(config, t.hands, a.declarer).tricks
+            assert.are.equal(8, s.tricks_per_deal)
+            while s.status == "in_progress" do
+                local p = s.next_to_play
+                local choice = tricks_module.legal_cards(s, p).cards[1]
+                s = tricks_module.play(s, p, choice).tricks
+            end
+            assert.are.equal("done", s.status)
+            assert.are.equal(8, s.tricks_played)
         end)
     end)
 
     describe("four_player_a", function()
-        it("is rejected by the Phase 1 dealer because count = 4 is not yet supported", function()
-            local result = dealing.deal(deck_module.build(), rule_config.builtins.four_player_a)
-            assert.is_false(result.ok)
-            assert.are.equal("unsupported_player_count", result.error.code)
-            assert.are.equal(4, result.error.player_count)
+        it("deals 6-card hands to all four seats with no talon", function()
+            local result =
+                dealing.deal(build_deck(42), rule_config.builtins.four_player_a, { dealer = 1 })
+            assert.is_true(result.ok)
+            assert.are.equal(4, #result.hands)
+            for i = 1, 4 do
+                assert.are.equal(6, #result.hands[i])
+            end
+            assert.are.equal(0, #result.talon)
+        end)
+
+        it("plays a scripted full deal with partnership pooling", function()
+            local config = rule_config.builtins.four_player_a
+            local deal_result = dealing.deal(build_deck(42), config, { dealer = 1 })
+            assert.is_true(deal_result.ok)
+
+            local a = auction_module.new(config, 1).auction
+            a = auction_module.bid(a, 2, config.bidding.opening_min).auction
+            a = auction_module.pass(a, 3).auction
+            a = auction_module.pass(a, 4).auction
+            a = auction_module.pass(a, 1).auction
+            assert.are.equal("done", a.status)
+
+            -- 4-player A skips talon (size 0); declarer leads first
+            -- trick directly.
+            local s = tricks_module.new(config, deal_result.hands, a.declarer).tricks
+            assert.are.equal(6, s.tricks_per_deal)
+            assert.is_table(s.partnership_sides)
+            assert.are.equal(1, s.partnership_sides[1])
+            assert.are.equal(2, s.partnership_sides[2])
+            assert.are.equal(1, s.partnership_sides[3])
+            assert.are.equal(2, s.partnership_sides[4])
+
+            while s.status == "in_progress" do
+                local p = s.next_to_play
+                local choice = tricks_module.legal_cards(s, p).cards[1]
+                s = tricks_module.play(s, p, choice).tricks
+            end
+            assert.are.equal("done", s.status)
+            assert.are.equal(6, s.tricks_played)
+
+            local m = marriages_module.new(config).marriages
+            local sd = scoring.score_deal(config, {
+                declarer = a.declarer,
+                bid = a.final_bid,
+                captured_points = s.captured_points,
+                marriage_bonuses = m.bonuses,
+                running_totals = { 0, 0, 0, 0 },
+            }).scoring
+            assert.is_table(sd.sides)
+            assert.is_table(sd.side_deal_scores)
+            assert.are.equal(2, #sd.side_deal_scores)
         end)
     end)
 
     describe("four_player_b", function()
-        it("is rejected by the Phase 1 dealer because count = 4 is not yet supported", function()
-            local result = dealing.deal(deck_module.build(), rule_config.builtins.four_player_b)
-            assert.is_false(result.ok)
-            assert.are.equal("unsupported_player_count", result.error.code)
-            assert.are.equal(4, result.error.player_count)
+        it("deals 7-card hands to the three non-dealer seats and 3-card talon", function()
+            local result =
+                dealing.deal(build_deck(42), rule_config.builtins.four_player_b, { dealer = 2 })
+            assert.is_true(result.ok)
+            assert.are.equal(4, #result.hands)
+            -- Dealer = 2 sits out this deal.
+            assert.are.equal(0, #result.hands[2])
+            assert.are.equal(7, #result.hands[1])
+            assert.are.equal(7, #result.hands[3])
+            assert.are.equal(7, #result.hands[4])
+            assert.are.equal(3, #result.talon)
+            assert.are.equal(2, result.sits_out)
+        end)
+
+        it("plays a scripted full deal with the dealer sitting out", function()
+            local config = rule_config.builtins.four_player_b
+            local deal_result = dealing.deal(build_deck(42), config, { dealer = 2 })
+            assert.is_true(deal_result.ok)
+
+            local a = auction_module.new(config, 2).auction
+            assert.are.equal(2, a.sits_out)
+            a = auction_module.bid(a, 3, config.bidding.opening_min).auction
+            a = auction_module.pass(a, 4).auction
+            a = auction_module.pass(a, 1).auction
+            assert.are.equal("done", a.status)
+            assert.are.equal(3, a.declarer)
+
+            local t = talon_module.new(config, a, deal_result.hands, deal_result.talon).talon
+            t = talon_module.take(t).talon
+            -- Pass to the two non-dealer opponents (skip seat 2).
+            local first_target
+            for seat = 1, 4 do
+                if seat ~= a.declarer and seat ~= 2 then
+                    first_target = seat
+                    break
+                end
+            end
+            local pass1 = t.hands[a.declarer][1]
+            t = talon_module.pass(t, first_target, pass1).talon
+            local second_target
+            for seat = 1, 4 do
+                if seat ~= a.declarer and seat ~= 2 and seat ~= first_target then
+                    second_target = seat
+                    break
+                end
+            end
+            local pass2 = t.hands[a.declarer][1]
+            t = talon_module.pass(t, second_target, pass2).talon
+            assert.are.equal("awaiting_raise", t.status)
+            t = talon_module.skip_raise(t).talon
+
+            local s = tricks_module.new(config, t.hands, a.declarer, { dealer = 2 }).tricks
+            assert.are.equal(2, s.sits_out)
+            assert.are.equal(8, s.tricks_per_deal)
+            while s.status == "in_progress" do
+                local p = s.next_to_play
+                local choice = tricks_module.legal_cards(s, p).cards[1]
+                s = tricks_module.play(s, p, choice).tricks
+            end
+            assert.are.equal("done", s.status)
+            assert.are.equal(8, s.tricks_played)
+            -- The sitting-out seat never won a trick or captured points.
+            assert.are.equal(0, s.captured_points[2])
+            assert.are.equal(0, s.tricks_won[2])
         end)
     end)
 end)

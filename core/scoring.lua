@@ -210,12 +210,42 @@ function M.score_deal(config, opts)
         deal_scores[i] = card_points_rounded[i] + opts.marriage_bonuses[i]
     end
 
-    local made_contract = deal_scores[declarer] >= bid
+    local partnership_mode = config.players.partnership_mode
+    local sides
+    local side_of_seat
+    if partnership_mode == "fixed_across_table" and player_count == 4 then
+        side_of_seat = function(seat)
+            return ((seat - 1) % 2) + 1
+        end
+        sides = { side_of_seat(1), side_of_seat(2), side_of_seat(3), side_of_seat(4) }
+    end
 
+    local made_contract
+    local side_deal_scores
+    local declarer_side
+    if sides then
+        side_deal_scores = { 0, 0 }
+        for i = 1, player_count do
+            local s = sides[i]
+            side_deal_scores[s] = side_deal_scores[s] + deal_scores[i]
+        end
+        declarer_side = sides[declarer]
+        made_contract = side_deal_scores[declarer_side] >= bid
+    else
+        made_contract = deal_scores[declarer] >= bid
+    end
+
+    -- Per-seat deltas. Partnership accounting credits the contract delta
+    -- to the declarer's seat alone (the partner contributes 0 at the seat
+    -- level); the side total is derived by summing the partner pair so
+    -- the declarer's seat carries the +/-bid and the partner's pooled
+    -- capture is dropped (the bid replaces it for the side).
     local deltas = {}
     for i = 1, player_count do
         if i == declarer then
             deltas[i] = made_contract and bid or -bid
+        elseif sides and sides[i] == declarer_side then
+            deltas[i] = 0
         else
             deltas[i] = deal_scores[i]
         end
@@ -224,6 +254,25 @@ function M.score_deal(config, opts)
     local running_totals_after = {}
     for i = 1, player_count do
         running_totals_after[i] = opts.running_totals[i] + deltas[i]
+    end
+
+    -- Side-level aggregates for partnership variants. The UI uses these
+    -- to render a pooled-side row alongside per-seat scoreboard entries.
+    local side_running_totals_before
+    local side_running_totals_after
+    local side_deltas
+    if sides then
+        side_running_totals_before = { 0, 0 }
+        side_deltas = { 0, 0 }
+        for i = 1, player_count do
+            local s = sides[i]
+            side_running_totals_before[s] = side_running_totals_before[s] + opts.running_totals[i]
+            side_deltas[s] = side_deltas[s] + deltas[i]
+        end
+        side_running_totals_after = {
+            side_running_totals_before[1] + side_deltas[1],
+            side_running_totals_before[2] + side_deltas[2],
+        }
     end
 
     local state = tag_as_scoring({
@@ -239,6 +288,12 @@ function M.score_deal(config, opts)
         deltas = deltas,
         running_totals_before = copy_int_list(opts.running_totals, player_count),
         running_totals = running_totals_after,
+        partnership_mode = partnership_mode,
+        sides = sides,
+        side_deal_scores = side_deal_scores,
+        side_deltas = side_deltas,
+        side_running_totals_before = side_running_totals_before,
+        side_running_totals = side_running_totals_after,
     })
     return { ok = true, scoring = state }
 end
@@ -332,6 +387,13 @@ function M.initial_barrel_state(config)
     return state
 end
 
+local function partnership_sides(config)
+    if config.players.partnership_mode == "fixed_across_table" and config.players.count == 4 then
+        return { 1, 2, 1, 2 }
+    end
+    return nil
+end
+
 -- Apply one deal's per-player deltas against the running game-level
 -- state, honouring the barrel rules. The output is a fresh, type-tagged
 -- state; the input is never mutated.
@@ -387,26 +449,82 @@ function M.advance_game(config, opts)
         return barrel_err
     end
 
+    local sides = partnership_sides(config)
+
     local running_totals = {}
     local barrel_state = {}
 
-    for i = 1, player_count do
-        local before_total = opts.running_totals_before[i]
-        local before_entry = opts.barrel_state_before[i]
-        local delta = opts.deltas[i]
+    -- Reduce the per-seat → per-side mapping so the barrel/threshold
+    -- rules apply at the side level. Each seat in a side ends the deal
+    -- with its side's running total and barrel entry, so per-seat
+    -- callers (UI, save format, legacy specs) keep working unchanged.
+    local function indices_for(unit)
+        if not sides then
+            return { unit }
+        end
+        local list = {}
+        for i = 1, player_count do
+            if sides[i] == unit then
+                list[#list + 1] = i
+            end
+        end
+        return list
+    end
+
+    local unit_count
+    if sides then
+        unit_count = 2
+    else
+        unit_count = player_count
+    end
+
+    -- Aggregate the inputs to whichever unit (per-seat or per-side) the
+    -- variant scores at. Partner seats must share a barrel entry on
+    -- input — we just take the first seat's entry as representative.
+    local function unit_total_before(unit)
+        if not sides then
+            return opts.running_totals_before[unit]
+        end
+        local idx = indices_for(unit)[1]
+        return opts.running_totals_before[idx]
+    end
+    local function unit_delta(unit)
+        if not sides then
+            return opts.deltas[unit]
+        end
+        local total = 0
+        for _, i in ipairs(indices_for(unit)) do
+            total = total + opts.deltas[i]
+        end
+        return total
+    end
+    local function unit_barrel_before(unit)
+        if not sides then
+            return opts.barrel_state_before[unit]
+        end
+        local idx = indices_for(unit)[1]
+        return opts.barrel_state_before[idx]
+    end
+
+    local unit_running = {}
+    local unit_barrel = {}
+    for u = 1, unit_count do
+        local before_total = unit_total_before(u)
+        local before_entry = unit_barrel_before(u)
+        local delta = unit_delta(u)
 
         if before_entry.on_barrel then
             if delta >= barrel_make then
-                running_totals[i] = target
-                barrel_state[i] = off_barrel_entry()
+                unit_running[u] = target
+                unit_barrel[u] = off_barrel_entry()
             else
                 local deals_remaining = before_entry.deals_remaining - 1
                 if deals_remaining <= 0 then
-                    running_totals[i] = fall_off_total
-                    barrel_state[i] = off_barrel_entry()
+                    unit_running[u] = fall_off_total
+                    unit_barrel[u] = off_barrel_entry()
                 else
-                    running_totals[i] = threshold
-                    barrel_state[i] = {
+                    unit_running[u] = threshold
+                    unit_barrel[u] = {
                         on_barrel = true,
                         mounted_on_deal = before_entry.mounted_on_deal,
                         deals_remaining = deals_remaining,
@@ -416,104 +534,142 @@ function M.advance_game(config, opts)
         else
             local new_total = before_total + delta
             if new_total >= target then
-                running_totals[i] = new_total
-                barrel_state[i] = off_barrel_entry()
+                unit_running[u] = new_total
+                unit_barrel[u] = off_barrel_entry()
             elseif new_total >= threshold then
-                running_totals[i] = threshold
-                barrel_state[i] = {
+                unit_running[u] = threshold
+                unit_barrel[u] = {
                     on_barrel = true,
                     mounted_on_deal = deal_index,
                     deals_remaining = barrel_deal_count,
                 }
             else
-                running_totals[i] = new_total
-                barrel_state[i] = off_barrel_entry()
+                unit_running[u] = new_total
+                unit_barrel[u] = off_barrel_entry()
             end
         end
     end
 
-    -- Collision rule: if more than one player ends the deal on the
-    -- barrel, only the latest-to-mount stays. Same-deal mounts are
-    -- broken by declarer-wins-ties, then lowest player index.
-    local on_barrel_indices = {}
-    for i = 1, player_count do
-        if barrel_state[i].on_barrel then
-            on_barrel_indices[#on_barrel_indices + 1] = i
+    local declarer_unit = sides and sides[declarer] or declarer
+
+    -- Collision rule at the unit level: if more than one unit ends the
+    -- deal on the barrel, only the latest-to-mount stays. Same-deal
+    -- mounts are broken by declarer-wins-ties, then lowest unit index.
+    local on_barrel_units = {}
+    for u = 1, unit_count do
+        if unit_barrel[u].on_barrel then
+            on_barrel_units[#on_barrel_units + 1] = u
         end
     end
-    if #on_barrel_indices > 1 then
+    if #on_barrel_units > 1 then
         local latest = -1
-        for _, i in ipairs(on_barrel_indices) do
-            if barrel_state[i].mounted_on_deal > latest then
-                latest = barrel_state[i].mounted_on_deal
+        for _, u in ipairs(on_barrel_units) do
+            if unit_barrel[u].mounted_on_deal > latest then
+                latest = unit_barrel[u].mounted_on_deal
             end
         end
         local at_latest = {}
-        for _, i in ipairs(on_barrel_indices) do
-            if barrel_state[i].mounted_on_deal == latest then
-                at_latest[#at_latest + 1] = i
+        for _, u in ipairs(on_barrel_units) do
+            if unit_barrel[u].mounted_on_deal == latest then
+                at_latest[#at_latest + 1] = u
             end
         end
         local survivor
-        for _, i in ipairs(at_latest) do
-            if i == declarer then
-                survivor = i
+        for _, u in ipairs(at_latest) do
+            if u == declarer_unit then
+                survivor = u
                 break
             end
         end
         if not survivor then
             survivor = at_latest[1]
         end
-        for _, i in ipairs(on_barrel_indices) do
-            if i ~= survivor then
-                running_totals[i] = fall_off_total
-                barrel_state[i] = off_barrel_entry()
+        for _, u in ipairs(on_barrel_units) do
+            if u ~= survivor then
+                unit_running[u] = fall_off_total
+                unit_barrel[u] = off_barrel_entry()
             end
         end
     end
 
-    -- Winner: any player at or above the target. Multiple → highest
-    -- total; ties at the highest → declarer wins, else lowest index.
-    local winner
+    -- Winner at unit level. Per-seat winner is the lowest-numbered seat
+    -- in the winning unit so legacy callers reading a single integer
+    -- keep working.
+    local winning_unit
     local at_or_above = {}
-    for i = 1, player_count do
-        if running_totals[i] >= target then
-            at_or_above[#at_or_above + 1] = i
+    for u = 1, unit_count do
+        if unit_running[u] >= target then
+            at_or_above[#at_or_above + 1] = u
         end
     end
     if #at_or_above == 1 then
-        winner = at_or_above[1]
+        winning_unit = at_or_above[1]
     elseif #at_or_above > 1 then
         local max_total = -math.huge
-        for _, i in ipairs(at_or_above) do
-            if running_totals[i] > max_total then
-                max_total = running_totals[i]
+        for _, u in ipairs(at_or_above) do
+            if unit_running[u] > max_total then
+                max_total = unit_running[u]
             end
         end
         local at_max = {}
-        for _, i in ipairs(at_or_above) do
-            if running_totals[i] == max_total then
-                at_max[#at_max + 1] = i
+        for _, u in ipairs(at_or_above) do
+            if unit_running[u] == max_total then
+                at_max[#at_max + 1] = u
             end
         end
         if #at_max == 1 then
-            winner = at_max[1]
+            winning_unit = at_max[1]
         else
-            for _, i in ipairs(at_max) do
-                if i == declarer then
+            for _, u in ipairs(at_max) do
+                if u == declarer_unit then
+                    winning_unit = u
+                    break
+                end
+            end
+            if not winning_unit then
+                winning_unit = at_max[1]
+            end
+        end
+    end
+
+    -- Fan unit-level state out to per-seat lists. Partner seats end the
+    -- deal with the side's running total and barrel entry.
+    for i = 1, player_count do
+        local u = sides and sides[i] or i
+        running_totals[i] = unit_running[u]
+        barrel_state[i] = unit_barrel[u]
+    end
+
+    local winner
+    if winning_unit then
+        if sides then
+            for i = 1, player_count do
+                if sides[i] == winning_unit then
                     winner = i
                     break
                 end
             end
-            if not winner then
-                winner = at_max[1]
-            end
+        else
+            winner = winning_unit
         end
     end
 
     local barrel_state_copy = {}
     for i = 1, player_count do
         barrel_state_copy[i] = copy_barrel_entry(barrel_state[i])
+    end
+
+    -- Per-side aggregates for the UI's pooled-side scoreboard row.
+    local side_running_totals
+    local side_barrel_state
+    local winning_side
+    if sides then
+        side_running_totals = { unit_running[1], unit_running[2] }
+        side_barrel_state = {
+            copy_barrel_entry(unit_barrel[1]),
+            copy_barrel_entry(unit_barrel[2]),
+        }
+        winning_side = winning_unit
     end
 
     local state = tag_as_game({
@@ -524,6 +680,10 @@ function M.advance_game(config, opts)
         running_totals = running_totals,
         barrel_state = barrel_state_copy,
         winner = winner,
+        sides = sides,
+        side_running_totals = side_running_totals,
+        side_barrel_state = side_barrel_state,
+        winning_side = winning_side,
     })
     return { ok = true, game = state }
 end

@@ -60,9 +60,13 @@ local CENTRE_BG = { 0.04, 0.14, 0.08, 0.55 }
 local TURN_HIGHLIGHT = { 0.40, 0.80, 1.0, 1 }
 local DEALER_BADGE_BG = { 0.95, 0.85, 0.30, 1 }
 local DEALER_BADGE_FG = { 0.10, 0.10, 0.05, 1 }
+local PARTNER_SIDE_1_BG = { 0.40, 0.65, 0.95, 1 }
+local PARTNER_SIDE_2_BG = { 0.95, 0.50, 0.40, 1 }
+local PARTNER_BADGE_FG = { 0.06, 0.06, 0.10, 1 }
 local LABEL_COLOR = { 0.85, 0.92, 0.85, 1 }
 local VALUE_COLOR = { 1, 1, 1, 1 }
 local DIM_COLOR = { 0.65, 0.72, 0.65, 1 }
+local SITS_OUT_DIM = { 0.45, 0.50, 0.45, 1 }
 local TOAST_BG = { 0.30, 0.06, 0.06, 0.92 }
 local TOAST_FG = { 1.0, 0.92, 0.85, 1 }
 local MODAL_BG = { 0.12, 0.18, 0.14, 1 }
@@ -207,7 +211,8 @@ function M:_hand_is_interactive(view)
             and view.hands[view.turn_player].perspective == "self"
     end
     if view.phase == "talon" and view.talon_phase then
-        return view.talon_phase.status == "awaiting_pass"
+        local status = view.talon_phase.status
+        return status == "awaiting_pass" or status == "awaiting_discard" -- i18n-ok: engine enums
     end
     return false
 end
@@ -513,6 +518,17 @@ function M:_do_pass_talon(target, card)
     self:_reconcile_card_focus_after_mutation(pre_target)
 end
 
+function M:_do_discard_talon(card)
+    local session = self:_session()
+    if not session then
+        return
+    end
+    local pre_target = self:_focus_target()
+    self:_invoke(session:discard_talon(card))
+    self:_refresh_view_model()
+    self:_reconcile_card_focus_after_mutation(pre_target)
+end
+
 function M:_do_raise(amount)
     local session = self:_session()
     if not session then
@@ -801,6 +817,9 @@ function M:_rebuild_panel_if_needed(view)
         elseif status == "awaiting_pass" then
             -- Card hit-tests cover the pass action; no panel button.
             self._panel_buttons = {}
+        elseif status == "awaiting_discard" then
+            -- 2-player B: card hit-tests cover the face-down discard.
+            self._panel_buttons = {}
         elseif status == "awaiting_raise" then
             self._panel_buttons = build_talon_raise_panel(self, view)
         end
@@ -844,6 +863,18 @@ local function draw_dealer_badge(x, y)
     love.graphics.setColor(1, 1, 1, 1)
 end
 
+local function draw_partner_badge(x, y, side)
+    if side == 1 then
+        love.graphics.setColor(PARTNER_SIDE_1_BG)
+    else
+        love.graphics.setColor(PARTNER_SIDE_2_BG)
+    end
+    love.graphics.rectangle("fill", x, y, 22, 22)
+    love.graphics.setColor(PARTNER_BADGE_FG)
+    love.graphics.print(t("scene.table.partnership.badge", { n = side }), x + 7, y + 4)
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
 local function draw_turn_ring(x, y, w, h)
     love.graphics.setColor(TURN_HIGHLIGHT)
     love.graphics.setLineWidth(2)
@@ -875,31 +906,43 @@ local function draw_opponents(self, view, region)
             rect = rect,
         }
         local label = seat_label(hand.player)
-        if hand.is_turn then
+        if hand.sits_out then
+            love.graphics.setColor(SITS_OUT_DIM)
+        elseif hand.is_turn then
             love.graphics.setColor(TURN_HIGHLIGHT)
         else
             love.graphics.setColor(LABEL_COLOR)
         end
         love.graphics.print(label, rect.x + 8, rect.y + 4)
 
+        local badge_x = rect.x + 100
         if hand.is_dealer then
-            draw_dealer_badge(rect.x + 100, rect.y)
+            draw_dealer_badge(badge_x, rect.y)
+            badge_x = badge_x + 26
+        end
+        if hand.side then
+            draw_partner_badge(badge_x, rect.y, hand.side)
         end
 
         local stack_x = rect.x + 8
         local stack_y = rect.y + 32
-        cards.draw_stack(hand.count, stack_x, stack_y, OPPONENT_CARD_W, OPPONENT_CARD_H)
 
-        if hand.is_turn then
-            draw_turn_ring(stack_x, stack_y, OPPONENT_CARD_W, OPPONENT_CARD_H)
+        if hand.sits_out then
+            love.graphics.setColor(SITS_OUT_DIM)
+            love.graphics.print(t("scene.table.seat.sits_out"), stack_x, stack_y + 18)
+            love.graphics.setColor(1, 1, 1, 1)
+        else
+            cards.draw_stack(hand.count, stack_x, stack_y, OPPONENT_CARD_W, OPPONENT_CARD_H)
+            if hand.is_turn then
+                draw_turn_ring(stack_x, stack_y, OPPONENT_CARD_W, OPPONENT_CARD_H)
+            end
+            love.graphics.setColor(DIM_COLOR)
+            love.graphics.print(
+                t("scene.table.deck.size", { n = hand.count }),
+                stack_x + OPPONENT_CARD_W + 12,
+                stack_y + 18
+            )
         end
-
-        love.graphics.setColor(DIM_COLOR)
-        love.graphics.print(
-            t("scene.table.deck.size", { n = hand.count }),
-            stack_x + OPPONENT_CARD_W + 12,
-            stack_y + 18
-        )
 
         love.graphics.setColor(1, 1, 1, 1)
     end
@@ -914,29 +957,69 @@ local function draw_centre(_self, view, region)
         return
     end
 
-    -- Talon block on the left of the centre band.
+    -- Talon / stock block on the left of the centre band. The talon is
+    -- the canonical 3-card pile; the stock is the 2-player Variant A
+    -- closed-talon draw pile with the bottom card exposed as a trump
+    -- indicator. Variants without a traditional talon (talon.size == 0)
+    -- replace the talon area with the stock pile when one exists, or
+    -- render the area as "none" when neither is present.
     local talon = view.talon
+    local stock = view.stock
     local talon_label_x = region.x + 16
     local talon_label_y = region.y + 8
-    love.graphics.setColor(LABEL_COLOR)
-    love.graphics.print(t("scene.table.talon.label"), talon_label_x, talon_label_y)
-
     local talon_x = talon_label_x
     local talon_y = talon_label_y + 24
-    if talon.count == 0 then
-        love.graphics.setColor(DIM_COLOR)
-        love.graphics.print(t("scene.table.bid.none"), talon_x, talon_y + 20)
-    elseif talon.face_down then
-        cards.draw_stack(talon.count, talon_x, talon_y, TALON_CARD_W, TALON_CARD_H)
-    else
-        for i = 1, talon.count do
+
+    if stock then
+        love.graphics.setColor(LABEL_COLOR)
+        love.graphics.print(t("scene.table.stock.label"), talon_label_x, talon_label_y)
+        if stock.count > 0 then
+            cards.draw_stack(stock.count, talon_x, talon_y, TALON_CARD_W, TALON_CARD_H)
+        else
+            love.graphics.setColor(DIM_COLOR)
+            love.graphics.print(t("scene.table.stock.empty"), talon_x, talon_y + 20)
+        end
+        if stock.trump_indicator then
+            local indicator_x = talon_x + TALON_CARD_W + CARD_GAP
             cards.draw_face_up(
-                talon.cards[i],
-                talon_x + (i - 1) * (TALON_CARD_W + CARD_GAP),
+                stock.trump_indicator,
+                indicator_x,
                 talon_y,
                 TALON_CARD_W,
                 TALON_CARD_H
             )
+            love.graphics.setColor(DIM_COLOR)
+            love.graphics.print(
+                t("scene.table.stock.trump_indicator"),
+                indicator_x,
+                talon_y + TALON_CARD_H + 4
+            )
+        end
+        love.graphics.setColor(DIM_COLOR)
+        love.graphics.print(
+            t("scene.table.stock.count", { n = stock.count }),
+            talon_x,
+            talon_y + TALON_CARD_H + 4
+        )
+    else
+        love.graphics.setColor(LABEL_COLOR)
+        love.graphics.print(t("scene.table.talon.label"), talon_label_x, talon_label_y)
+
+        if talon.count == 0 then
+            love.graphics.setColor(DIM_COLOR)
+            love.graphics.print(t("scene.table.bid.none"), talon_x, talon_y + 20)
+        elseif talon.face_down then
+            cards.draw_stack(talon.count, talon_x, talon_y, TALON_CARD_W, TALON_CARD_H)
+        else
+            for i = 1, talon.count do
+                cards.draw_face_up(
+                    talon.cards[i],
+                    talon_x + (i - 1) * (TALON_CARD_W + CARD_GAP),
+                    talon_y,
+                    TALON_CARD_W,
+                    TALON_CARD_H
+                )
+            end
         end
     end
 
@@ -1170,7 +1253,9 @@ local function draw_scoreboard(view, region)
             label = t("scene.table.player_label.other", { n = entry.player })
         end
 
-        if entry.is_winner then
+        if entry.sits_out then
+            love.graphics.setColor(SITS_OUT_DIM)
+        elseif entry.is_winner then
             love.graphics.setColor(1.0, 0.85, 0.30, 1)
         elseif entry.is_turn then
             love.graphics.setColor(TURN_HIGHLIGHT)
@@ -1179,22 +1264,51 @@ local function draw_scoreboard(view, region)
         end
         love.graphics.print(label, region.x + 12, row_y)
 
-        love.graphics.setColor(VALUE_COLOR)
-        love.graphics.print(tostring(entry.total), region.x + region.w - 56, row_y)
-
-        if entry.barrel.on_barrel then
-            love.graphics.setColor(0.95, 0.75, 0.30, 1)
-            local hint = t("scene.table.scoreboard.barrel", {
-                n = entry.barrel.deals_remaining or 0,
-            })
-            love.graphics.print(hint, region.x + 12, row_y + 14)
+        if entry.sits_out then
+            love.graphics.setColor(SITS_OUT_DIM)
+            love.graphics.print(t("scene.table.seat.sits_out"), region.x + 12, row_y + 14)
+        else
+            love.graphics.setColor(VALUE_COLOR)
+            love.graphics.print(tostring(entry.total), region.x + region.w - 56, row_y)
+            if entry.barrel.on_barrel then
+                love.graphics.setColor(0.95, 0.75, 0.30, 1)
+                local hint = t("scene.table.scoreboard.barrel", {
+                    n = entry.barrel.deals_remaining or 0,
+                })
+                love.graphics.print(hint, region.x + 12, row_y + 14)
+            end
         end
 
+        local badge_x = region.x + region.w - 28
         if entry.is_dealer then
-            draw_dealer_badge(region.x + region.w - 28, row_y - 4)
+            draw_dealer_badge(badge_x, row_y - 4)
+            badge_x = badge_x - 26
+        end
+        if entry.side then
+            draw_partner_badge(badge_x, row_y - 4, entry.side)
         end
 
         row_y = row_y + row_h
+    end
+
+    if view.partnership and view.partnership.totals then
+        row_y = row_y + 4
+        love.graphics.setColor(SCOREBOARD_BORDER)
+        love.graphics.line(region.x + 12, row_y, region.x + region.w - 12, row_y)
+        row_y = row_y + 6
+        for side = 1, 2 do
+            local label = t("scene.table.partnership.score_row", { n = side })
+            love.graphics.setColor(LABEL_COLOR)
+            love.graphics.print(label, region.x + 12, row_y)
+            love.graphics.setColor(VALUE_COLOR)
+            love.graphics.print(
+                tostring(view.partnership.totals[side] or 0),
+                region.x + region.w - 56,
+                row_y
+            )
+            draw_partner_badge(region.x + region.w - 28, row_y - 4, side)
+            row_y = row_y + row_h
+        end
     end
 
     love.graphics.setColor(1, 1, 1, 1)
@@ -1262,20 +1376,34 @@ local function draw_panel_buttons(self)
 end
 
 local function draw_pass_target_label(view, regions)
-    if not view or not view.talon_phase or view.talon_phase.status ~= "awaiting_pass" then
+    if not view or not view.talon_phase then
         return
     end
-    local target = view.talon_phase.pass_target_seat
-    if not target then
+    local status = view.talon_phase.status
+    if status == "awaiting_pass" then
+        local target = view.talon_phase.pass_target_seat
+        if not target then
+            return
+        end
+        love.graphics.setColor(LABEL_COLOR)
+        love.graphics.print(
+            t("scene.table.talon.pass_to", { n = target }),
+            regions.hand.x + 8,
+            regions.hand.y - 22
+        )
+        love.graphics.setColor(1, 1, 1, 1)
         return
     end
-    love.graphics.setColor(LABEL_COLOR)
-    love.graphics.print(
-        t("scene.table.talon.pass_to", { n = target }),
-        regions.hand.x + 8,
-        regions.hand.y - 22
-    )
-    love.graphics.setColor(1, 1, 1, 1)
+    if status == "awaiting_discard" then
+        love.graphics.setColor(LABEL_COLOR)
+        love.graphics.print(
+            t("scene.table.talon.discard_prompt"),
+            regions.hand.x + 8,
+            regions.hand.y - 22
+        )
+        love.graphics.setColor(1, 1, 1, 1)
+        return
+    end
 end
 
 local function draw_deal_done_banner(view, regions)
@@ -1497,6 +1625,14 @@ function M:_handle_card_tap(view, entry)
         if target then
             self:_do_pass_talon(target, entry.card)
         end
+        return
+    end
+    if
+        view.phase == "talon"
+        and talon_phase
+        and talon_phase.status == "awaiting_discard" -- i18n-ok
+    then
+        self:_do_discard_talon(entry.card)
         return
     end
     if view.phase == "tricks" then

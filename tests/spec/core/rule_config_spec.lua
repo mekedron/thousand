@@ -520,11 +520,11 @@ describe("core.rule_config", function()
                 assert.are.equal(2, config.players.count)
             end)
 
-            it("uses the closed-talon shape (size = 2 until 6-card stock lands)", function()
-                assert.are.equal(2, config.talon.size)
+            it("disables the talon (the 6-card stock is dealt separately)", function()
+                assert.are.equal(0, config.talon.size)
             end)
 
-            it("keeps the deferred two_player_config default", function()
+            it("selects the closed-talon-with-draw-stock layout", function()
                 assert.are.equal("closed_talon_draw_stock", config.players.two_player_config)
             end)
 
@@ -532,7 +532,7 @@ describe("core.rule_config", function()
                 local round_trip = rule_config.from_json(rule_config.to_json(config))
                 assert.is_true(round_trip.ok)
                 assert.are.equal(2, round_trip.config.players.count)
-                assert.are.equal(2, round_trip.config.talon.size)
+                assert.are.equal(0, round_trip.config.talon.size)
             end)
         end)
 
@@ -551,9 +551,8 @@ describe("core.rule_config", function()
                 assert.are.equal(3, config.talon.size)
             end)
 
-            it("keeps the deferred two_player_config default", function()
-                -- "fixed_deal_no_draw" lands in Phase 3.6.
-                assert.are.equal("closed_talon_draw_stock", config.players.two_player_config)
+            it("selects the fixed-deal-no-draw layout", function()
+                assert.are.equal("fixed_deal_no_draw", config.players.two_player_config)
             end)
 
             it("round-trips through JSON", function()
@@ -579,8 +578,12 @@ describe("core.rule_config", function()
                 assert.are.equal(0, config.talon.size)
             end)
 
-            it("keeps the deferred four_player_config default (dealer plays, no talon)", function()
+            it("keeps the dealer-plays-no-talon configuration", function()
                 assert.are.equal("dealer_plays_no_talon", config.players.four_player_config)
+            end)
+
+            it("plays in fixed across-the-table partnerships", function()
+                assert.are.equal("fixed_across_table", config.players.partnership_mode)
             end)
 
             it("round-trips through JSON", function()
@@ -606,9 +609,12 @@ describe("core.rule_config", function()
                 assert.are.equal(3, config.talon.size)
             end)
 
-            it("keeps the deferred four_player_config default", function()
-                -- "dealer_sits_out" lands in Phase 3.6.
-                assert.are.equal("dealer_plays_no_talon", config.players.four_player_config)
+            it("selects the dealer-sits-out configuration", function()
+                assert.are.equal("dealer_sits_out", config.players.four_player_config)
+            end)
+
+            it("plays in fixed across-the-table partnerships", function()
+                assert.are.equal("fixed_across_table", config.players.partnership_mode)
             end)
 
             it("round-trips through JSON", function()
@@ -1097,18 +1103,46 @@ describe("core.rule_config", function()
         end)
 
         it("accepts each of 2, 3, 4 through try_new", function()
-            for _, ok_count in ipairs({ 2, 3, 4 }) do
+            -- The Phase 3.6 layout-consistency invariants force a specific
+            -- (count, talon.size, *_config) combination. Each accepted
+            -- count therefore needs the matching layout selector and
+            -- talon size; otherwise the invariant fires.
+            local cases = {
+                {
+                    count = 2,
+                    overrides = {
+                        players = { two_player_config = "fixed_deal_no_draw" },
+                        talon = { size = 3 },
+                    },
+                },
+                { count = 3, overrides = {} },
+                {
+                    count = 4,
+                    overrides = {
+                        players = { four_player_config = "dealer_sits_out" },
+                        talon = { size = 3 },
+                    },
+                },
+            }
+            for _, case in ipairs(cases) do
                 local t = valid_table()
-                t.players.count = ok_count
+                t.players.count = case.count
+                for section, fields in pairs(case.overrides) do
+                    for k, v in pairs(fields) do
+                        t[section][k] = v
+                    end
+                end
                 local res = rule_config.try_new(t)
-                assert.is_true(res.ok, "count=" .. ok_count .. " should be accepted")
-                assert.are.equal(ok_count, res.config.players.count)
+                assert.is_true(res.ok, "count=" .. case.count .. " should be accepted")
+                assert.are.equal(case.count, res.config.players.count)
             end
         end)
 
         it("survives a JSON round trip with count = 2", function()
             local t = valid_table()
             t.players.count = 2
+            t.players.two_player_config = "fixed_deal_no_draw"
+            t.talon.size = 3
             local config_in = rule_config.new(t)
             local s = rule_config.to_json(config_in)
             local res = rule_config.from_json(s)
@@ -1118,12 +1152,12 @@ describe("core.rule_config", function()
     end)
 
     describe("players.partnership_mode", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("players.partnership_mode")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("none", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -1138,13 +1172,23 @@ describe("core.rule_config", function()
             assert.are.equal("none", res.config.players.partnership_mode)
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("rejects fixed_across_table with non-4-player counts", function()
             local t = valid_table()
             t.players.partnership_mode = "fixed_across_table"
             local res = rule_config.try_new(t)
             assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("players.partnership_mode", res.error.path)
+            assert.are.equal("incompatible_combination", res.error.code)
+            assert.are.equal("partnership_mode_requires_four_players", res.error.invariant)
+        end)
+
+        it("accepts fixed_across_table with count = 4 in a valid layout", function()
+            local t = valid_table()
+            t.players.count = 4
+            t.players.partnership_mode = "fixed_across_table"
+            t.players.four_player_config = "dealer_sits_out"
+            local res = rule_config.try_new(t)
+            assert.is_true(res.ok)
+            assert.are.equal("fixed_across_table", res.config.players.partnership_mode)
         end)
 
         it("survives a JSON round trip at its default", function()
@@ -1156,12 +1200,12 @@ describe("core.rule_config", function()
     end)
 
     describe("players.four_player_config", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("players.four_player_config")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("dealer_plays_no_talon", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -1170,13 +1214,25 @@ describe("core.rule_config", function()
             assert.is_true(allowed["dealer_sits_out"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts dealer_sits_out under count = 3 (silently ignored)", function()
+            -- The four_player_b consistency invariant only fires when
+            -- count == 4; for canonical 3-player the field is inert.
             local t = valid_table()
             t.players.four_player_config = "dealer_sits_out"
             local res = rule_config.try_new(t)
+            assert.is_true(res.ok)
+            assert.are.equal("dealer_sits_out", res.config.players.four_player_config)
+        end)
+
+        it("rejects dealer_plays_no_talon under count = 4 with talon.size = 3", function()
+            local t = valid_table()
+            t.players.count = 4
+            -- four_player_config stays at the default "dealer_plays_no_talon"
+            -- but talon.size = 3 contradicts the no-talon spec.
+            local res = rule_config.try_new(t)
             assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("players.four_player_config", res.error.path)
+            assert.are.equal("incompatible_combination", res.error.code)
+            assert.are.equal("four_player_a_requires_no_talon", res.error.invariant)
         end)
 
         it("survives a JSON round trip at its default", function()
@@ -1188,12 +1244,12 @@ describe("core.rule_config", function()
     end)
 
     describe("players.two_player_config", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("players.two_player_config")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("closed_talon_draw_stock", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -1202,13 +1258,23 @@ describe("core.rule_config", function()
             assert.is_true(allowed["fixed_deal_no_draw"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts fixed_deal_no_draw under count = 3 (silently ignored)", function()
             local t = valid_table()
             t.players.two_player_config = "fixed_deal_no_draw"
             local res = rule_config.try_new(t)
+            assert.is_true(res.ok)
+            assert.are.equal("fixed_deal_no_draw", res.config.players.two_player_config)
+        end)
+
+        it("rejects closed_talon_draw_stock under count = 2 with talon.size = 3", function()
+            local t = valid_table()
+            t.players.count = 2
+            -- two_player_config stays at the default "closed_talon_draw_stock"
+            -- but talon.size = 3 contradicts the stock-draw spec.
+            local res = rule_config.try_new(t)
             assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("players.two_player_config", res.error.path)
+            assert.are.equal("incompatible_combination", res.error.code)
+            assert.are.equal("two_player_a_requires_no_talon", res.error.invariant)
         end)
 
         it("survives a JSON round trip at its default", function()

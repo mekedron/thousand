@@ -43,6 +43,7 @@ local tricks_module = require("core.tricks")
 local marriages_module = require("core.marriages")
 local scoring = require("core.scoring")
 local rule_config = require("core.rule_config")
+local card_module = require("core.card")
 
 local Session = {}
 Session.__index = Session
@@ -75,7 +76,7 @@ end
 
 local function build_initial_state(config, dealer, seed)
     local deck = deck_module.shuffle(deck_module.build(), seed)
-    local deal_result = dealing.deal(deck, config)
+    local deal_result = dealing.deal(deck, config, { dealer = dealer })
     if not deal_result.ok then
         error("session: deal failed: " .. tostring(deal_result.error.message), 2)
     end
@@ -116,6 +117,9 @@ function M.new(opts)
         _dealer = dealer,
         _hands = deal_result.hands,
         _talon_cards = deal_result.talon,
+        _stock = deal_result.stock,
+        _trump_indicator = deal_result.trump_indicator,
+        _sits_out = deal_result.sits_out,
         _auction = auction,
         _talon = nil,
         _marriages = marriages,
@@ -152,6 +156,9 @@ function M.from_state(state)
         _dealer = state.dealer or 1,
         _hands = state.hands and copy_hands(state.hands) or {},
         _talon_cards = state.talon_cards and copy_list(state.talon_cards) or {},
+        _stock = state.stock and copy_list(state.stock) or nil,
+        _trump_indicator = state.trump_indicator,
+        _sits_out = state.sits_out,
         _auction = state.auction,
         _talon = state.talon,
         _marriages = state.marriages,
@@ -298,6 +305,62 @@ function Session:barrel_state()
     return self._barrel_state
 end
 
+-- The 2-player A draw stock. Returns nil for layouts without a stock,
+-- otherwise a list of cards with the bottom-most entry exposed as the
+-- trump indicator. The list shrinks as tricks resolve during the
+-- draw-phase.
+function Session:stock()
+    if self._tricks then
+        return self._tricks.stock
+    end
+    return self._stock
+end
+
+-- The face-up bottom card of the draw stock (the Schnapsen-style trump
+-- indicator). Set at deal time for 2-player A and never changes — the
+-- trump suit may flip on a marriage but the indicator card itself
+-- stays exposed as a record.
+function Session:trump_indicator()
+    return self._trump_indicator
+end
+
+-- "draw" or "strict" — only meaningful while the tricks phase is
+-- live and the layout uses a stock. Returns nil otherwise.
+function Session:tricks_phase()
+    if self._tricks then
+        return self._tricks.phase
+    end
+    return nil
+end
+
+-- The seat that sits out this deal (4-player B), or nil if every seat
+-- is active. Surfaced for the table-scene's sits-out indicator.
+function Session:sits_out()
+    if self._tricks and self._tricks.sits_out then
+        return self._tricks.sits_out
+    end
+    if self._auction and self._auction.sits_out then
+        return self._auction.sits_out
+    end
+    return self._sits_out
+end
+
+-- Mapping of seat → side (1 or 2) when partnership_mode is
+-- "fixed_across_table"; nil otherwise. The table-scene reads this to
+-- render partner badges and the pooled-side scoreboard row.
+function Session:partnership_sides()
+    if self._tricks and self._tricks.partnership_sides then
+        return self._tricks.partnership_sides
+    end
+    if
+        self._config.players.partnership_mode == "fixed_across_table"
+        and self._config.players.count == 4
+    then
+        return { 1, 2, 1, 2 }
+    end
+    return nil
+end
+
 function Session:winner()
     return self._winner
 end
@@ -411,10 +474,34 @@ local function failure(code, message, extra)
     return { ok = false, error = err }
 end
 
--- Auction → talon transition. When the auction terminates with a
--- declarer the session immediately constructs the talon state so the
--- next mutator call (typically take_talon) finds the right shape. An
--- all-pass auction stops the deal: there is no contract to play.
+-- Build the tricks state directly. Used by both the auction → tricks
+-- short-circuit (no-talon layouts) and the talon → tricks transition
+-- (talon-bearing layouts). Both call sites wrap the same options.
+local function start_tricks(self, hands, declarer, opts)
+    opts = opts or {}
+    opts.dealer = self._dealer
+    if self._stock then
+        opts.stock = self._stock
+        opts.trump_indicator = self._trump_indicator
+        if self._trump_indicator then
+            opts.trump = self._trump_indicator.suit
+        end
+    end
+    local tricks_result = tricks_module.new(self._config, hands, declarer, opts)
+    if not tricks_result.ok then
+        local msg = "session: tricks construction failed: " -- i18n-ok
+            .. tostring(tricks_result.error.message)
+        error(msg, 2)
+    end
+    self._tricks = tricks_result.tricks
+end
+
+-- Auction → talon (or auction → tricks for layouts with no traditional
+-- talon). When the auction terminates with a declarer the session either
+-- constructs the talon state for the standard flow, or — for talon.size
+-- == 0 layouts (4-player A no-talon, 2-player A closed-talon stock-draw)
+-- — bypasses the talon phase and goes straight to tricks. An all-pass
+-- auction stops the deal: there is no contract to play.
 local function on_auction_end(self)
     local a = self._auction
     if not a or a.status == "in_progress" then
@@ -424,32 +511,51 @@ local function on_auction_end(self)
         self._deal_done = { reason = "all_pass" }
         return
     end
-    if a.status == "done" then
-        local talon_result = talon_module.new(self._config, a, self._hands, self._talon_cards)
-        if not talon_result.ok then
-            local msg = "session: talon construction failed after auction: " -- i18n-ok
-                .. tostring(talon_result.error.message)
-            error(msg, 2)
-        end
-        self._talon = talon_result.talon
+    if a.status ~= "done" then
+        return
     end
+    if self._config.talon.size == 0 then
+        -- No traditional talon: skip directly to tricks. The declarer
+        -- leads the first trick (canonical Russian rule); 2-player A
+        -- additionally seeds tricks with the stock and the trump
+        -- indicator's suit as the initial trump.
+        start_tricks(self, self._hands, a.declarer)
+        return
+    end
+
+    local talon_result = talon_module.new(self._config, a, self._hands, self._talon_cards)
+    if not talon_result.ok then
+        local msg = "session: talon construction failed after auction: " -- i18n-ok
+            .. tostring(talon_result.error.message)
+        error(msg, 2)
+    end
+    self._talon = talon_result.talon
 end
 
 -- Talon → tricks transition. The declarer leads the first trick (the
 -- canonical Russian rule); future variants will read this from
--- RuleConfig once Phase 3 wires it.
+-- RuleConfig once Phase 3 wires it. 2-player B's discard credits its
+-- point value to the declarer's captured pile via
+-- `initial_captured_points`.
 local function on_talon_end(self)
     local t = self._talon
     if not t or t.status ~= "done" then
         return
     end
-    local tricks_result = tricks_module.new(self._config, t.hands, t.declarer)
-    if not tricks_result.ok then
-        local msg = "session: tricks construction failed after talon: " -- i18n-ok
-            .. tostring(tricks_result.error.message)
-        error(msg, 2)
+    local opts = {}
+    if t.discards and #t.discards > 0 then
+        local seeded = {}
+        for i = 1, self._config.players.count do
+            seeded[i] = 0
+        end
+        local total = 0
+        for _, c in ipairs(t.discards) do
+            total = total + card_module.point_value(c, self._config)
+        end
+        seeded[t.declarer] = total
+        opts.initial_captured_points = seeded
     end
-    self._tricks = tricks_result.tricks
+    start_tricks(self, t.hands, t.declarer, opts)
 end
 
 -- Tricks → scoring transition. Runs scoring.score_deal +
@@ -555,6 +661,25 @@ function Session:pass_talon(target_player, card)
         })
     end
     local result = talon_module.pass(self._talon, target_player, card)
+    if not result.ok then
+        return result
+    end
+    self._talon = result.talon
+    return { ok = true }
+end
+
+-- 2-player Variant B: after the declarer takes the talon and passes one
+-- card to the opponent, they must discard one face-down card to the
+-- captured pile to reach 8/8. The discard's point value credits the
+-- declarer's captured-points total via core.tricks's
+-- initial_captured_points opt at on_talon_end.
+function Session:discard_talon(card)
+    if not self._talon then
+        return failure("wrong_phase", "discard_talon requires the talon phase", {
+            phase = self:current_phase(),
+        })
+    end
+    local result = talon_module.discard(self._talon, card)
     if not result.ok then
         return result
     end
@@ -682,6 +807,9 @@ function Session:start_next_deal()
     self._seed = seed
     self._hands = deal_result.hands
     self._talon_cards = deal_result.talon
+    self._stock = deal_result.stock
+    self._trump_indicator = deal_result.trump_indicator
+    self._sits_out = deal_result.sits_out
     self._auction = auction
     self._talon = nil
     self._marriages = marriages

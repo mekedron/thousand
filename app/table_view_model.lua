@@ -179,8 +179,9 @@ local function build_talon_phase_block(session)
     local pass_target_seat
     if talon.status == "awaiting_pass" then
         local declarer = talon.declarer
+        local sits_out = talon.sits_out
         for seat = 1, session:config().players.count do
-            if seat ~= declarer and not talon.passes_received[seat] then
+            if seat ~= declarer and seat ~= sits_out and not talon.passes_received[seat] then
                 pass_target_seat = seat
                 break
             end
@@ -195,6 +196,8 @@ local function build_talon_phase_block(session)
         declarer = talon.declarer,
         pass_target_seat = pass_target_seat,
         allowed_raise_amounts = allowed_raise_amounts,
+        requires_discard = talon.requires_discard or false,
+        sits_out = talon.sits_out,
     }
 end
 
@@ -255,6 +258,8 @@ function M.from_session(session)
     local final = session:final_scores()
     local running = session:running_totals()
     local barrel = session:barrel_state()
+    local sits_out = session:sits_out()
+    local sides = session:partnership_sides()
 
     local legal_set = legal_card_set(session)
     local hands_in = session:hands()
@@ -262,7 +267,7 @@ function M.from_session(session)
     for i = 1, player_count do
         local raw_cards = hands_in[i] or {}
         local is_turn = (i == turn)
-        local is_self = is_turn or (turn == nil and i == 1)
+        local is_self = is_turn or (turn == nil and i == 1 and i ~= sits_out)
         -- Hand cards are sorted by (suit, trick rank) for the active
         -- player so the displayed order matches the player's expected
         -- read; opponents are face-down stacks so card order doesn't
@@ -294,6 +299,8 @@ function M.from_session(session)
             card_legality = card_legality,
             is_dealer = (i == dealer),
             is_turn = is_turn,
+            sits_out = (i == sits_out),
+            side = sides and sides[i] or nil,
         }
     end
 
@@ -303,6 +310,23 @@ function M.from_session(session)
         cards = copy_list(talon_cards),
         count = #talon_cards,
     }
+
+    local stock_block
+    local stock_cards = session:stock()
+    if stock_cards and #stock_cards > 0 then
+        local trump_indicator = session:trump_indicator()
+        stock_block = {
+            count = #stock_cards,
+            trump_indicator = trump_indicator,
+            phase = session:tricks_phase(),
+        }
+    elseif session:trump_indicator() then
+        stock_block = {
+            count = 0,
+            trump_indicator = session:trump_indicator(),
+            phase = session:tricks_phase(),
+        }
+    end
 
     local scoreboard = {}
     for i = 1, player_count do
@@ -316,6 +340,25 @@ function M.from_session(session)
             is_dealer = (i == dealer),
             is_turn = (i == turn),
             is_winner = (winner ~= nil and i == winner),
+            sits_out = (i == sits_out),
+            side = sides and sides[i] or nil,
+        }
+    end
+
+    local partnership
+    if sides then
+        local side_totals = { 0, 0 }
+        local seen = { false, false }
+        for i = 1, player_count do
+            local s = sides[i]
+            if not seen[s] then
+                side_totals[s] = running[i] or 0
+                seen[s] = true
+            end
+        end
+        partnership = {
+            sides = copy_list(sides),
+            totals = side_totals,
         }
     end
 
@@ -329,9 +372,12 @@ function M.from_session(session)
         scoreboard = scoreboard,
         hands = hands,
         talon = talon,
+        stock = stock_block,
         winner = winner,
         final_scores = final and copy_list(final) or nil,
         player_count = player_count,
+        sits_out = sits_out,
+        partnership = partnership,
         auction = build_auction_block(session),
         talon_phase = build_talon_phase_block(session),
         current_trick = build_current_trick_block(session),

@@ -77,6 +77,7 @@ local function clone_state(state)
         dealer = state.dealer,
         forehand = state.forehand,
         player_count = state.player_count,
+        sits_out = state.sits_out,
         turn = state.turn,
         current_bid = state.current_bid,
         current_leader = state.current_leader,
@@ -109,6 +110,17 @@ local function next_active_seat(passed, from, player_count)
     error("auction: no active seats remain — invariant violated")
 end
 
+-- The seat (if any) that is excluded from the auction for this deal.
+-- 4-player Configuration B has the dealer sit out — they never bid and
+-- never become declarer. Other layouts return nil so every seat
+-- participates.
+local function compute_sits_out(config, dealer)
+    if config.players.count == 4 and config.players.four_player_config == "dealer_sits_out" then
+        return dealer
+    end
+    return nil
+end
+
 function M.new(config, dealer)
     if not rule_config.is_rule_config(config) then
         return failure("not_a_rule_config", "auction.new requires a RuleConfig", {
@@ -124,10 +136,17 @@ function M.new(config, dealer)
         )
     end
 
+    local sits_out = compute_sits_out(config, dealer)
     local forehand = (dealer % player_count) + 1
     local passed = {}
+    local pass_count = 0
     for i = 1, player_count do
-        passed[i] = false
+        if sits_out and i == sits_out then
+            passed[i] = true
+            pass_count = pass_count + 1
+        else
+            passed[i] = false
+        end
     end
 
     local state = tag_as_auction({
@@ -136,11 +155,12 @@ function M.new(config, dealer)
         dealer = dealer,
         forehand = forehand,
         player_count = player_count,
+        sits_out = sits_out,
         turn = forehand,
         current_bid = nil,
         current_leader = nil,
         passed = passed,
-        pass_count = 0,
+        pass_count = pass_count,
         status = "in_progress",
         declarer = nil,
         final_bid = nil,

@@ -324,17 +324,12 @@ describe("core.dealing", function()
             end
         end)
 
-        it("rejects an unsupported player count", function()
-            local t = valid_config_table()
-            t.players.count = 4
-            local odd = rule_config.new(t)
-            local result = dealing.deal(deck_module.build(), odd)
-            assert.is_false(result.ok)
-            assert.are.equal("unsupported_player_count", result.error.code)
-            assert.are.equal(4, result.error.player_count)
-        end)
+        -- Phase 3.6 lifted the count != 3 guard for 2- and 4-player
+        -- layouts. The dealer still rejects the Polish 2-card-talon
+        -- shape because the talon-variants gameplay task hasn't landed
+        -- yet — that pin lives below in the polish-shape test.
 
-        it("rejects an unsupported talon size", function()
+        it("rejects the Polish 2-card-talon shape", function()
             local t = valid_config_table()
             t.talon.size = 2
             local odd = rule_config.new(t)

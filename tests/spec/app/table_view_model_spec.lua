@@ -470,4 +470,41 @@ describe("app.table_view_model", function()
             assert.same({ 100, 105, 110, 120 }, view.auction.allowed_bid_amounts)
         end)
     end)
+
+    describe("variant view fields", function()
+        it("exposes the dealer's sits-out seat and partnership sides for 4-player B", function()
+            local s = Session.new({
+                seed = 7,
+                dealer = 2,
+                config = rule_config.builtins.four_player_b,
+            })
+            local view = view_model.from_session(s)
+            assert.are.equal(4, view.player_count)
+            assert.are.equal(2, view.sits_out)
+            assert.is_table(view.partnership)
+            assert.same({ 1, 2, 1, 2 }, view.partnership.sides)
+            assert.are.equal(2, #view.partnership.totals)
+            -- The dealer's seat is rendered with sits_out = true so the
+            -- table scene dims it; per-seat partnership side is also
+            -- surfaced.
+            assert.is_true(view.hands[2].sits_out)
+            assert.are.equal(1, view.hands[1].side)
+            assert.are.equal(2, view.hands[2].side)
+            assert.is_true(view.scoreboard[2].sits_out)
+        end)
+
+        it("exposes a stock block with trump indicator for 2-player A", function()
+            local s = Session.new({
+                seed = 7,
+                config = rule_config.builtins.two_player_a,
+            })
+            local view = view_model.from_session(s)
+            assert.are.equal(2, view.player_count)
+            assert.is_table(view.stock)
+            assert.are.equal(6, view.stock.count)
+            assert.is_table(view.stock.trump_indicator)
+            assert.is_nil(view.partnership)
+            assert.is_nil(view.sits_out)
+        end)
+    end)
 end)

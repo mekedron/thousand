@@ -396,7 +396,7 @@ where the engine reads the value directly), adds any sibling fields
 the variants reference, wires every variant into the table scene, and
 ships scripted engine tests covering every value.
 
-- [ ] Implement players and seating gameplay.
+- [x] Implement players and seating gameplay.
   - `count` 2 runs end-to-end under both `two_player_config` values.
   - `count` 4 runs end-to-end under both `four_player_config` values.
   - `partnership_mode` `fixed_across_table` pools partner scores and
