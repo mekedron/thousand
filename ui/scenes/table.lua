@@ -318,7 +318,11 @@ function M:_jump_focus_groups(direction)
 
     local next_idx
     if cur == 0 then
-        next_idx = direction > 0 and 1 or #groups
+        -- No prior focus. Down lands on the bottom-most group
+        -- (#groups in our top-to-bottom list); Up lands on the
+        -- top-most (1). The screen direction the player pressed is
+        -- the screen direction the focus should land in.
+        next_idx = direction > 0 and #groups or 1
     else
         next_idx = ((cur - 1 + direction) % #groups) + 1
     end
