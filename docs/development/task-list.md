@@ -234,11 +234,10 @@ porting pass later, not a UI rewrite.
 ## Phase 3 — Rule template system
 
 Goal: every variant from [Variations](../variations/index.md) is
-represented as data in a single `RuleConfig` system. Phase 3 must not
-balloon into implementing every obscure house rule immediately: each
-documented toggle is either implemented and selectable, or explicitly
-marked deferred so built-in templates and saved custom templates cannot
-accidentally depend on it.
+represented as data in a single `RuleConfig` system and the engine
+honours every selectable toggle. Each documented toggle is either
+implemented and selectable, or explicitly marked deferred so built-in
+templates and saved custom templates cannot accidentally depend on it.
 
 ### 3.1 `RuleConfig` model & engine wiring
 
@@ -386,6 +385,179 @@ variant** — only data.
   - Changing templates mid-game requires a confirmation prompt because it
     abandons the current deal.
   - Custom templates show a diff against their parent built-in template.
+
+### 3.6 Toggle gameplay
+
+Each toggle catalogued in 3.2 lands here as engine behaviour matching
+[House Rules](../variations/house-rules.md). A task flips its fields
+from `deferred` to `selectable` (or `implemented` where the engine
+reads the value directly), adds any sibling fields the variants
+reference, and ships scripted engine tests covering every value.
+
+- [ ] Implement players and seating gameplay.
+  - `count` 2 runs end-to-end under both `two_player_config` values.
+  - `count` 4 runs end-to-end under both `four_player_config` values.
+  - `partnership_mode` `fixed_across_table` pools partner scores and
+    routes lead/legality through the partnership.
+  - `count`, `partnership_mode`, `four_player_config`, and
+    `two_player_config` all flip to selectable.
+  - Engine tests run scripted full deals for every player-count and
+    seating-config combination.
+- [ ] Implement dealing and redeal triggers.
+  - `four_nine_redeal` `optional` offers the entitled player a redeal;
+    `mandatory` forces it.
+  - `three_nine_redeal` `optional` offers the entitled player a redeal.
+  - `four_jack_redeal` `on` offers the entitled player a redeal.
+  - `weak_hand_redeal` `strict`, `loose`, and `counted` each detect
+    weakness by their documented criteria; `counted` reads a new
+    sibling threshold field.
+  - `misdeal_handling` `soft_penalty` rotates dealer; `flat_penalty`
+    deducts a new sibling penalty amount.
+  - `all_pass_handling` `pass_out` rotates the deal without scoring;
+    `raspassy` plays the deal under reverse-scoring.
+  - All six fields flip to selectable.
+  - Engine tests cover every variant value against scripted dealing
+    fixtures.
+- [ ] Implement talon variants.
+  - `size` 0 disables the talon; `size` 2 runs the Polish two-card
+    flow.
+  - `distribution` `pass_without_taking` and `stock_draw` both run
+    end-to-end.
+  - `flip_after_first_round` `on` keeps the talon closed during the
+    first round of bidding.
+  - `pass_the_talon` `on` lets the declarer concede the deal at the
+    bid after seeing the talon.
+  - `buyback` `on` lets the declarer discard the hand for a fresh deal
+    at a new sibling penalty.
+  - `hidden_on_minimum_100` `minimum_100_only` and `any_forced_100`
+    suppress the talon reveal to defenders.
+  - `bad_talon_redeal` `any_contract` and `minimum_100_only` redeal on
+    a worthless talon.
+  - `rebuy` `on` triggers a second auction at a higher fixed contract.
+  - `open_discard` `on` deals the declarer's discards face-up.
+  - `size` flips to implemented; the eight house-rule fields flip to
+    selectable.
+  - Engine tests cover every variant value against scripted talon
+    scenarios.
+- [ ] Implement bidding house rules.
+  - `forced_opening` `on` forces forehand to open at the minimum bid.
+  - `forced_dealer_bid` `on` lands the dealer in the minimum-100
+    contract when everybody else passes.
+  - `blind_bid` `first_bid_double` doubles a successful or failed
+    in-the-dark first bid.
+  - `re_entry_after_pass` `on` lets a passed player re-enter the
+    auction once.
+  - `contra` `contra_only` arms defender doubles;
+    `contra_and_redouble` adds the declarer's redouble; the engine
+    doubles or redoubles the contract value accordingly.
+  - `forced_bid_concession` `equal_split`, `each_full`, and
+    `preset_ratio` each split the conceded bid by their documented
+    rule.
+  - `no_contract_without_marriage` `no_120_without_marriage` blocks
+    bids ≥ 120 without a held marriage; `capped_by_marriages` caps the
+    maximum bid at `120 + held marriage values`.
+  - `negative_score_restriction` `on` limits a player at negative
+    running score to the forced minimum-100 contract.
+  - `named_contracts` `on` admits the special-contract bids at the
+    auction.
+  - All nine fields flip to selectable.
+  - Auction state-machine tests cover every variant value.
+- [ ] Implement marriage house rules.
+  - `half_marriage_capture_bonus` `on` credits the defender who
+    captures both K and Q of the same suit; the bonus value lives in a
+    new sibling field.
+  - `trump_activation_timing` `immediate` re-ranks cards already
+    played to the declaring trick.
+  - `marriage_announcement_timing` `hand_announcement` lets the leader
+    declare without leading the K or Q; `pre_first_trick` restricts
+    declarations to the moment before the first trick.
+  - `drowned_marriage` `retroactive_cancel` cancels declared marriages
+    when a half is later captured.
+  - `ace_marriage` `on` scores the four-aces bonus; `sets_trump` sets
+    trump from the first Ace led after declaration.
+  - `one_trump_per_deal` `on` keeps only the first declared marriage
+    as the trump trigger.
+  - All six fields flip to selectable.
+  - Engine tests cover every variant value against scripted marriage
+    scenarios.
+- [ ] Implement trick-play house rules.
+  - `must_overtake_strictness` `polish_strict` enforces the Polish
+    `przebijanie` escalation when following suit.
+  - `must_trump_strictness` `polish_strict` extends the same
+    escalation to trump and overtrump obligations.
+  - `defender_must_overtrump_declarer` `on` forces a defender to
+    overtrump declarer's trump when able.
+  - `lazy_revoke` `on` only punishes a misplay when called before the
+    next lead.
+  - `partial_trumping` `on` lets a defender holding only a lower trump
+    discard rather than play it.
+  - `last_trick_bonus` `on` credits the winner of the eighth trick;
+    the bonus value lives in a new sibling field.
+  - `slam_bonus` `fixed` adds a new sibling fixed bonus on a clean
+    sweep; `doubled_bid` doubles the contract value on success.
+  - `slam_against_penalty` `on` penalises a declarer who takes zero
+    tricks.
+  - `lead_trump_after_marriage` `on` forces a trump lead on the trick
+    after a marriage declaration.
+  - All nine fields flip to selectable.
+  - Trick-resolution and legality tests cover every variant value.
+- [ ] Implement scoring house rules.
+  - `actual_points_on_success` `on` scores `max(bid, actual deal
+    points)` for the declarer.
+  - `defender_contributions` `pooled` sums and splits defender deal
+    points equally.
+  - `failed_contract_distribution` `split_among_defenders`,
+    `each_defender_full`, and `mirrors_forced_concession` each
+    distribute the failed bid by their documented rule.
+  - `declarer_rounding_before_contract_check` `on` rounds the
+    declarer's captured points before comparing them to the bid.
+  - All four fields flip to selectable.
+  - Scoring tests cover every variant value against scripted deal
+    outcomes.
+- [ ] Implement opening-game, barrel, and endgame house rules.
+  - `golden_deal` `on` forces every player in turn through a mandatory
+    120 contract for the opening N deals; the marriages-doubled,
+    blind-allowed, and penalty-doubling sub-flags live in new sibling
+    fields.
+  - `pit_lock_in` `on` adds an intermediate lock-in score; the pit
+    score lives in a new sibling field.
+  - `collision_rule` `first_mounter` and `all_collide_fall_off` each
+    resolve simultaneous barrel arrivals by their documented rule.
+  - `overshoot_penalty` `on` penalises a hero-bid above 120 from the
+    barrel.
+  - `reverse_barrel` `on` mirrors the barrel state machine at -880.
+  - `going_over_target` `exact_only` caps the running total at
+    `target_score - 1` until a player lands on it exactly.
+  - `tiebreaker` `high_score` and `continuation` each break ties by
+    their documented rule.
+  - `dump_truck` `positive_only` resets the running total at +555;
+    `both_signs` triggers at ±555.
+  - All eight fields flip to selectable.
+  - Scoring and state-machine tests cover every variant value.
+- [ ] Implement special contracts.
+  - `mizere` `on` admits the zero-tricks no-trump contract; the
+    contract value lives in a new sibling field.
+  - `slam_contract` `on` admits the all-tricks contract; the contract
+    value lives in a new sibling field.
+  - `open_hand` `on` plays the deal face-up with doubled scoring on
+    success and failure.
+  - The engine's auction, trick-play, and scoring all honour each
+    special end-to-end.
+  - All three fields flip to selectable.
+  - Engine tests run scripted full deals for every special contract.
+- [ ] Implement penalty house rules.
+  - `revoke` `flat` deducts a fixed 120; `configurable` deducts a new
+    sibling fixed amount.
+  - `talon_look` `stricter` forfeits the deal and awards the bid to
+    the opposing side.
+  - `showing_hand` `strict` deducts the full bid.
+  - `zero_tricks` `consecutive_three` and `any_three` (бoлт / палка)
+    track and penalise zero-trick streaks; the declarer-exempt and
+    golden-deal-doubled sub-flags live in new sibling fields.
+  - `cross` `on` accumulates two crosses before deducting a fixed
+    penalty; the penalty value lives in a new sibling field.
+  - All five fields flip to selectable.
+  - Penalty engine tests cover every variant value.
 
 ---
 
