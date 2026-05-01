@@ -1,0 +1,486 @@
+-- Phase 3.6 talon-variants integration coverage. Drives the session
+-- through scripted scenarios where each `talon.*` toggle changes flow.
+
+local Session = require("app.session")
+local rule_config = require("core.rule_config")
+local card = require("core.card")
+
+-- Build a canonical-Russian-shaped config with arbitrary `talon`
+-- overrides. Mirrors the helper in `tests/spec/app/session_redeal_spec.lua`.
+local function canonical_with_talon(overrides)
+    overrides = overrides or {}
+    local t = {
+        size = 3,
+        distribution = "declarer_takes_then_passes",
+        flip_after_first_round = "off",
+        pass_the_talon = "off",
+        buyback = "off",
+        buyback_penalty = 50,
+        hidden_on_minimum_100 = "off",
+        bad_talon_redeal = "off",
+        bad_talon_threshold = 5,
+        rebuy = "off",
+        rebuy_contract_value = 240,
+        open_discard = "off",
+    }
+    for k, v in pairs(overrides) do
+        t[k] = v
+    end
+    local blob = {
+        schema_version = 1,
+        cards = {
+            point_values = {
+                ["A"] = 11,
+                ["10"] = 10,
+                ["K"] = 4,
+                ["Q"] = 3,
+                ["J"] = 2,
+                ["9"] = 0,
+            },
+            trick_rank_order = { "9", "J", "Q", "K", "10", "A" },
+        },
+        players = {
+            count = 3,
+            partnership_mode = "none",
+            four_player_config = "dealer_plays_no_talon",
+            two_player_config = "closed_talon_draw_stock",
+        },
+        dealing = {
+            four_nine_redeal = "off",
+            three_nine_redeal = "off",
+            four_jack_redeal = "off",
+            weak_hand_redeal = "off",
+            weak_hand_threshold = 14,
+            misdeal_handling = "standard",
+            misdeal_flat_penalty = 20,
+            all_pass_handling = "redeal",
+        },
+        talon = t,
+        bidding = {
+            opening_min = 100,
+            pre_talon_max = 120,
+            increment_threshold = 200,
+            increment_below_200 = 5,
+            increment_from_200 = 10,
+            forced_opening = "off",
+            forced_dealer_bid = "off",
+            blind_bid = "off",
+            re_entry_after_pass = "off",
+            contra = "off",
+            forced_bid_concession = "off",
+            no_contract_without_marriage = "off",
+            negative_score_restriction = "off",
+            named_contracts = "off",
+        },
+        marriages = {
+            values = { hearts = 100, diamonds = 80, clubs = 60, spades = 40 },
+            half_marriage_capture_bonus = "off",
+            trump_activation_timing = "next_trick",
+            marriage_announcement_timing = "on_lead",
+            drowned_marriage = "off",
+            ace_marriage = "off",
+            one_trump_per_deal = "off",
+        },
+        tricks = {
+            must_follow = true,
+            must_beat = true,
+            must_trump = true,
+            must_overtrump = true,
+            must_overtake_strictness = "standard",
+            must_trump_strictness = "standard",
+            defender_must_overtrump_declarer = "off",
+            lazy_revoke = "off",
+            partial_trumping = "off",
+            last_trick_bonus = "off",
+            slam_bonus = "off",
+            slam_against_penalty = "off",
+            lead_trump_after_marriage = "off",
+        },
+        scoring = {
+            round_to_nearest = 5,
+            actual_points_on_success = "off",
+            defender_contributions = "standard",
+            failed_contract_distribution = "lost",
+            declarer_rounding_before_contract_check = "off",
+        },
+        opening_game = { golden_deal = "off" },
+        barrel = {
+            threshold = 880,
+            deal_count = 3,
+            fall_off_penalty = -120,
+            pit_lock_in = "off",
+            collision_rule = "last_mounter",
+            overshoot_penalty = "off",
+            reverse_barrel = "off",
+        },
+        endgame = {
+            target_score = 1000,
+            going_over_target = "win_immediately",
+            tiebreaker = "declarer_wins",
+            dump_truck = "off",
+        },
+        specials = {
+            mizere = "off",
+            slam_contract = "off",
+            open_hand = "off",
+        },
+        penalties = {
+            revoke = "standard",
+            talon_look = "standard",
+            showing_hand = "standard",
+            zero_tricks = "off",
+            cross = "off",
+        },
+    }
+    return rule_config.new(blob)
+end
+
+local function c(suit, rank)
+    return card.new(suit, rank)
+end
+
+-- Hands and a low-points talon (3 nines = 0 card-points). Distribution
+-- of remaining cards across seats 1/2/3 is balanced so no dealing-time
+-- redeal triggers fire for any rule.
+local function hands_with_low_talon()
+    local seat1 = {
+        c("spades", "K"),
+        c("clubs", "K"),
+        c("diamonds", "K"),
+        c("hearts", "K"),
+        c("spades", "Q"),
+        c("clubs", "Q"),
+        c("diamonds", "Q"),
+    }
+    local seat2 = {
+        c("hearts", "Q"),
+        c("spades", "J"),
+        c("clubs", "J"),
+        c("diamonds", "J"),
+        c("hearts", "J"),
+        c("spades", "A"),
+        c("clubs", "A"),
+    }
+    local seat3 = {
+        c("diamonds", "A"),
+        c("hearts", "A"),
+        c("spades", "10"),
+        c("clubs", "10"),
+        c("diamonds", "10"),
+        c("hearts", "10"),
+        c("hearts", "9"),
+    }
+    -- Three nines + nothing — 0 card points.
+    local talon = {
+        c("spades", "9"),
+        c("clubs", "9"),
+        c("diamonds", "9"),
+    }
+    return { seat1, seat2, seat3 }, talon
+end
+
+-- Hands and a high-points talon (3 aces = 33 card-points). Used to
+-- prove the bad-talon offer does not fire when the talon is rich.
+local function hands_with_rich_talon()
+    local seat1 = {
+        c("spades", "K"),
+        c("clubs", "K"),
+        c("diamonds", "K"),
+        c("hearts", "K"),
+        c("spades", "Q"),
+        c("clubs", "Q"),
+        c("diamonds", "Q"),
+    }
+    local seat2 = {
+        c("hearts", "Q"),
+        c("spades", "J"),
+        c("clubs", "J"),
+        c("diamonds", "J"),
+        c("hearts", "J"),
+        c("spades", "9"),
+        c("clubs", "9"),
+    }
+    local seat3 = {
+        c("diamonds", "9"),
+        c("hearts", "9"),
+        c("spades", "10"),
+        c("clubs", "10"),
+        c("diamonds", "10"),
+        c("hearts", "10"),
+        c("spades", "A"),
+    }
+    local talon = {
+        c("clubs", "A"),
+        c("diamonds", "A"),
+        c("hearts", "A"),
+    }
+    return { seat1, seat2, seat3 }, talon
+end
+
+local function session_at_auction(test_config, hands, talon, opts)
+    opts = opts or {}
+    local auction_module = require("core.auction")
+    local marriages_module = require("core.marriages")
+    local dealer = opts.dealer or 1
+    local auction = auction_module.new(test_config, dealer).auction
+    local marriages = marriages_module.new(test_config).marriages
+    return Session.from_state({
+        config = test_config,
+        seed = opts.seed or 1,
+        dealer = dealer,
+        hands = hands,
+        talon_cards = talon,
+        auction = auction,
+        marriages = marriages,
+        running_totals = opts.running_totals or { 0, 0, 0 },
+        deal_index = opts.deal_index or 1,
+    })
+end
+
+-- Drive the auction to completion: forehand bids `bid_amount`, the
+-- other two seats pass. With dealer = 1 (default) forehand is seat 2.
+local function drive_auction_to_done(s, bid_amount)
+    bid_amount = bid_amount or 100
+    -- Forehand opens.
+    assert(s:bid(2, bid_amount).ok, "forehand bid must succeed")
+    -- Remaining two seats pass clockwise.
+    assert(s:pass(3).ok, "seat 3 pass must succeed")
+    assert(s:pass(1).ok, "seat 1 pass must succeed")
+end
+
+describe("app.session talon variants", function()
+    describe("bad_talon_redeal", function()
+        it("does not surface an offer when the rule is off", function()
+            local cfg = canonical_with_talon({ bad_talon_redeal = "off" })
+            local hands, talon = hands_with_low_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s)
+            assert.are.equal("talon", s:current_phase())
+            assert.is_nil(s:bad_talon_offer_state())
+        end)
+
+        it("surfaces the offer when the rule is any_contract and the talon is low", function()
+            local cfg = canonical_with_talon({ bad_talon_redeal = "any_contract" })
+            local hands, talon = hands_with_low_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s)
+            assert.are.equal("awaiting_bad_talon_decision", s:current_phase())
+            local offer = s:bad_talon_offer_state()
+            assert.is_not_nil(offer)
+            assert.are.equal("bad_talon", offer.kind)
+            assert.are.equal(0, offer.points)
+            assert.are.equal(2, offer.declarer)
+        end)
+
+        it("does not surface an offer when the talon is rich", function()
+            local cfg = canonical_with_talon({ bad_talon_redeal = "any_contract" })
+            local hands, talon = hands_with_rich_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s)
+            assert.are.equal("talon", s:current_phase())
+            assert.is_nil(s:bad_talon_offer_state())
+        end)
+
+        it("blocks take_talon while the offer is open", function()
+            local cfg = canonical_with_talon({ bad_talon_redeal = "any_contract" })
+            local hands, talon = hands_with_low_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s)
+            local res = s:take_talon()
+            assert.is_false(res.ok)
+            assert.are.equal("awaiting_bad_talon_decision", res.error.code)
+        end)
+
+        it("decline_bad_talon_redeal clears the offer and unblocks take_talon", function()
+            local cfg = canonical_with_talon({ bad_talon_redeal = "any_contract" })
+            local hands, talon = hands_with_low_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s)
+            local res = s:decline_bad_talon_redeal()
+            assert.is_true(res.ok)
+            assert.is_nil(s:bad_talon_offer_state())
+            assert.are.equal("talon", s:current_phase())
+            local log = s:bad_talon_log()
+            assert.are.equal(1, #log)
+            assert.is_false(log[1].accepted)
+            -- take_talon should now succeed.
+            assert.is_true(s:take_talon().ok)
+        end)
+
+        it("accept_bad_talon_redeal redeals at the same dealer", function()
+            local cfg = canonical_with_talon({ bad_talon_redeal = "any_contract" })
+            local hands, talon = hands_with_low_talon()
+            local s = session_at_auction(cfg, hands, talon, { seed = 99 })
+            drive_auction_to_done(s)
+            local before_seed = s:seed()
+            local res = s:accept_bad_talon_redeal()
+            assert.is_true(res.ok)
+            -- Same dealer; seed bumped.
+            assert.are.equal(1, s:dealer())
+            assert.is_true(s:seed() > before_seed)
+            assert.are.equal("auction", s:current_phase())
+            local log = s:bad_talon_log()
+            assert.are.equal(1, #log)
+            assert.is_true(log[1].accepted)
+        end)
+
+        it("ignores the offer when contract is above opening_min under minimum_100_only", function()
+            local cfg = canonical_with_talon({ bad_talon_redeal = "minimum_100_only" })
+            local hands, talon = hands_with_low_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s, 105)
+            assert.are.equal("talon", s:current_phase())
+            assert.is_nil(s:bad_talon_offer_state())
+        end)
+    end)
+
+    describe("pass_the_talon (concede_deal)", function()
+        it("rejects concede_deal when the rule is off", function()
+            local cfg = canonical_with_talon({ pass_the_talon = "off" })
+            local hands, talon = hands_with_rich_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s)
+            local res = s:concede_deal()
+            assert.is_false(res.ok)
+            assert.are.equal("concede_disabled", res.error.code)
+        end)
+
+        it("ends the deal with -bid against the declarer when the rule is on", function()
+            local cfg = canonical_with_talon({ pass_the_talon = "on" })
+            local hands, talon = hands_with_rich_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s, 100)
+            local declarer = s._talon.declarer
+            local res = s:concede_deal()
+            assert.is_true(res.ok)
+            assert.are.equal("deal_done", s:current_phase())
+            assert.are.equal("talon_conceded", s:deal_done().reason)
+            local totals = s:running_totals()
+            assert.are.equal(-100, totals[declarer])
+        end)
+    end)
+
+    describe("buyback (buyback_hand)", function()
+        it("rejects buyback_hand when the rule is off", function()
+            local cfg = canonical_with_talon({ buyback = "off" })
+            local hands, talon = hands_with_rich_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s)
+            local res = s:buyback_hand()
+            assert.is_false(res.ok)
+            assert.are.equal("buyback_disabled", res.error.code)
+        end)
+
+        it("deducts the penalty and re-deals in place when the rule is on", function()
+            local cfg = canonical_with_talon({ buyback = "on", buyback_penalty = 80 })
+            local hands, talon = hands_with_rich_talon()
+            local s = session_at_auction(cfg, hands, talon, { seed = 50 })
+            drive_auction_to_done(s)
+            local declarer = s._talon.declarer
+            local before_seed = s:seed()
+            local res = s:buyback_hand()
+            assert.is_true(res.ok)
+            -- Auction restarts at the same dealer with a bumped seed.
+            assert.are.equal("auction", s:current_phase())
+            assert.are.equal(1, s:dealer())
+            assert.is_true(s:seed() > before_seed)
+            local totals = s:running_totals()
+            assert.are.equal(-80, totals[declarer])
+            local log = s:buyback_log()
+            assert.are.equal(1, #log)
+            assert.are.equal(80, log[1].penalty)
+        end)
+    end)
+
+    describe("flip_after_first_round", function()
+        it("keeps the talon face-down across the first round when on", function()
+            local cfg = canonical_with_talon({ flip_after_first_round = "on" })
+            local hands, talon = hands_with_rich_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            -- Round 1 — no actions yet, then forehand bids.
+            assert.is_true(s:talon_face_down())
+            assert(s:bid(2, 100).ok)
+            assert.is_true(s:talon_face_down())
+            assert(s:pass(3).ok)
+            assert.is_true(s:talon_face_down())
+        end)
+
+        it("flips the talon when the auction reaches round 2", function()
+            local cfg = canonical_with_talon({ flip_after_first_round = "on" })
+            local hands, talon = hands_with_rich_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            assert(s:bid(2, 100).ok)
+            assert(s:bid(3, 105).ok)
+            assert(s:bid(1, 110).ok)
+            -- All three active seats acted; round 2 starts.
+            assert.is_false(s:talon_face_down())
+        end)
+
+        it("ignores the rule when off (face-down through whole auction)", function()
+            local cfg = canonical_with_talon({ flip_after_first_round = "off" })
+            local hands, talon = hands_with_rich_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            assert(s:bid(2, 100).ok)
+            assert(s:bid(3, 105).ok)
+            assert(s:bid(1, 110).ok)
+            -- Default behaviour: face-down throughout the auction.
+            assert.is_true(s:talon_face_down())
+        end)
+    end)
+
+    describe("hidden_on_minimum_100", function()
+        it("returns false everywhere when the rule is off", function()
+            local cfg = canonical_with_talon({ hidden_on_minimum_100 = "off" })
+            local hands, talon = hands_with_rich_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s, 100)
+            assert.is_false(s:talon_hidden_rule_active())
+            for seat = 1, 3 do
+                assert.is_false(s:talon_face_down_to_seat(seat))
+            end
+        end)
+
+        it("hides from defenders only when contract is at the floor", function()
+            local cfg = canonical_with_talon({ hidden_on_minimum_100 = "minimum_100_only" })
+            local hands, talon = hands_with_rich_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s, 100)
+            assert.is_true(s:talon_hidden_rule_active())
+            local declarer = s._talon.declarer
+            -- Declarer always sees their own talon.
+            assert.is_false(s:talon_face_down_to_seat(declarer))
+            -- Defenders see it face-down.
+            for seat = 1, 3 do
+                if seat ~= declarer then
+                    assert.is_true(s:talon_face_down_to_seat(seat))
+                end
+            end
+        end)
+
+        it("does not hide once contract climbs above opening_min", function()
+            local cfg = canonical_with_talon({ hidden_on_minimum_100 = "minimum_100_only" })
+            local hands, talon = hands_with_rich_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s, 105)
+            assert.is_false(s:talon_hidden_rule_active())
+        end)
+    end)
+
+    describe("open_discard", function()
+        it("returns false when the rule is off", function()
+            local cfg = canonical_with_talon({ open_discard = "off" })
+            local hands, talon = hands_with_rich_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s)
+            assert.is_false(s:talon_passes_face_up())
+        end)
+
+        it("returns true when the rule is on", function()
+            local cfg = canonical_with_talon({ open_discard = "on" })
+            local hands, talon = hands_with_rich_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s)
+            assert.is_true(s:talon_passes_face_up())
+        end)
+    end)
+end)

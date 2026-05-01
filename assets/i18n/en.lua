@@ -97,6 +97,15 @@ return {
     ["scene.table.all_pass_banner.pass_out"] = "All passed — deal rotates",
     ["scene.table.all_pass_banner.raspassy"] = "Raspassy — reverse-scoring deal",
 
+    ["scene.table.talon.concede_button"] = "Concede deal",
+    ["scene.table.talon.buyback_button"] = "Buy back hand (-%{penalty})",
+    ["scene.table.bad_talon_prompt.title"] = "Redeal — bad talon",
+    ["scene.table.bad_talon_prompt.body"] = "Talon has only %{points} card points. Redeal?",
+    ["scene.table.bad_talon_prompt.accept"] = "Redeal",
+    ["scene.table.bad_talon_prompt.decline"] = "Play this hand",
+    ["scene.table.buyback_banner"] = "Player %{declarer} bought back the hand (-%{penalty})",
+    ["scene.table.deal_done.talon_conceded"] = "Player %{declarer} conceded at %{bid}",
+
     ["scene.table.toast.illegal_play"] = "Illegal play: %{reason}",
     ["scene.table.toast.not_your_turn"] = "Not your turn",
     ["scene.table.toast.must_follow"] = "You must follow %{suit}",
@@ -264,9 +273,15 @@ return {
     ["templates.field.talon.flip_after_first_round.label"] = "Flip after first round",
     ["templates.field.talon.pass_the_talon.label"] = "Pass-the-talon",
     ["templates.field.talon.buyback.label"] = "Buyback",
+    ["templates.field.talon.buyback_penalty.label"] = "Buyback penalty",
+    ["templates.field.talon.buyback_penalty.help"] = "Points deducted from declarer when buyback is exercised.",
     ["templates.field.talon.hidden_on_minimum_100.label"] = "Hidden talon on minimum 100",
     ["templates.field.talon.bad_talon_redeal.label"] = "Bad-talon redeal",
+    ["templates.field.talon.bad_talon_threshold.label"] = "Bad-talon threshold",
+    ["templates.field.talon.bad_talon_threshold.help"] = "Talons with strictly fewer card points trigger the redeal offer.",
     ["templates.field.talon.rebuy.label"] = "Talon re-buy",
+    ["templates.field.talon.rebuy_contract_value.label"] = "Re-buy contract value",
+    ["templates.field.talon.rebuy_contract_value.help"] = "Fixed contract a re-buyer takes on after seeing the talon.",
     ["templates.field.talon.open_discard.label"] = "Open discard",
 
     -- Bidding.

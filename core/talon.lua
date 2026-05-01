@@ -36,6 +36,7 @@
 
 local rule_config = require("core.rule_config")
 local auction_module = require("core.auction")
+local card_module = require("core.card")
 
 local M = {}
 
@@ -331,6 +332,33 @@ function M.is_talon(value)
         return false
     end
     return getmetatable(value) == TALON_TYPE
+end
+
+-- Pure predicate the bad-talon-redeal rule reads: returns true when the
+-- total card-point sum of the talon cards is strictly less than the
+-- threshold. Inert under the `bad_talon_redeal = "off"` rule (the
+-- session never calls in). Cards must be card-shaped (suit + rank); the
+-- config supplies the point-values table so non-canonical templates
+-- read the same source the trick layer uses.
+function M.is_bad_talon(talon_cards, threshold, config)
+    if type(talon_cards) ~= "table" then
+        return false
+    end
+    if not is_integer(threshold) or threshold < 0 then
+        return false
+    end
+    if not rule_config.is_rule_config(config) then
+        return false
+    end
+    local total = 0
+    for i = 1, #talon_cards do
+        local card = talon_cards[i]
+        if not is_card_like(card) then
+            return false
+        end
+        total = total + card_module.point_value(card, config)
+    end
+    return total < threshold
 end
 
 local function ensure_talon(state)

@@ -433,40 +433,61 @@ ships scripted engine tests covering every value.
   - All six fields flip to selectable.
   - Engine tests cover every variant value against scripted dealing
     fixtures.
-- [ ] Implement talon variants.
-  - `size` 0 disables the talon; `size` 2 runs the Polish two-card
-    flow.
-  - `distribution` `pass_without_taking` and `stock_draw` both run
-    end-to-end.
+- [x] Implement talon variants.
   - `flip_after_first_round` `on` keeps the talon closed during the
     first round of bidding.
   - `pass_the_talon` `on` lets the declarer concede the deal at the
     bid after seeing the talon.
   - `buyback` `on` lets the declarer discard the hand for a fresh deal
-    at a new sibling penalty.
+    at the new sibling `buyback_penalty`.
   - `hidden_on_minimum_100` `minimum_100_only` and `any_forced_100`
     suppress the talon reveal to defenders.
   - `bad_talon_redeal` `any_contract` and `minimum_100_only` redeal on
-    a worthless talon.
-  - `rebuy` `on` triggers a second auction at a higher fixed contract.
+    a worthless talon (threshold lives in the new sibling
+    `bad_talon_threshold`).
   - `open_discard` `on` deals the declarer's discards face-up.
-  - Talon area hides under `size` 0 and shrinks under `size` 2.
-  - `pass_without_taking` and `stock_draw` replace the standard talon
-    phase with their own affordances (no pickup; per-trick draw).
-  - `flip_after_first_round` shows the talon closed during the first
-    round of bidding.
   - `pass_the_talon` adds a "Concede deal" button after the talon
     reveal; `buyback` adds a "Buy back hand" button with the active
     penalty.
   - `hidden_on_minimum_100` keeps the talon closed to defenders;
-    `bad_talon_redeal` shows a "Redeal — bad talon" banner.
-  - `rebuy` adds a "Buy talon at higher contract" affordance;
-    `open_discard` deals the declarer's discards face-up at the
+    `bad_talon_redeal` shows a "Redeal — bad talon" modal driven by
+    the same pattern as the dealing-time redeal modal.
+  - `flip_after_first_round` shows the talon closed during the first
+    round of bidding and flips it once a second round opens.
+  - `open_discard` deals the declarer's discards face-up at the
     table.
-  - `size` flips to implemented; the eight house-rule fields flip to
-    selectable.
+  - Six house-rule fields flip to selectable
+    (`flip_after_first_round`, `pass_the_talon`, `buyback`,
+    `hidden_on_minimum_100`, `bad_talon_redeal`, `open_discard`); three
+    new sibling fields (`buyback_penalty`, `bad_talon_threshold`,
+    `rebuy_contract_value`) land in the schema. `size` and
+    `distribution` keep their current status; `rebuy` stays deferred.
   - Engine tests cover every variant value against scripted talon
     scenarios.
+- [ ] Implement talon rebuy.
+  - `rebuy` `on` triggers a second auction at the
+    `rebuy_contract_value` after talon reveal; the rebuyer becomes the
+    new declarer.
+  - Table scene adds a "Buy talon at higher contract" affordance
+    after the reveal.
+  - `rebuy` flips to selectable; engine tests cover scripted rebuy
+    scenarios end-to-end.
+- [ ] Implement Polish 2-card talon distribution.
+  - `distribution` `pass_without_taking` runs the Polish flow where
+    the declarer never picks the talon up.
+  - `size = 2` lifts the engine's `unsupported_talon_size` guard for
+    the Polish layout.
+  - Talon area shrinks to two cards; pickup phase is replaced with a
+    direct pass affordance.
+  - `distribution` flips to selectable for `pass_without_taking`;
+    `size` flips to implemented; engine tests cover a scripted full
+    Polish deal.
+- [ ] Implement 2-player stock_draw talon distribution.
+  - `distribution` `stock_draw` runs the 2-player Schnapsen-style
+    per-trick draw on top of the existing 2-player Variant A stock
+    infrastructure.
+  - `distribution` flips to selectable for `stock_draw`; engine tests
+    cover a scripted full 2-player Variant A deal.
 - [ ] Implement bidding house rules.
   - `forced_opening` `on` forces forehand to open at the minimum bid.
   - `forced_dealer_bid` `on` lands the dealer in the minimum-100

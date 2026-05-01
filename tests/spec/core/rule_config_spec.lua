@@ -39,9 +39,12 @@ local function valid_table()
             flip_after_first_round = "off",
             pass_the_talon = "off",
             buyback = "off",
+            buyback_penalty = 50,
             hidden_on_minimum_100 = "off",
             bad_talon_redeal = "off",
+            bad_talon_threshold = 5,
             rebuy = "off",
+            rebuy_contract_value = 240,
             open_discard = "off",
         },
         bidding = {
@@ -1753,12 +1756,12 @@ describe("core.rule_config", function()
     end)
 
     describe("talon.flip_after_first_round", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("talon.flip_after_first_round")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -1767,30 +1770,43 @@ describe("core.rule_config", function()
             assert.is_true(allowed["on"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts every allowed value through try_new", function()
+            for _, ok_value in ipairs({ "off", "on" }) do
+                local t = valid_table()
+                t.talon.flip_after_first_round = ok_value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. ok_value .. " should be accepted")
+                assert.are.equal(ok_value, res.config.talon.flip_after_first_round)
+            end
+        end)
+
+        it("rejects an unknown value with value_not_allowed", function()
             local t = valid_table()
-            t.talon.flip_after_first_round = "on"
+            t.talon.flip_after_first_round = "sometimes"
             local res = rule_config.try_new(t)
             assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("value_not_allowed", res.error.code)
             assert.are.equal("talon.flip_after_first_round", res.error.path)
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
+        it("survives a JSON round trip at on", function()
+            local t = valid_table()
+            t.talon.flip_after_first_round = "on"
+            local config_in = rule_config.new(t)
+            local s = rule_config.to_json(config_in)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.talon.flip_after_first_round)
+            assert.are.equal("on", res.config.talon.flip_after_first_round)
         end)
     end)
 
     describe("talon.pass_the_talon", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("talon.pass_the_talon")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -1799,30 +1815,43 @@ describe("core.rule_config", function()
             assert.is_true(allowed["on"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts every allowed value through try_new", function()
+            for _, ok_value in ipairs({ "off", "on" }) do
+                local t = valid_table()
+                t.talon.pass_the_talon = ok_value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. ok_value .. " should be accepted")
+                assert.are.equal(ok_value, res.config.talon.pass_the_talon)
+            end
+        end)
+
+        it("rejects an unknown value with value_not_allowed", function()
             local t = valid_table()
-            t.talon.pass_the_talon = "on"
+            t.talon.pass_the_talon = "maybe"
             local res = rule_config.try_new(t)
             assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("value_not_allowed", res.error.code)
             assert.are.equal("talon.pass_the_talon", res.error.path)
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
+        it("survives a JSON round trip at on", function()
+            local t = valid_table()
+            t.talon.pass_the_talon = "on"
+            local config_in = rule_config.new(t)
+            local s = rule_config.to_json(config_in)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.talon.pass_the_talon)
+            assert.are.equal("on", res.config.talon.pass_the_talon)
         end)
     end)
 
     describe("talon.buyback", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("talon.buyback")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -1831,30 +1860,84 @@ describe("core.rule_config", function()
             assert.is_true(allowed["on"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts every allowed value through try_new", function()
+            for _, ok_value in ipairs({ "off", "on" }) do
+                local t = valid_table()
+                t.talon.buyback = ok_value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. ok_value .. " should be accepted")
+                assert.are.equal(ok_value, res.config.talon.buyback)
+            end
+        end)
+
+        it("rejects an unknown value with value_not_allowed", function()
             local t = valid_table()
-            t.talon.buyback = "on"
+            t.talon.buyback = "discount"
             local res = rule_config.try_new(t)
             assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("value_not_allowed", res.error.code)
             assert.are.equal("talon.buyback", res.error.path)
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
+        it("survives a JSON round trip at on with a custom penalty", function()
+            local t = valid_table()
+            t.talon.buyback = "on"
+            t.talon.buyback_penalty = 80
+            local config_in = rule_config.new(t)
+            local s = rule_config.to_json(config_in)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.talon.buyback)
+            assert.are.equal("on", res.config.talon.buyback)
+            assert.are.equal(80, res.config.talon.buyback_penalty)
+        end)
+    end)
+
+    describe("talon.buyback_penalty", function()
+        it("exposes a selectable number-leaf descriptor with a 0..240 range", function()
+            local d = rule_config.schema_for("talon.buyback_penalty")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(50, d.default)
+            assert.are.equal(0, d.min)
+            assert.are.equal(240, d.max)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("accepts the default value through try_new", function()
+            local res = rule_config.try_new(valid_table())
+            assert.is_true(res.ok)
+            assert.are.equal(50, res.config.talon.buyback_penalty)
+        end)
+
+        it("accepts both range endpoints", function()
+            for _, ok_value in ipairs({ 0, 50, 120, 240 }) do
+                local t = valid_table()
+                t.talon.buyback_penalty = ok_value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "penalty=" .. ok_value .. " should be accepted")
+                assert.are.equal(ok_value, res.config.talon.buyback_penalty)
+            end
+        end)
+
+        it("rejects out-of-range values with value_out_of_range", function()
+            for _, bad in ipairs({ -1, 241, 9999 }) do
+                local t = valid_table()
+                t.talon.buyback_penalty = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "penalty=" .. bad .. " should be rejected")
+                assert.are.equal("value_out_of_range", res.error.code)
+                assert.are.equal("talon.buyback_penalty", res.error.path)
+            end
         end)
     end)
 
     describe("talon.hidden_on_minimum_100", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("talon.hidden_on_minimum_100")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -1864,32 +1947,43 @@ describe("core.rule_config", function()
             assert.is_true(allowed["any_forced_100"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
-            for _, bad in ipairs({ "minimum_100_only", "any_forced_100" }) do
+        it("accepts every allowed value through try_new", function()
+            for _, ok_value in ipairs({ "off", "minimum_100_only", "any_forced_100" }) do
                 local t = valid_table()
-                t.talon.hidden_on_minimum_100 = bad
+                t.talon.hidden_on_minimum_100 = ok_value
                 local res = rule_config.try_new(t)
-                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
-                assert.are.equal("deferred_field_changed", res.error.code)
-                assert.are.equal("talon.hidden_on_minimum_100", res.error.path)
+                assert.is_true(res.ok, "value " .. ok_value .. " should be accepted")
+                assert.are.equal(ok_value, res.config.talon.hidden_on_minimum_100)
             end
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
+        it("rejects an unknown value with value_not_allowed", function()
+            local t = valid_table()
+            t.talon.hidden_on_minimum_100 = "always"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("value_not_allowed", res.error.code)
+            assert.are.equal("talon.hidden_on_minimum_100", res.error.path)
+        end)
+
+        it("survives a JSON round trip at any_forced_100", function()
+            local t = valid_table()
+            t.talon.hidden_on_minimum_100 = "any_forced_100"
+            local config_in = rule_config.new(t)
+            local s = rule_config.to_json(config_in)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.talon.hidden_on_minimum_100)
+            assert.are.equal("any_forced_100", res.config.talon.hidden_on_minimum_100)
         end)
     end)
 
     describe("talon.bad_talon_redeal", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("talon.bad_talon_redeal")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -1899,22 +1993,74 @@ describe("core.rule_config", function()
             assert.is_true(allowed["minimum_100_only"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
-            for _, bad in ipairs({ "any_contract", "minimum_100_only" }) do
+        it("accepts every allowed value through try_new", function()
+            for _, ok_value in ipairs({ "off", "any_contract", "minimum_100_only" }) do
                 local t = valid_table()
-                t.talon.bad_talon_redeal = bad
+                t.talon.bad_talon_redeal = ok_value
                 local res = rule_config.try_new(t)
-                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
-                assert.are.equal("deferred_field_changed", res.error.code)
-                assert.are.equal("talon.bad_talon_redeal", res.error.path)
+                assert.is_true(res.ok, "value " .. ok_value .. " should be accepted")
+                assert.are.equal(ok_value, res.config.talon.bad_talon_redeal)
             end
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
+        it("rejects an unknown value with value_not_allowed", function()
+            local t = valid_table()
+            t.talon.bad_talon_redeal = "every_contract"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("value_not_allowed", res.error.code)
+            assert.are.equal("talon.bad_talon_redeal", res.error.path)
+        end)
+
+        it("survives a JSON round trip at any_contract with a custom threshold", function()
+            local t = valid_table()
+            t.talon.bad_talon_redeal = "any_contract"
+            t.talon.bad_talon_threshold = 8
+            local config_in = rule_config.new(t)
+            local s = rule_config.to_json(config_in)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.talon.bad_talon_redeal)
+            assert.are.equal("any_contract", res.config.talon.bad_talon_redeal)
+            assert.are.equal(8, res.config.talon.bad_talon_threshold)
+        end)
+    end)
+
+    describe("talon.bad_talon_threshold", function()
+        it("exposes a selectable number-leaf descriptor with a 0..30 range", function()
+            local d = rule_config.schema_for("talon.bad_talon_threshold")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(5, d.default)
+            assert.are.equal(0, d.min)
+            assert.are.equal(30, d.max)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("accepts the default value through try_new", function()
+            local res = rule_config.try_new(valid_table())
+            assert.is_true(res.ok)
+            assert.are.equal(5, res.config.talon.bad_talon_threshold)
+        end)
+
+        it("accepts both range endpoints", function()
+            for _, ok_value in ipairs({ 0, 5, 15, 30 }) do
+                local t = valid_table()
+                t.talon.bad_talon_threshold = ok_value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "threshold=" .. ok_value .. " should be accepted")
+                assert.are.equal(ok_value, res.config.talon.bad_talon_threshold)
+            end
+        end)
+
+        it("rejects out-of-range values with value_out_of_range", function()
+            for _, bad in ipairs({ -1, 31, 9999 }) do
+                local t = valid_table()
+                t.talon.bad_talon_threshold = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "threshold=" .. bad .. " should be rejected")
+                assert.are.equal("value_out_of_range", res.error.code)
+                assert.are.equal("talon.bad_talon_threshold", res.error.path)
+            end
         end)
     end)
 
@@ -1950,13 +2096,52 @@ describe("core.rule_config", function()
         end)
     end)
 
+    describe("talon.rebuy_contract_value", function()
+        it("exposes a selectable number-leaf descriptor with a 100..240 range", function()
+            local d = rule_config.schema_for("talon.rebuy_contract_value")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(240, d.default)
+            assert.are.equal(100, d.min)
+            assert.are.equal(240, d.max)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("accepts the default value through try_new", function()
+            local res = rule_config.try_new(valid_table())
+            assert.is_true(res.ok)
+            assert.are.equal(240, res.config.talon.rebuy_contract_value)
+        end)
+
+        it("accepts both range endpoints", function()
+            for _, ok_value in ipairs({ 100, 120, 200, 240 }) do
+                local t = valid_table()
+                t.talon.rebuy_contract_value = ok_value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value=" .. ok_value .. " should be accepted")
+                assert.are.equal(ok_value, res.config.talon.rebuy_contract_value)
+            end
+        end)
+
+        it("rejects out-of-range values with value_out_of_range", function()
+            for _, bad in ipairs({ 0, 50, 99, 241, 9999 }) do
+                local t = valid_table()
+                t.talon.rebuy_contract_value = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value=" .. bad .. " should be rejected")
+                assert.are.equal("value_out_of_range", res.error.code)
+                assert.are.equal("talon.rebuy_contract_value", res.error.path)
+            end
+        end)
+    end)
+
     describe("talon.open_discard", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("talon.open_discard")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -1965,20 +2150,33 @@ describe("core.rule_config", function()
             assert.is_true(allowed["on"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts every allowed value through try_new", function()
+            for _, ok_value in ipairs({ "off", "on" }) do
+                local t = valid_table()
+                t.talon.open_discard = ok_value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. ok_value .. " should be accepted")
+                assert.are.equal(ok_value, res.config.talon.open_discard)
+            end
+        end)
+
+        it("rejects an unknown value with value_not_allowed", function()
             local t = valid_table()
-            t.talon.open_discard = "on"
+            t.talon.open_discard = "partial"
             local res = rule_config.try_new(t)
             assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("value_not_allowed", res.error.code)
             assert.are.equal("talon.open_discard", res.error.path)
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
+        it("survives a JSON round trip at on", function()
+            local t = valid_table()
+            t.talon.open_discard = "on"
+            local config_in = rule_config.new(t)
+            local s = rule_config.to_json(config_in)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.talon.open_discard)
+            assert.are.equal("on", res.config.talon.open_discard)
         end)
     end)
 

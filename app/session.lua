@@ -206,6 +206,18 @@ function M.new(opts)
         _redeal_log = {},
         _misdeal_log = {},
         _raspassy_active = false,
+        -- Phase 3.6 talon-variants state.
+        --   _bad_talon_offer: nil unless `talon.bad_talon_redeal` fired
+        --       at reveal and the declarer has not yet
+        --       accepted/declined. Mirrors `_redeal_offer`'s shape
+        --       ({ kind = "bad_talon", points, declarer }).
+        --   _bad_talon_log:   list of bad-talon decisions in this deal
+        --       (entry per accept/decline) for the table banner.
+        --   _buyback_log:     list of buyback events in this deal
+        --       (entry per `buyback_hand` call) for the table banner.
+        _bad_talon_offer = nil,
+        _bad_talon_log = {},
+        _buyback_log = {},
     }, Session)
     evaluate_entitlement_with_forced_loop(self)
     return self
@@ -248,6 +260,9 @@ function M.from_state(state)
         _redeal_log = state.redeal_log or {},
         _misdeal_log = state.misdeal_log or {},
         _raspassy_active = state.raspassy_active or false,
+        _bad_talon_offer = state.bad_talon_offer,
+        _bad_talon_log = state.bad_talon_log or {},
+        _buyback_log = state.buyback_log or {},
     }, Session)
     return self
 end
@@ -292,14 +307,77 @@ end
 -- during the auction and revealed for the talon phase. Once tricks begin
 -- the talon is gone from the table and this returns false too — the
 -- renderer will see talon_cards() as empty and draw nothing.
+--
+-- Phase 3.6: with `talon.flip_after_first_round = "on"`, the talon
+-- stays closed during the first round of bidding and flips only when
+-- the auction reaches a second round.
 function Session:talon_face_down()
-    return self._talon == nil and self._tricks == nil
+    if self._talon ~= nil or self._tricks ~= nil then
+        return false
+    end
+    if self._auction and self._config.talon.flip_after_first_round == "on" then
+        local rn = auction_module.round_number(self._auction)
+        if rn.ok and rn.round < 2 then
+            return true
+        end
+        if rn.ok then
+            return false
+        end
+    end
+    return true
 end
 
--- "auction" / "awaiting_redeal_decision" / "talon" / "tricks" /
--- "raspassy_play" / "deal_done" / "done". Derived from which engine
--- objects the session holds, so callers can't ask for a phase that
--- contradicts the underlying state.
+-- True when `talon.hidden_on_minimum_100` is active and the current
+-- contract qualifies, regardless of the viewer. The declarer-vs-seat
+-- check is left to `talon_face_down_to_seat` so callers that need a
+-- single boolean (the view-model's `talon.hidden_to_defenders`) can
+-- read this directly.
+function Session:talon_hidden_rule_active()
+    if self._auction == nil then
+        return false
+    end
+    local mode = self._config.talon.hidden_on_minimum_100
+    if mode == "off" then
+        return false
+    end
+    local final_bid = self._auction.final_bid
+    if final_bid == nil then
+        return false
+    end
+    -- "minimum_100_only" and "any_forced_100" both currently key on the
+    -- declarer winning at the opening minimum — the forced-opening /
+    -- forced-dealer-bid toggles that distinguish the two are still
+    -- deferred. The hide condition will tighten when those land.
+    return final_bid == self._config.bidding.opening_min
+end
+
+-- Per-seat talon visibility post-reveal. Honors
+-- `talon.hidden_on_minimum_100`: when active and the contract is at
+-- the forced floor, defenders see the talon face-down. The declarer
+-- always sees their own talon. Returns false (i.e. visible) by
+-- default.
+function Session:talon_face_down_to_seat(seat)
+    if not self:talon_hidden_rule_active() then
+        return false
+    end
+    local declarer = self._talon and self._talon.declarer or self._auction.declarer
+    if declarer == nil or seat == declarer then
+        return false
+    end
+    return true
+end
+
+-- Whether the declarer's talon discards (passes) should render face-up
+-- to defenders. Driven by `talon.open_discard`.
+function Session:talon_passes_face_up()
+    return self._config.talon.open_discard == "on"
+end
+
+-- "auction" / "awaiting_redeal_decision" / "talon" /
+-- "awaiting_bad_talon_decision" / "tricks" / "raspassy_play" /
+-- "deal_done" / "done". Derived from which engine objects the session
+-- holds, so callers can't ask for a phase that contradicts the
+-- underlying state.
 function Session:current_phase()
     if self._winner then
         return "done"
@@ -314,6 +392,9 @@ function Session:current_phase()
         return "tricks"
     end
     if self._talon then
+        if self._bad_talon_offer then
+            return "awaiting_bad_talon_decision"
+        end
         return "talon"
     end
     if self._redeal_offer then
@@ -676,6 +757,37 @@ local function on_auction_end(self)
         error(msg, 2)
     end
     self._talon = talon_result.talon
+
+    -- Phase 3.6 talon-variants: bad-talon redeal eligibility check.
+    -- The talon module exposes `is_bad_talon`; we evaluate it here so
+    -- the offer is in place by the time the player can act on it.
+    local bad_mode = self._config.talon.bad_talon_redeal
+    if bad_mode ~= "off" then
+        local eligible
+        if bad_mode == "any_contract" then
+            eligible = true
+        else -- "minimum_100_only"
+            -- Forced minimum-100 contract: declarer's only bid was the
+            -- opening minimum and no one else bid. Forced-opening /
+            -- forced-dealer-bid toggles still deferred so we approximate
+            -- with the floor-bid heuristic.
+            eligible = a.final_bid == self._config.bidding.opening_min
+        end
+        if eligible then
+            local threshold = self._config.talon.bad_talon_threshold
+            if talon_module.is_bad_talon(self._talon_cards, threshold, self._config) then
+                local total = 0
+                for _, c in ipairs(self._talon_cards) do
+                    total = total + card_module.point_value(c, self._config)
+                end
+                self._bad_talon_offer = {
+                    kind = "bad_talon",
+                    declarer = a.declarer,
+                    points = total,
+                }
+            end
+        end
+    end
 end
 
 -- Talon → tricks transition. The declarer leads the first trick (the
@@ -844,11 +956,26 @@ end
 
 -- Talon mutators --------------------------------------------------------
 
+local function bad_talon_guard(self, action)
+    if self._bad_talon_offer then
+        local msg = "resolve the pending bad-talon offer first" -- i18n-ok
+        return failure("awaiting_bad_talon_decision", msg, {
+            action = action,
+            kind = self._bad_talon_offer.kind,
+        })
+    end
+    return nil
+end
+
 function Session:take_talon()
     if not self._talon then
         return failure("wrong_phase", "take_talon requires the talon phase", {
             phase = self:current_phase(),
         })
+    end
+    local g = bad_talon_guard(self, "take_talon")
+    if g then
+        return g
     end
     local result = talon_module.take(self._talon)
     if not result.ok then
@@ -863,6 +990,10 @@ function Session:pass_talon(target_player, card)
         return failure("wrong_phase", "pass_talon requires the talon phase", {
             phase = self:current_phase(),
         })
+    end
+    local g = bad_talon_guard(self, "pass_talon")
+    if g then
+        return g
     end
     local result = talon_module.pass(self._talon, target_player, card)
     if not result.ok then
@@ -883,6 +1014,10 @@ function Session:discard_talon(card)
             phase = self:current_phase(),
         })
     end
+    local g = bad_talon_guard(self, "discard_talon")
+    if g then
+        return g
+    end
     local result = talon_module.discard(self._talon, card)
     if not result.ok then
         return result
@@ -896,6 +1031,10 @@ function Session:raise(amount)
         return failure("wrong_phase", "raise requires the talon phase", {
             phase = self:current_phase(),
         })
+    end
+    local g = bad_talon_guard(self, "raise")
+    if g then
+        return g
     end
     local result = talon_module.raise(self._talon, amount)
     if not result.ok then
@@ -912,12 +1051,174 @@ function Session:skip_raise()
             phase = self:current_phase(),
         })
     end
+    local g = bad_talon_guard(self, "skip_raise")
+    if g then
+        return g
+    end
     local result = talon_module.skip_raise(self._talon)
     if not result.ok then
         return result
     end
     self._talon = result.talon
     on_talon_end(self)
+    return { ok = true }
+end
+
+-- Phase 3.6 talon-variants: pass-the-talon. The declarer concedes the
+-- deal at the bid before play. Available only when
+-- `talon.pass_the_talon = "on"`. The bid is deducted from the
+-- declarer's running total; defenders score zero. Closes the deal with
+-- `reason = "talon_conceded"`; `start_next_deal` rotates the dealer.
+function Session:concede_deal()
+    if not self._talon then
+        return failure("wrong_phase", "concede_deal requires the talon phase", {
+            phase = self:current_phase(),
+        })
+    end
+    if self._config.talon.pass_the_talon ~= "on" then
+        local msg = "concede_deal requires talon.pass_the_talon = 'on'" -- i18n-ok
+        return failure("concede_disabled", msg, {
+            rule = self._config.talon.pass_the_talon,
+        })
+    end
+    if self._talon.status ~= "revealed" then
+        return failure("wrong_talon_phase", "concede_deal must be called before take", {
+            status = self._talon.status,
+        })
+    end
+
+    local declarer = self._talon.declarer
+    local bid = self._talon.original_bid
+    local player_count = self._config.players.count
+    local deltas = {}
+    for i = 1, player_count do
+        deltas[i] = 0
+    end
+    deltas[declarer] = -bid
+
+    local g = scoring.advance_game(self._config, {
+        declarer = declarer,
+        deal_index = self._deal_index,
+        deltas = deltas,
+        running_totals_before = self._running_totals,
+        barrel_state_before = self._barrel_state,
+    })
+    if not g.ok then
+        error("session: advance_game failed (concede): " .. tostring(g.error.message), 2)
+    end
+    self._running_totals = g.game.running_totals
+    self._barrel_state = g.game.barrel_state
+    if g.game.winner then
+        self._winner = g.game.winner
+    else
+        self._deal_done = {
+            reason = "talon_conceded",
+            declarer = declarer,
+            deal_scores = deltas,
+        }
+    end
+    -- Drop the live talon and any open bad-talon offer; the deal is over.
+    self._talon = nil
+    self._bad_talon_offer = nil
+    return { ok = true }
+end
+
+-- Phase 3.6 talon-variants: buyback. The declarer discards their entire
+-- hand for a fresh deal at a configurable penalty. Available only when
+-- `talon.buyback = "on"`. The penalty is deducted from the declarer's
+-- running total directly (the deal hasn't ended — it restarts). Same
+-- dealer redeals; the auction reopens.
+function Session:buyback_hand()
+    if not self._talon then
+        return failure("wrong_phase", "buyback_hand requires the talon phase", {
+            phase = self:current_phase(),
+        })
+    end
+    if self._config.talon.buyback ~= "on" then
+        return failure("buyback_disabled", "buyback_hand requires talon.buyback = 'on'", {
+            rule = self._config.talon.buyback,
+        })
+    end
+    if self._talon.status ~= "revealed" then
+        return failure("wrong_talon_phase", "buyback_hand must be called before take", {
+            status = self._talon.status,
+        })
+    end
+
+    local declarer = self._talon.declarer
+    local penalty = self._config.talon.buyback_penalty or 0
+    local player_count = self._config.players.count
+    local totals = {}
+    for i = 1, player_count do
+        totals[i] = self._running_totals[i]
+    end
+    totals[declarer] = totals[declarer] - penalty
+    self._running_totals = totals
+    self._buyback_log[#self._buyback_log + 1] = {
+        declarer = declarer,
+        dealer = self._dealer,
+        penalty = penalty,
+    }
+    -- Restart the deal in place: same dealer, fresh shuffle, fresh
+    -- auction. The bad-talon offer (if any) is naturally cleared by
+    -- reset_deal_state.
+    self._bad_talon_offer = nil
+    self._redeal_offer = nil
+    reset_deal_state(self, self._dealer, 1)
+    evaluate_entitlement_with_forced_loop(self)
+    return { ok = true }
+end
+
+-- Phase 3.6 talon-variants: bad-talon redeal accept/decline mutators.
+-- The session never auto-decides the offer on the player's behalf; the
+-- table scene drives them through the bad-talon modal. Mirrors
+-- accept_redeal / decline_redeal.
+function Session:bad_talon_offer_state()
+    return self._bad_talon_offer
+end
+
+function Session:bad_talon_log()
+    return self._bad_talon_log
+end
+
+function Session:buyback_log()
+    return self._buyback_log
+end
+
+function Session:accept_bad_talon_redeal()
+    if not self._bad_talon_offer then
+        return failure("no_bad_talon_pending", "accept_bad_talon_redeal needs an open offer", {
+            phase = self:current_phase(),
+        })
+    end
+    self._bad_talon_log[#self._bad_talon_log + 1] = {
+        kind = self._bad_talon_offer.kind,
+        declarer = self._bad_talon_offer.declarer,
+        points = self._bad_talon_offer.points,
+        accepted = true,
+        dealer = self._dealer,
+    }
+    self._bad_talon_offer = nil
+    -- Same dealer redeals. reset_deal_state clears _talon for free.
+    reset_deal_state(self, self._dealer, 1)
+    evaluate_entitlement_with_forced_loop(self)
+    return { ok = true }
+end
+
+function Session:decline_bad_talon_redeal()
+    if not self._bad_talon_offer then
+        return failure("no_bad_talon_pending", "decline_bad_talon_redeal needs an open offer", {
+            phase = self:current_phase(),
+        })
+    end
+    self._bad_talon_log[#self._bad_talon_log + 1] = {
+        kind = self._bad_talon_offer.kind,
+        declarer = self._bad_talon_offer.declarer,
+        points = self._bad_talon_offer.points,
+        accepted = false,
+        dealer = self._dealer,
+    }
+    self._bad_talon_offer = nil
     return { ok = true }
 end
 
@@ -1171,6 +1472,9 @@ function Session:start_next_deal()
     -- one's view-model.
     self._redeal_log = {}
     self._misdeal_log = {}
+    self._bad_talon_log = {}
+    self._buyback_log = {}
+    self._bad_talon_offer = nil
     reset_deal_state(self, next_dealer, self._deal_index)
     evaluate_entitlement_with_forced_loop(self)
     return { ok = true }

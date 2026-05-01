@@ -298,9 +298,12 @@ local SCHEMA = {
             "flip_after_first_round",
             "pass_the_talon",
             "buyback",
+            "buyback_penalty",
             "hidden_on_minimum_100",
             "bad_talon_redeal",
+            "bad_talon_threshold",
             "rebuy",
+            "rebuy_contract_value",
             "open_discard",
         },
         fields = {
@@ -347,7 +350,7 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
             -- House-rule: a declarer disgusted with the talon may concede
             -- the deal at the bid before play
@@ -357,17 +360,30 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
             -- House-rule: declarer may discard the entire hand for a fresh
-            -- deal at a 50-point penalty
+            -- deal at the `buyback_penalty` cost
             -- (docs/variations/house-rules.md).
             buyback = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
+            },
+            -- Penalty subtracted from the declarer's running total when
+            -- `buyback = "on"` is exercised. Inert under `buyback = "off"`;
+            -- carried in the schema so saved templates round-trip cleanly.
+            -- Bounded in [0, 240] so a single buyback cannot exceed the
+            -- deal's maximum bid range.
+            buyback_penalty = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 0,
+                max = 240,
+                default = 50,
+                status = "selectable",
             },
             -- House-rule: when the declarer wins at minimum 100 simply
             -- because everyone else passed, defenders do not see the
@@ -379,7 +395,7 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "minimum_100_only", "any_forced_100" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
             -- House-rule: after the talon is revealed, a worthless talon
             -- triggers a redeal. Some tables allow this only on minimum-100
@@ -393,18 +409,48 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "any_contract", "minimum_100_only" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
+            },
+            -- Card-point threshold for `bad_talon_redeal`. A talon with
+            -- strictly fewer card-points than this value is eligible for
+            -- the redeal offer. Inert under `bad_talon_redeal = "off"`;
+            -- carried in the schema so saved templates round-trip cleanly.
+            -- Bounded in [0, 30]: 30 is the maximum card-point sum a
+            -- 3-card talon can hold (three aces).
+            bad_talon_threshold = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 0,
+                max = 30,
+                default = 5,
+                status = "selectable",
             },
             -- House-rule: another player may "buy the talon away" by
             -- naming a higher fixed contract after seeing the talon,
             -- creating a second auction with full talon information
-            -- (docs/variations/house-rules.md).
+            -- (docs/variations/house-rules.md). Stays deferred until the
+            -- second-auction state machine lands; the sibling field
+            -- `rebuy_contract_value` is already in the schema so the
+            -- rebuy task only needs to flip status and wire gameplay.
             rebuy = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
                 status = "deferred",
+            },
+            -- Fixed contract value charged to the player who buys the
+            -- talon away under `rebuy = "on"`. Inert until the rebuy
+            -- gameplay task lands; carried in the schema so saved
+            -- templates round-trip cleanly. Bounded in [100, 240] to
+            -- match the post-talon bid range.
+            rebuy_contract_value = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 100,
+                max = 240,
+                default = 240,
+                status = "selectable",
             },
             -- House-rule: declarer's discards to opponents are dealt
             -- face-up so defenders see what was thrown away. Mostly a
@@ -415,7 +461,7 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
         },
     },
@@ -1966,9 +2012,12 @@ local function canonical_russian_blob()
             flip_after_first_round = "off",
             pass_the_talon = "off",
             buyback = "off",
+            buyback_penalty = 50,
             hidden_on_minimum_100 = "off",
             bad_talon_redeal = "off",
+            bad_talon_threshold = 5,
             rebuy = "off",
+            rebuy_contract_value = 240,
             open_discard = "off",
         },
         bidding = {

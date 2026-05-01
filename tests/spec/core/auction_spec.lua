@@ -475,9 +475,12 @@ describe("core.auction", function()
                     flip_after_first_round = "off",
                     pass_the_talon = "off",
                     buyback = "off",
+                    buyback_penalty = 50,
                     hidden_on_minimum_100 = "off",
                     bad_talon_redeal = "off",
+                    bad_talon_threshold = 5,
                     rebuy = "off",
+                    rebuy_contract_value = 240,
                     open_discard = "off",
                 },
                 bidding = {
@@ -603,9 +606,12 @@ describe("core.auction", function()
                     flip_after_first_round = "off",
                     pass_the_talon = "off",
                     buyback = "off",
+                    buyback_penalty = 50,
                     hidden_on_minimum_100 = "off",
                     bad_talon_redeal = "off",
+                    bad_talon_threshold = 5,
                     rebuy = "off",
+                    rebuy_contract_value = 240,
                     open_discard = "off",
                 },
                 bidding = {
@@ -731,6 +737,53 @@ describe("core.auction", function()
             assert.are.equal("done", a.status)
             assert.are.equal(3, a.declarer)
             assert.are.equal(100, a.final_bid)
+        end)
+    end)
+
+    describe("round_number()", function()
+        it("returns 1 on a freshly constructed auction", function()
+            local res = auction.round_number(open_auction(1))
+            assert.is_true(res.ok)
+            assert.are.equal(1, res.round)
+        end)
+
+        it("rejects a non-auction argument", function()
+            local res = auction.round_number({})
+            assert.is_false(res.ok)
+            assert.are.equal("not_an_auction", res.error.code)
+        end)
+
+        it("stays in round 1 across the first 3 actions for a 3-seat auction", function()
+            local a = open_auction(1)
+            -- Forehand opens at 100; round 1 still active afterwards.
+            a = bid(a, 2, 100)
+            assert.are.equal(1, auction.round_number(a).round)
+            a = pass(a, 3)
+            assert.are.equal(1, auction.round_number(a).round)
+        end)
+
+        it("flips to round 2 after every seat has acted once", function()
+            local a = open_auction(1)
+            a = bid(a, 2, 100)
+            a = bid(a, 3, 105)
+            a = bid(a, 1, 110)
+            assert.are.equal(2, auction.round_number(a).round)
+        end)
+
+        it("counts only the active seats under 4-player Configuration B", function()
+            local cfg = rule_config.builtins.four_player_b
+            local res = auction.new(cfg, 1)
+            assert.is_true(res.ok)
+            local a = res.auction
+            -- Sits-out seat is 1 (the dealer); active seats are 2, 3, 4.
+            assert.are.equal(1, auction.round_number(a).round)
+            -- Forehand under dealer = 1 is seat 2.
+            a = bid(a, 2, 100)
+            a = bid(a, 3, 105)
+            assert.are.equal(1, auction.round_number(a).round)
+            a = bid(a, 4, 110)
+            -- 3 active seats acted; round flips to 2.
+            assert.are.equal(2, auction.round_number(a).round)
         end)
     end)
 end)

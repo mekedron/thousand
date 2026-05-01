@@ -49,9 +49,12 @@ local function canonical_with_dealing(overrides)
             flip_after_first_round = "off",
             pass_the_talon = "off",
             buyback = "off",
+            buyback_penalty = 50,
             hidden_on_minimum_100 = "off",
             bad_talon_redeal = "off",
+            bad_talon_threshold = 5,
             rebuy = "off",
+            rebuy_contract_value = 240,
             open_discard = "off",
         },
         bidding = {

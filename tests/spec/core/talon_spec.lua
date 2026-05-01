@@ -550,9 +550,12 @@ describe("core.talon", function()
                     flip_after_first_round = "off",
                     pass_the_talon = "off",
                     buyback = "off",
+                    buyback_penalty = 50,
                     hidden_on_minimum_100 = "off",
                     bad_talon_redeal = "off",
+                    bad_talon_threshold = 5,
                     rebuy = "off",
+                    rebuy_contract_value = 240,
                     open_discard = "off",
                 },
                 bidding = {
@@ -732,6 +735,70 @@ describe("core.talon", function()
                 assert.is_false(talon.is_talon(bad))
             end
             assert.is_false(talon.is_talon(nil))
+        end)
+    end)
+
+    describe("is_bad_talon()", function()
+        local nines = {
+            card.new("spades", "9"),
+            card.new("clubs", "9"),
+            card.new("diamonds", "9"),
+        }
+        local single_jack = {
+            card.new("spades", "9"),
+            card.new("clubs", "9"),
+            card.new("hearts", "J"),
+        }
+        local mixed = {
+            card.new("spades", "K"),
+            card.new("clubs", "Q"),
+            card.new("diamonds", "9"),
+        }
+        local high = {
+            card.new("spades", "A"),
+            card.new("clubs", "10"),
+            card.new("diamonds", "K"),
+        }
+
+        it("returns true when total points are below the default threshold", function()
+            -- Three nines = 0 points; below the canonical threshold of 5.
+            assert.is_true(talon.is_bad_talon(nines, 5, config))
+        end)
+
+        it("returns false when total points equal the threshold", function()
+            -- 9 + 9 + J = 0 + 0 + 2 = 2 points; threshold 2 is not strictly above.
+            assert.is_false(talon.is_bad_talon(single_jack, 2, config))
+        end)
+
+        it("returns false when total points exceed the threshold", function()
+            -- K + Q + 9 = 4 + 3 + 0 = 7; threshold 5.
+            assert.is_false(talon.is_bad_talon(mixed, 5, config))
+            -- A + 10 + K = 11 + 10 + 4 = 25; well above any reasonable threshold.
+            assert.is_false(talon.is_bad_talon(high, 5, config))
+        end)
+
+        it("honours custom thresholds", function()
+            -- 9 + 9 + J = 2 points; threshold 3 makes it bad.
+            assert.is_true(talon.is_bad_talon(single_jack, 3, config))
+            -- K + Q + 9 = 7 points; threshold 8 makes it bad.
+            assert.is_true(talon.is_bad_talon(mixed, 8, config))
+        end)
+
+        it("rejects non-card-shaped inputs", function()
+            assert.is_false(talon.is_bad_talon({ "not a card" }, 5, config))
+            assert.is_false(talon.is_bad_talon(nil, 5, config))
+            assert.is_false(talon.is_bad_talon("talon", 5, config))
+        end)
+
+        it("rejects non-integer or negative thresholds", function()
+            assert.is_false(talon.is_bad_talon(nines, -1, config))
+            assert.is_false(talon.is_bad_talon(nines, 1.5, config))
+            assert.is_false(talon.is_bad_talon(nines, "five", config))
+        end)
+
+        it("rejects non-RuleConfig configs", function()
+            assert.is_false(talon.is_bad_talon(nines, 5, nil))
+            assert.is_false(talon.is_bad_talon(nines, 5, { cards = {} }))
         end)
     end)
 end)

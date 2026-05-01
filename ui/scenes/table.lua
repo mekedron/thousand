@@ -102,7 +102,7 @@ function M.new(manager)
         _panel_buttons = {},
         _panel_signature = nil,
         _modal_buttons = {},
-        _modal = nil, -- i18n-ok: nil | "marriage" | "redeal" enum
+        _modal = nil, -- i18n-ok: nil | "marriage" | "redeal" | "bad_talon" enum
         _marriage_payload = nil,
         -- Redeal prompt modal state. _redeal_payload mirrors the
         -- view-model's redeal_prompt block while the modal is open;
@@ -110,6 +110,11 @@ function M.new(manager)
         -- so a re-render with the same offer leaves the modal alone.
         _redeal_payload = nil,
         _redeal_signature = nil,
+        -- Bad-talon prompt modal state. Mirrors the redeal-modal
+        -- pattern: payload tracks what the modal is showing;
+        -- signature (kind+declarer+points) is identity.
+        _bad_talon_payload = nil,
+        _bad_talon_signature = nil,
         _toast = nil,
         _hand_card_rects = {},
         _opponent_seat_rects = {},
@@ -553,6 +558,42 @@ function M:_do_skip_raise()
     self:_refresh_view_model()
 end
 
+function M:_do_concede_deal()
+    local session = self:_session()
+    if not session then
+        return
+    end
+    self:_invoke(session:concede_deal())
+    self:_refresh_view_model()
+end
+
+function M:_do_buyback_hand()
+    local session = self:_session()
+    if not session then
+        return
+    end
+    self:_invoke(session:buyback_hand())
+    self:_refresh_view_model()
+end
+
+function M:_do_accept_bad_talon_redeal()
+    local session = self:_session()
+    if not session then
+        return
+    end
+    self:_invoke(session:accept_bad_talon_redeal())
+    self:_refresh_view_model()
+end
+
+function M:_do_decline_bad_talon_redeal()
+    local session = self:_session()
+    if not session then
+        return
+    end
+    self:_invoke(session:decline_bad_talon_redeal())
+    self:_refresh_view_model()
+end
+
 function M:_do_play(player, card)
     local session = self:_session()
     if not session then
@@ -725,6 +766,75 @@ function M:_apply_redeal_modal_trigger(view)
     self:_open_redeal_modal(prompt)
 end
 
+-- Bad-talon prompt modal ----------------------------------------------
+
+local function bad_talon_signature(prompt)
+    if not prompt then
+        return nil
+    end
+    -- i18n-ok: internal signature, joined with ":" and never rendered.
+    local parts = { tostring(prompt.kind), tostring(prompt.declarer), tostring(prompt.points) }
+    return table.concat(parts, ":") -- i18n-ok: ":" is a separator, never rendered
+end
+
+function M:_open_bad_talon_modal(prompt)
+    self._modal = "bad_talon" -- i18n-ok
+    self._bad_talon_payload = {
+        kind = prompt.kind,
+        declarer = prompt.declarer,
+        points = prompt.points,
+    }
+    self._bad_talon_signature = bad_talon_signature(prompt)
+    local accept = Button.new({
+        id = "bad_talon_accept", -- i18n-ok
+        label_key = "scene.table.bad_talon_prompt.accept",
+        enabled = true,
+        on_press = function()
+            self:_do_accept_bad_talon_redeal()
+            self:_close_bad_talon_modal()
+        end,
+    })
+    local decline = Button.new({
+        id = "bad_talon_decline", -- i18n-ok
+        label_key = "scene.table.bad_talon_prompt.decline",
+        enabled = true,
+        on_press = function()
+            self:_do_decline_bad_talon_redeal()
+            self:_close_bad_talon_modal()
+        end,
+    })
+    self._modal_buttons = { accept, decline }
+    self._modal_focus = FocusGroup.new(self._modal_buttons)
+    -- Default focus on Accept — the player just saw a documented-bad
+    -- talon, the high-information branch is to redeal.
+    self._modal_focus:focus(accept)
+end
+
+function M:_close_bad_talon_modal()
+    if self._modal == "bad_talon" then
+        self._modal = nil
+    end
+    self._bad_talon_payload = nil
+    self._bad_talon_signature = nil
+    self._modal_buttons = {}
+    self._modal_focus = nil
+end
+
+function M:_apply_bad_talon_modal_trigger(view)
+    local prompt = view and view.bad_talon_prompt
+    if not prompt then
+        if self._modal == "bad_talon" then
+            self:_close_bad_talon_modal()
+        end
+        return
+    end
+    local sig = bad_talon_signature(prompt)
+    if self._modal == "bad_talon" and self._bad_talon_signature == sig then
+        return
+    end
+    self:_open_bad_talon_modal(prompt)
+end
+
 -- Privacy curtain ------------------------------------------------------
 
 function M:_open_curtain(for_seat)
@@ -809,8 +919,8 @@ local function build_auction_panel(self, view)
     return panel
 end
 
-local function build_talon_take_panel(self)
-    return {
+local function build_talon_take_panel(self, view)
+    local panel = {
         Button.new({
             id = "talon_take", -- i18n-ok
             label_key = "scene.table.talon.take_button",
@@ -820,6 +930,29 @@ local function build_talon_take_panel(self)
             end,
         }),
     }
+    local phase_block = view and view.talon_phase
+    if phase_block and phase_block.declarer_can_concede then
+        panel[#panel + 1] = Button.new({
+            id = "talon_concede", -- i18n-ok
+            label_key = "scene.table.talon.concede_button",
+            enabled = true,
+            on_press = function()
+                self:_do_concede_deal()
+            end,
+        })
+    end
+    if phase_block and phase_block.declarer_can_buyback then
+        panel[#panel + 1] = Button.new({
+            id = "talon_buyback", -- i18n-ok
+            label_key = "scene.table.talon.buyback_button",
+            label_params = { penalty = phase_block.declarer_can_buyback.penalty },
+            enabled = true,
+            on_press = function()
+                self:_do_buyback_hand()
+            end,
+        })
+    end
+    return panel
 end
 
 local function build_talon_raise_panel(self, view)
@@ -892,6 +1025,12 @@ local function panel_signature(view)
             end
             return table.concat(parts, ":")
         end
+        if status == "revealed" then
+            local concede = view.talon_phase.declarer_can_concede and "C" or "-" -- i18n-ok
+            local buyback = view.talon_phase.declarer_can_buyback
+            local penalty = buyback and tostring(buyback.penalty) or "-" -- i18n-ok
+            return table.concat({ "talon", "revealed", concede, penalty }, ":") -- i18n-ok
+        end
         return "talon:" .. status
     end
     if phase == "tricks" then
@@ -919,7 +1058,7 @@ function M:_rebuild_panel_if_needed(view)
     elseif phase == "talon" and view.talon_phase then
         local status = view.talon_phase.status
         if status == "revealed" then
-            self._panel_buttons = build_talon_take_panel(self)
+            self._panel_buttons = build_talon_take_panel(self, view)
         elseif status == "awaiting_pass" then
             -- Card hit-tests cover the pass action; no panel button.
             self._panel_buttons = {}
@@ -1054,7 +1193,7 @@ local function draw_opponents(self, view, region)
     end
 end
 
-local function draw_centre(_self, view, region)
+local function draw_centre(self, view, region)
     love.graphics.setColor(CENTRE_BG)
     love.graphics.rectangle("fill", region.x, region.y, region.w, region.h)
     love.graphics.setColor(1, 1, 1, 1)
@@ -1111,10 +1250,23 @@ local function draw_centre(_self, view, region)
         love.graphics.setColor(LABEL_COLOR)
         love.graphics.print(t("scene.table.talon.label"), talon_label_x, talon_label_y)
 
+        -- Phase 3.6 talon-variants: hidden-on-minimum-100 hides the
+        -- talon from defenders once the rule is active. The active
+        -- viewer is the most recently revealed seat (or the current
+        -- turn when no curtain has fired yet); when the viewer is not
+        -- the declarer, the talon renders face-down.
+        local hide_to_defender = false
+        if talon.hidden_to_defenders then
+            local declarer = view.talon_phase and view.talon_phase.declarer
+            local viewer = self._last_revealed_seat or view.turn_player
+            if declarer and viewer and viewer ~= declarer then
+                hide_to_defender = true
+            end
+        end
         if talon.count == 0 then
             love.graphics.setColor(DIM_COLOR)
             love.graphics.print(t("scene.table.bid.none"), talon_x, talon_y + 20)
-        elseif talon.face_down then
+        elseif talon.face_down or hide_to_defender then
             cards.draw_stack(talon.count, talon_x, talon_y, TALON_CARD_W, TALON_CARD_H)
         else
             for i = 1, talon.count do
@@ -1680,6 +1832,43 @@ local function draw_redeal_modal(self, w, h)
     end
 end
 
+local function draw_bad_talon_modal(self, w, h)
+    if self._modal ~= "bad_talon" or not self._bad_talon_payload then
+        return
+    end
+    love.graphics.setColor(MODAL_DIM)
+    love.graphics.rectangle("fill", 0, 0, w, h)
+
+    local panel_w, panel_h = 520, 240
+    local px = math.floor(w * 0.5 - panel_w * 0.5)
+    local py = math.floor(h * 0.5 - panel_h * 0.5)
+    love.graphics.setColor(MODAL_BG)
+    love.graphics.rectangle("fill", px, py, panel_w, panel_h)
+    love.graphics.setColor(1, 1, 1, 1)
+
+    local payload = self._bad_talon_payload
+    love.graphics.print(t("scene.table.bad_talon_prompt.title"), px + 32, py + 40)
+    love.graphics.print(
+        t("scene.table.bad_talon_prompt.body", { points = payload.points }),
+        px + 32,
+        py + 80
+    )
+
+    if #self._modal_buttons == 0 then
+        return
+    end
+
+    local btn_w, btn_h, btn_gap = 220, 48, 24
+    local total_w = btn_w * 2 + btn_gap
+    local btn_y = py + panel_h - btn_h - 28
+    local left_x = px + math.floor(panel_w * 0.5 - total_w * 0.5)
+    self._modal_buttons[1]:set_rect(left_x, btn_y, btn_w, btn_h)
+    self._modal_buttons[2]:set_rect(left_x + btn_w + btn_gap, btn_y, btn_w, btn_h)
+    for _, b in ipairs(self._modal_buttons) do
+        b:draw()
+    end
+end
+
 local function draw_privacy_curtain(self, w, h)
     if not self._curtain or not self._curtain_button then
         return
@@ -1755,6 +1944,7 @@ function M:draw(w, h)
     self:_refresh_view_model()
     self:_apply_curtain_trigger()
     self:_apply_redeal_modal_trigger(self._view_model)
+    self:_apply_bad_talon_modal_trigger(self._view_model)
     self:_rebuild_panel_if_needed(self._view_model)
 
     local regions = layout.table_regions(w, h, {
@@ -1793,6 +1983,7 @@ function M:draw(w, h)
     draw_toast(self, regions)
     draw_marriage_modal(self, w, h)
     draw_redeal_modal(self, w, h)
+    draw_bad_talon_modal(self, w, h)
     -- Privacy curtain renders last so its full-opacity backdrop sits
     -- above every other layer, including the marriage and redeal
     -- modals — those states are mutually exclusive in practice.
@@ -1811,7 +2002,8 @@ function M:_active_buttons()
     if self._curtain and self._curtain_button then
         return { self._curtain_button }
     end
-    if self._modal == "marriage" or self._modal == "redeal" then -- i18n-ok: modal enum
+    local modal = self._modal -- i18n-ok: modal enum
+    if modal == "marriage" or modal == "redeal" or modal == "bad_talon" then -- i18n-ok
         return self._modal_buttons
     end
     local list = {}
@@ -2071,6 +2263,27 @@ function M:keypressed(key)
             -- "don't redeal, play this hand" branch.
             self:_do_decline_redeal()
             self:_close_redeal_modal()
+        end
+        return
+    end
+    if self._modal == "bad_talon" then -- i18n-ok: modal enum
+        if not self._modal_focus then
+            return
+        end
+        if key == "tab" then -- i18n-ok
+            self._modal_focus:advance(shift_held() and -1 or 1)
+        elseif key == "left" or key == "up" then -- i18n-ok
+            self._modal_focus:advance(-1)
+        elseif key == "right" or key == "down" then -- i18n-ok
+            self._modal_focus:advance(1)
+        elseif key == "return" or key == "space" or key == "kpenter" then -- i18n-ok
+            self._modal_focus:activate()
+        elseif key == "escape" then -- i18n-ok
+            -- Escape declines: a bad-talon offer has to be resolved
+            -- before take_talon, and Decline is the safe
+            -- "play this hand" branch.
+            self:_do_decline_bad_talon_redeal()
+            self:_close_bad_talon_modal()
         end
         return
     end

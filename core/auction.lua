@@ -176,6 +176,27 @@ function M.is_auction(value)
     return getmetatable(value) == AUCTION_TYPE
 end
 
+-- Round number the auction is currently in. Round 1 spans the first
+-- action (bid or pass) by each active seat; round 2 begins after every
+-- active seat has acted once. Returns 1 on a freshly-constructed
+-- auction (no history yet). The `flip_after_first_round` talon rule
+-- reads this to decide whether the talon stays closed during round 1.
+-- Pure: no RuleConfig lookup, no mutation.
+function M.round_number(state)
+    if not M.is_auction(state) then
+        return failure("not_an_auction", "first argument is not an auction", {
+            actual = type(state),
+        })
+    end
+    local active_seat_count = state.player_count - (state.sits_out and 1 or 0)
+    if active_seat_count <= 0 then
+        return { ok = true, round = 1 }
+    end
+    local action_count = #state.history
+    local round = math.floor(action_count / active_seat_count) + 1
+    return { ok = true, round = round }
+end
+
 local function ensure_in_progress(auction)
     if not M.is_auction(auction) then
         return failure("not_an_auction", "first argument is not an auction", {

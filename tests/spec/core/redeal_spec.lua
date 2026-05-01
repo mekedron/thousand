@@ -120,9 +120,12 @@ local function config_with_dealing(overrides)
             flip_after_first_round = "off",
             pass_the_talon = "off",
             buyback = "off",
+            buyback_penalty = 50,
             hidden_on_minimum_100 = "off",
             bad_talon_redeal = "off",
+            bad_talon_threshold = 5,
             rebuy = "off",
+            rebuy_contract_value = 240,
             open_discard = "off",
         },
         bidding = {
@@ -495,9 +498,12 @@ describe("core.redeal", function()
                 flip_after_first_round = res.config.talon.flip_after_first_round,
                 pass_the_talon = res.config.talon.pass_the_talon,
                 buyback = res.config.talon.buyback,
+                buyback_penalty = res.config.talon.buyback_penalty,
                 hidden_on_minimum_100 = res.config.talon.hidden_on_minimum_100,
                 bad_talon_redeal = res.config.talon.bad_talon_redeal,
+                bad_talon_threshold = res.config.talon.bad_talon_threshold,
                 rebuy = res.config.talon.rebuy,
+                rebuy_contract_value = res.config.talon.rebuy_contract_value,
                 open_discard = res.config.talon.open_discard,
             }
             local four_config = rule_config.new(t)

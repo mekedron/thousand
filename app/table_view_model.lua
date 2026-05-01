@@ -170,7 +170,10 @@ local function build_auction_block(session)
 end
 
 local function build_talon_phase_block(session)
-    if session:current_phase() ~= "talon" then
+    local phase = session:current_phase()
+    local talon_phase = "talon" -- i18n-ok: phase enum
+    local bad_talon_phase = "awaiting_bad_talon_decision" -- i18n-ok: phase enum
+    if phase ~= talon_phase and phase ~= bad_talon_phase then
         return nil
     end
     local talon = session._talon
@@ -192,6 +195,16 @@ local function build_talon_phase_block(session)
     if talon.status == "awaiting_raise" then
         allowed_raise_amounts = compute_allowed_raises(session:config(), talon.final_bid)
     end
+    -- Phase 3.6 talon-variants: declarer can concede or buy back at the
+    -- "revealed" status (before take). Both require the parent toggle
+    -- to be on and no bad-talon offer pending.
+    local config = session:config()
+    local pre_take = talon.status == "revealed" and not session:bad_talon_offer_state()
+    local declarer_can_concede = pre_take and config.talon.pass_the_talon == "on"
+    local declarer_can_buyback
+    if pre_take and config.talon.buyback == "on" then
+        declarer_can_buyback = { penalty = config.talon.buyback_penalty or 0 }
+    end
     return {
         status = talon.status,
         declarer = talon.declarer,
@@ -199,6 +212,38 @@ local function build_talon_phase_block(session)
         allowed_raise_amounts = allowed_raise_amounts,
         requires_discard = talon.requires_discard or false,
         sits_out = talon.sits_out,
+        declarer_can_concede = declarer_can_concede,
+        declarer_can_buyback = declarer_can_buyback,
+        passes_face_up = session:talon_passes_face_up(),
+    }
+end
+
+-- The active bad-talon prompt, surfaced while the session is in
+-- `awaiting_bad_talon_decision`. Mirrors `redeal_prompt`.
+local function build_bad_talon_prompt_block(session)
+    local offer = session:bad_talon_offer_state()
+    if not offer then
+        return nil
+    end
+    return {
+        kind = offer.kind,
+        declarer = offer.declarer,
+        points = offer.points,
+    }
+end
+
+-- Latest buyback log entry, surfaced as a banner. Cleared when the
+-- next deal starts via `start_next_deal`.
+local function build_buyback_banner_block(session)
+    local log = session:buyback_log()
+    if not log or #log == 0 then
+        return nil
+    end
+    local entry = log[#log]
+    return {
+        declarer = entry.declarer,
+        dealer = entry.dealer,
+        penalty = entry.penalty or 0,
     }
 end
 
@@ -368,6 +413,13 @@ function M.from_session(session)
         face_down = session:talon_face_down(),
         cards = copy_list(talon_cards),
         count = #talon_cards,
+        -- Phase 3.6: per-seat visibility hint for
+        -- `talon.hidden_on_minimum_100`. The UI combines this with
+        -- the active viewer seat to decide whether to render the
+        -- talon face-down or face-up; the declarer always sees their
+        -- own talon. When false (default), the talon visibility
+        -- follows `face_down` for everyone.
+        hidden_to_defenders = session:talon_hidden_rule_active(),
     }
 
     local stock_block
@@ -455,6 +507,8 @@ function M.from_session(session)
         misdeal_banner = build_misdeal_banner_block(session),
         all_pass_banner = build_all_pass_banner_block(session),
         raspassy_active = raspassy_active,
+        bad_talon_prompt = build_bad_talon_prompt_block(session),
+        buyback_banner = build_buyback_banner_block(session),
     }
 end
 
