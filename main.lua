@@ -27,10 +27,16 @@ local menu_scene = require("ui.scenes.menu")
 local table_scene = require("ui.scenes.table")
 local end_of_game_scene = require("ui.scenes.end_of_game")
 local settings_scene = require("ui.scenes.settings")
+local auto_save = require("app.auto_save")
 
 local manager = scene_manager.new()
 local touch_active = false
 local touch_active_clear_pending = false
+
+-- Tracks the last (phase, deal_index) snapshot we wrote to disk so the
+-- per-frame auto-save trigger only fires on real transitions. Cleared
+-- whenever the manager has no active session (Quit/Abandon).
+local last_save_phase_key = nil
 
 local OFFSCREEN = -1e6
 
@@ -39,7 +45,25 @@ function love.load()
     manager:register("table", table_scene.new(manager))
     manager:register("end_of_game", end_of_game_scene.new(manager))
     manager:register("settings", settings_scene.new(manager))
+    -- Restore an in-progress game from the previous launch, if any. The
+    -- auto-save module returns nil for missing / corrupt / finished
+    -- saves, so a fresh install boots straight to the menu.
+    local restored = auto_save.load()
+    if restored then
+        manager:set_session(restored)
+    end
     manager:switch_to("menu")
+end
+
+local function save_active_session()
+    if not manager:is_game_active() then
+        return
+    end
+    local s = manager:session()
+    if s:current_phase() == "done" then
+        return
+    end
+    auto_save.save(s)
 end
 
 function love.update(dt)
@@ -48,6 +72,43 @@ function love.update(dt)
         touch_active_clear_pending = false
     end
     manager:update(dt)
+    -- Auto-save trigger: poll for transitions into deal_done / done. The
+    -- session derives current_phase from internal state, so each scored
+    -- deal (and the final deal that ends the game) is exactly one
+    -- transition we observe and save against. Game-over also clears
+    -- the file so a future launch doesn't restore a finished match.
+    if manager:is_game_active() then
+        local s = manager:session()
+        local key = s:current_phase() .. ":" .. tostring(s._deal_index or 0)
+        if last_save_phase_key ~= key then
+            last_save_phase_key = key
+            local phase = s:current_phase()
+            if phase == "deal_done" then
+                auto_save.save(s)
+            elseif phase == "done" then
+                auto_save.clear()
+            end
+        end
+    else
+        last_save_phase_key = nil
+    end
+end
+
+function love.quit()
+    save_active_session()
+    return false
+end
+
+function love.focus(focused)
+    if not focused then
+        save_active_session()
+    end
+end
+
+function love.visible(visible)
+    if not visible then
+        save_active_session()
+    end
 end
 
 function love.draw()

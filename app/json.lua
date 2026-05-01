@@ -8,15 +8,18 @@
 --   * finite numbers (integers print without a decimal point)
 --   * strings, with escapes for `"` `\` `\n` `\r` `\t`
 --   * tables of (string → value), i.e. JSON objects, including nesting
+--   * dense Lua arrays (keys 1..n with no gaps), encoded as JSON arrays
+--   * empty `{}` always encodes as an empty JSON object — auto-save and
+--     settings ride on this so the format stays stable across versions
 --
 -- Not supported:
---   * arrays — we have no need yet, and adding them later is additive
 --   * NaN / ±Infinity — encode raises, decode does not produce them
 --   * Unicode escapes — strings round-trip as their literal byte content
+--   * mixed-key tables (both string and integer keys) — encode raises
 --
 -- The architecture doc mandates JSON for on-disk persistence. This module
 -- is the smallest implementation that delivers that without a third-party
--- dependency. Auto-save (Phase 2 / Phase 4) reuses it.
+-- dependency. Auto-save (Phase 2) and Phase 4's named-slot save reuse it.
 --
 -- All quoted literals in this file are JSON syntax tokens, gsub patterns,
 -- or programmer-facing diagnostics raised via error() — none reach the
@@ -48,11 +51,38 @@ local function encode_number(n)
     return string.format("%.14g", n)
 end
 
+-- A Lua table is a JSON array iff it has at least one entry and every
+-- key is an integer in [1, #t] with no gaps. Empty tables fall through
+-- to the object branch so settings.json (and any historical save with
+-- empty container fields) keeps its `{}` shape.
+local function is_dense_array(t)
+    local n = #t
+    if n == 0 then
+        return false
+    end
+    local count = 0
+    for k in pairs(t) do
+        if type(k) ~= "number" or k ~= math.floor(k) or k < 1 or k > n then
+            return false
+        end
+        count = count + 1
+    end
+    return count == n
+end
+
+local function encode_array(t)
+    local parts = {}
+    for i = 1, #t do
+        parts[i] = encode_value(t[i])
+    end
+    return "[" .. table.concat(parts, ",") .. "]" -- i18n-ok: JSON delimiters
+end
+
 local function encode_object(t)
     local keys = {}
     for k in pairs(t) do
         if type(k) ~= "string" then
-            error("json.encode: only string-keyed tables are supported", 3)
+            error("json.encode: mixed-key tables are not supported", 3)
         end
         keys[#keys + 1] = k
     end
@@ -77,6 +107,9 @@ encode_value = function(v)
     elseif tv == "string" then
         return encode_string(v)
     elseif tv == "table" then
+        if is_dense_array(v) then
+            return encode_array(v)
+        end
         return encode_object(v)
     end
     error("json.encode: unsupported type " .. tv, 2)
@@ -218,6 +251,33 @@ local function parse_object(state)
     end
 end
 
+local function parse_array(state)
+    if peek(state) ~= "[" then
+        error("json.decode: expected [ at position " .. state.pos, 3)
+    end
+    state.pos = state.pos + 1
+    skip_ws(state)
+    local out = {}
+    if peek(state) == "]" then
+        state.pos = state.pos + 1
+        return out
+    end
+    while true do
+        skip_ws(state)
+        out[#out + 1] = parse_value(state)
+        skip_ws(state)
+        local c = peek(state)
+        if c == "," then
+            state.pos = state.pos + 1
+        elseif c == "]" then
+            state.pos = state.pos + 1
+            return out
+        else
+            error("json.decode: expected , or ] at position " .. state.pos, 3)
+        end
+    end
+end
+
 parse_value = function(state)
     skip_ws(state)
     local c = peek(state)
@@ -225,6 +285,8 @@ parse_value = function(state)
         return parse_string(state)
     elseif c == "{" then
         return parse_object(state)
+    elseif c == "[" then
+        return parse_array(state)
     elseif c == "t" then
         return parse_keyword(state, "true", true)
     elseif c == "f" then

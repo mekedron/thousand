@@ -54,9 +54,27 @@ describe("app.json", function()
             end)
         end)
 
-        it("rejects mixed-key tables (no array support yet)", function()
+        it("encodes a dense list as a JSON array", function()
+            assert.are.equal('["a","b","c"]', json.encode({ "a", "b", "c" }))
+        end)
+
+        it("encodes an empty table as a JSON object for backward compat", function()
+            assert.are.equal("{}", json.encode({}))
+        end)
+
+        it("encodes a nested array inside an object", function()
+            local out = json.encode({ items = { 1, 2, 3 } })
+            assert.are.equal('{"items":[1,2,3]}', out)
+        end)
+
+        it("encodes an array of objects", function()
+            local out = json.encode({ { a = 1 }, { a = 2 } })
+            assert.are.equal('[{"a":1},{"a":2}]', out)
+        end)
+
+        it("rejects mixed-key tables (string and integer keys)", function()
             assert.has_error(function()
-                json.encode({ "first", "second" })
+                json.encode({ [1] = "a", name = "mixed" })
             end)
         end)
     end)
@@ -111,11 +129,35 @@ describe("app.json", function()
         end)
     end)
 
+    describe("decode arrays", function()
+        it("decodes an empty array", function()
+            assert.are.same({}, json.decode("[]"))
+        end)
+
+        it("decodes a flat array of mixed primitives", function()
+            assert.are.same({ 1, "two", true, nil }, json.decode('[1,"two",true,null]'))
+        end)
+
+        it("decodes a nested array inside an object", function()
+            assert.are.same({ items = { 1, 2, 3 } }, json.decode('{"items":[1,2,3]}'))
+        end)
+    end)
+
     describe("round-trip", function()
         local cases = {
             { name = "empty object", value = {} },
             { name = "settings shape", value = { schemaVersion = 1, hot_seat_privacy = true } },
             { name = "nested mix", value = { a = { b = false, c = "x" }, d = 3.5 } },
+            { name = "list of strings", value = { "a", "b", "c" } },
+            { name = "array of objects", value = { { suit = "hearts", rank = "K" } } },
+            {
+                name = "auto-save-shaped record",
+                value = {
+                    schemaVersion = 1,
+                    hands = { { { suit = "spades", rank = "A" } } },
+                    running_totals = { 100, 200, 0 },
+                },
+            },
         }
         for _, case in ipairs(cases) do
             it("round-trips " .. case.name, function()

@@ -221,7 +221,7 @@ porting pass later, not a UI rewrite.
 - [x] Route every player-visible string in the hot-seat MVP through `t()`.
   - This includes placeholder UI, error messages, button labels, and
     end-of-game text.
-- [ ] Add baseline auto-save and restore.
+- [x] Add baseline auto-save and restore.
   - One auto-save slot writes on app suspend, graceful quit, and after every
     scored deal.
   - Save format is JSON via `love.filesystem`.

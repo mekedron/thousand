@@ -52,12 +52,42 @@ local function reset_settings()
     end
 end
 
+-- Reset auto-save module state so each journey starts with no
+-- carry-over save. Tests that exercise the save/restore flow pass an
+-- explicit `auto_save_store` option (a table acting as in-memory
+-- storage shared across two journey instances) — without it, auto_save
+-- falls back to its in-memory transient storage and behaves as if no
+-- save file is present.
+local function reset_auto_save(opts)
+    local ok, auto_save = pcall(require, "app.auto_save")
+    if not ok or not auto_save or not auto_save._reset then
+        return
+    end
+    auto_save._reset()
+    local store = opts.auto_save_store
+    if store then
+        local read_fn = function(path)
+            return store[path]
+        end
+        local write_fn = function(path, content)
+            store[path] = content
+            return true
+        end
+        local remove_fn = function(path)
+            store[path] = nil
+            return true
+        end
+        auto_save._set_storage(read_fn, write_fn, remove_fn)
+    end
+end
+
 function M.start(opts)
     opts = opts or {}
     local locale = opts.locale or "en"
 
     local i18n = reset_i18n(locale)
     reset_settings()
+    reset_auto_save(opts)
 
     local mock = love_mock.new({
         width = opts.width or 800,
@@ -170,6 +200,23 @@ end
 
 function Journey:resize(w, h)
     self._mock:dispatch("resize", w, h)
+end
+
+-- Lifecycle helpers used by the auto-save journey. `quit` simulates a
+-- graceful close (Cmd+Q / window close button). `lose_focus` and
+-- `become_invisible` simulate the app moving to the background or being
+-- minimised on iOS / Android, which LÖVE surfaces via love.focus and
+-- love.visible respectively.
+function Journey:quit()
+    self._mock:dispatch("quit")
+end
+
+function Journey:lose_focus()
+    self._mock:dispatch("focus", false)
+end
+
+function Journey:become_invisible()
+    self._mock:dispatch("visible", false)
 end
 
 function Journey:find_text(needle)
