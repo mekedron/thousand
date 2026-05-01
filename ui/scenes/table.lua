@@ -249,14 +249,14 @@ function M:_advance_focus(direction)
 end
 
 -- Cycle keyboard focus within the current group (cards-only OR
--- panel-buttons-and-back-only). Bound to Left/Right so the player can
--- walk their hand left↔right without overshooting into the bid panel.
--- When no focus is set yet, seed it on the first element of whichever
--- group the hand state suggests (interactive hand → cards; otherwise
--- panel buttons + back).
+-- panel-buttons-only). Bound to Left/Right so the player can walk
+-- their hand left↔right or sweep the bid panel without overshooting.
+-- The back-to-menu button is reachable via Tab but NOT via arrow
+-- keys — arrows are for primary actions (cards, bid amounts), and
+-- the exit button shouldn't sit in that cycle.
 function M:_advance_within_group(direction)
     local card_count = self:_focus_card_count()
-    local panel_count = #self._panel_buttons + 1 -- +1 for back button
+    local panel_count = #self._panel_buttons -- excludes back button
     local target = self:_focus_target()
 
     if target == "card" or (target == nil and card_count > 0) then
@@ -273,25 +273,29 @@ function M:_advance_within_group(direction)
         return
     end
     local rel
-    local in_panel_group = target == "panel" or target == "back" -- i18n-ok
-    if in_panel_group then
+    if target == "panel" then -- i18n-ok
         rel = self._focus_index - card_count
     else
+        -- target is nil or "back": seed/jump into the panel group at
+        -- whichever end the direction implies.
         rel = direction > 0 and 0 or panel_count + 1
     end
     rel = ((rel - 1 + direction) % panel_count) + 1
     self._focus_index = card_count + rel
 end
 
--- Up/Down jumps focus between the hand-card group and the panel group.
--- A pure focus-cycling Tab still cycles through everything.
+-- Up/Down jumps focus between the hand-card group and the panel
+-- group. Tab still cycles through everything (including the back
+-- button); arrows specifically avoid the back button so Up/Down on
+-- the bid panel can't accidentally land on Menu.
 function M:_jump_focus_groups()
     local target = self:_focus_target()
     local card_count = self:_focus_card_count()
+    local panel_count = #self._panel_buttons
     local on_card = target == "card" -- i18n-ok
-    local on_panel = target == "panel" or target == "back" -- i18n-ok
+    local on_panel = target == "panel" -- i18n-ok
     if on_card then
-        if #self._panel_buttons + 1 > 0 then
+        if panel_count > 0 then
             self._focus_index = card_count + 1
         end
         return
@@ -302,10 +306,11 @@ function M:_jump_focus_groups()
         end
         return
     end
+    -- Currently on back or unfocused — jump into the primary group.
     if card_count > 0 then
         self._focus_index = 1
-    elseif #self._panel_buttons + 1 > 0 then
-        self._focus_index = 1
+    elseif panel_count > 0 then
+        self._focus_index = card_count + 1
     end
 end
 
