@@ -301,18 +301,11 @@ function M:_jump_focus_groups()
     end
 end
 
--- Seed focus on the first card when the hand becomes interactive and
--- no focus is currently visible. The discoverability win matters more
--- than strict focus-visible — players need to see "this card is what
--- I'd play right now" to understand left/right are wired.
-function M:_seed_focus_if_idle()
-    if self._focus_index then
-        return
-    end
-    if self:_hand_is_interactive() and self:_focus_card_count() > 0 then
-        self._focus_index = 1
-    end
-end
+-- Focus follows the focus-visible idiom: the yellow outline only
+-- appears after the user explicitly navs with Tab/arrows. Hovering or
+-- entering an interactive phase does NOT seed focus on its own — that
+-- collides with the hover-only "elevate the card" affordance the
+-- player already gets from a mouse / touch.
 
 function M:_activate_focus()
     local target = self:_focus_target()
@@ -1197,7 +1190,6 @@ function M:draw(w, h)
 
     self:_refresh_view_model()
     self:_rebuild_panel_if_needed(self._view_model)
-    self:_seed_focus_if_idle()
 
     local regions = layout.table_regions(w, h, {
         menu_btn_w = MENU_BTN_W,
@@ -1211,11 +1203,13 @@ function M:draw(w, h)
     draw_scoreboard(self._view_model, regions.scoreboard)
     draw_pass_target_label(self._view_model, regions)
     draw_panel_label(self._view_model, regions.centre)
+    -- Banner first so its backdrop sits *under* the Next-deal button
+    -- the panel renders next; otherwise the button is invisible.
+    draw_deal_done_banner(self._view_model, regions)
 
     lay_out_panel_buttons(self, regions)
     self:_sync_focus_marks()
     draw_panel_buttons(self)
-    draw_deal_done_banner(self._view_model, regions)
 
     self._back_button:set_rect(
         regions.menu_button.x,
@@ -1337,13 +1331,17 @@ function M:mousepressed(x, y, button)
     -- release on the next frame would otherwise see a different
     -- table reference even though the card under the cursor hasn't
     -- changed.
-    if not self:_hand_is_interactive() then
-        return
+    if self:_hand_is_interactive() then
+        local entry = self:_card_hit(x, y)
+        if entry then
+            self._pending_card = { suit = entry.card.suit, rank = entry.card.rank }
+            return
+        end
     end
-    local entry = self:_card_hit(x, y)
-    if entry then
-        self._pending_card = { suit = entry.card.suit, rank = entry.card.rank }
-    end
+    -- Click landed in dead space. Drop the keyboard focus ring so the
+    -- next yellow outline only surfaces when the user explicitly navs
+    -- back in with Tab or arrows.
+    self._focus_index = nil
 end
 
 -- Update the panel buttons' focused flag from _focus_index. Called
