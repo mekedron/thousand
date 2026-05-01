@@ -13,6 +13,7 @@
 
 local i18n = require("app.i18n")
 local Button = require("ui.button")
+local layout = require("ui.layout")
 local t = i18n.t
 
 local M = {}
@@ -20,7 +21,6 @@ M.__index = M
 
 local BACK_BTN_W = 120
 local BACK_BTN_H = 48
-local BACK_BTN_MARGIN = 16
 
 function M.new(manager)
     local self = setmetatable({
@@ -60,8 +60,8 @@ function M:draw(w, h)
     love.graphics.setColor(0.85, 0.85, 0.85, 1)
     love.graphics.print(t("scene.table.escape_hint"), math.floor(w * 0.5 - 180), h - 40)
 
-    local back_x = w - BACK_BTN_W - BACK_BTN_MARGIN
-    self._back_button:set_rect(back_x, BACK_BTN_MARGIN, BACK_BTN_W, BACK_BTN_H)
+    local back_rect = layout.top_right(w, h, BACK_BTN_W, BACK_BTN_H)
+    self._back_button:set_rect(back_rect.x, back_rect.y, back_rect.w, back_rect.h)
     self._back_button:draw()
 
     love.graphics.setColor(1, 1, 1, 1)

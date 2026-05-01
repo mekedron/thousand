@@ -365,6 +365,26 @@ describe("e2e: menu navigation", function()
             j:step()
             assert.is_not_nil(j:find_text(j:find_localised("scene.menu.title")))
         end)
+
+        it("table back button reflows to the top-right corner across sizes", function()
+            local layout = require("ui.layout")
+            click_button(j, j:find_localised("scene.menu.new_game"))
+            j:step()
+            for _, size in ipairs({ { 800, 600 }, { 1280, 720 }, { 1600, 900 }, { 1024, 768 } }) do
+                local w, h = size[1], size[2]
+                j:resize(w, h)
+                j:step()
+                local rect =
+                    smallest_rect_under_text(j, j:find_localised("scene.table.back_to_menu"))
+                assert.is_not_nil(rect, "no back-button rect at " .. w .. "x" .. h)
+                assert.are.equal(
+                    w - rect.w - layout.SAFE_MARGIN,
+                    rect.x,
+                    "back button x at " .. w .. "x" .. h
+                )
+                assert.are.equal(layout.SAFE_MARGIN, rect.y, "back button y at " .. w .. "x" .. h)
+            end
+        end)
     end)
 
     describe("default colour reference", function()

@@ -114,6 +114,29 @@ function Journey:press(x, y, button)
     self._mock:dispatch("mousepressed", x, y, button)
 end
 
+-- Touch dispatch path. Mirrors :click but goes through love.touchpressed /
+-- love.touchreleased so journey specs can exercise the same code path real
+-- iOS / Android devices would. main.lua suppresses synthesised mouse
+-- callbacks while a touch is in flight (see touch_active there); these
+-- helpers lay each gesture stage bare so specs can prove that behaviour.
+
+function Journey:touch(x, y)
+    self:press_touch(x, y)
+    self:release_touch(x, y)
+end
+
+function Journey:press_touch(x, y)
+    self._mock:dispatch("touchpressed", 1, x, y, 0, 0, 1)
+end
+
+function Journey:move_touch(x, y, dx, dy)
+    self._mock:dispatch("touchmoved", 1, x, y, dx or 0, dy or 0, 1)
+end
+
+function Journey:release_touch(x, y)
+    self._mock:dispatch("touchreleased", 1, x, y, 0, 0, 1)
+end
+
 function Journey:click_text(needle)
     local op = self:find_text(needle)
     if not op then

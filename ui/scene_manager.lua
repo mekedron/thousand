@@ -6,6 +6,11 @@
 -- change, not a rename: scenes never see manager.current as a field, and
 -- the entry hook receives the previous scene id explicitly.
 --
+-- The scene contract is intentionally mouse-centric — touch events funnel
+-- through the same mouse* dispatches at the layer 4 entry point (see
+-- main.lua), so scenes never need to implement :touchpressed / etc. and
+-- both input sources reach a single action path.
+--
 -- Scene contract — every callback is optional:
 --   scene:enter(prev_id, params)
 --   scene:leave(next_id)

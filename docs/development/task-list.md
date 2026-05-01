@@ -185,7 +185,7 @@ porting pass later, not a UI rewrite.
     are fully keyboard-navigable (Tab/arrows + Enter/Space + Esc).
   - Table scene exposes a visible `Menu` button so the back-out path works
     on touch devices, not just via Esc.
-- [ ] Build touch-ready input and reflowable table foundations.
+- [x] Build touch-ready input and reflowable table foundations.
   - Mouse and touch use the same action paths.
   - No required interaction depends on hover.
   - Primary card/table controls are sized for finger input from the first UI
