@@ -1023,12 +1023,31 @@ local function lay_out_panel_buttons(self, regions)
     if count == 0 then
         return
     end
-    local total_w = count * PANEL_BTN_W + (count - 1) * PANEL_BTN_GAP
     local centre = regions.centre
+    -- Available width for the row, leaving 8px breathing room on each
+    -- side of the centre band.
+    local available = centre.w - 16
+    if available < 1 then
+        available = centre.w
+    end
+    local btn_w = PANEL_BTN_W
+    local desired = count * btn_w + (count - 1) * PANEL_BTN_GAP
+    if desired > available then
+        -- Shrink button width proportionally so the whole row still
+        -- fits on a narrow window. Touch-target floor wins on the
+        -- smallest screens — the row will overflow before MIN_HIT_TARGET
+        -- shrinks; that's the correct tradeoff (better to scroll the
+        -- window than to ship sub-touch buttons).
+        btn_w = math.floor((available - (count - 1) * PANEL_BTN_GAP) / count)
+        if btn_w < layout.MIN_HIT_TARGET then
+            btn_w = layout.MIN_HIT_TARGET
+        end
+    end
+    local total_w = count * btn_w + (count - 1) * PANEL_BTN_GAP
     local start_x = centre.x + math.max(8, math.floor((centre.w - total_w) * 0.5))
     local y = centre.y + centre.h - PANEL_BTN_H - 8
     for i, b in ipairs(self._panel_buttons) do
-        b:set_rect(start_x + (i - 1) * (PANEL_BTN_W + PANEL_BTN_GAP), y, PANEL_BTN_W, PANEL_BTN_H)
+        b:set_rect(start_x + (i - 1) * (btn_w + PANEL_BTN_GAP), y, btn_w, PANEL_BTN_H)
     end
 end
 
@@ -1282,8 +1301,16 @@ function M:mousemoved(x, y, _dx, _dy)
         b:on_mousemoved(x, y)
     end
     -- Card hover — purely visual; keyboard focus stays separate.
-    local _, idx = self:_card_hit(x, y)
-    self._hovered_card_index = idx
+    -- Only track hover when the hand is interactive. During auction
+    -- the cards are visible but the player should be choosing a bid,
+    -- not their card; hovering them suggests playability that isn't
+    -- there yet.
+    if self:_hand_is_interactive() then
+        local _, idx = self:_card_hit(x, y)
+        self._hovered_card_index = idx
+    else
+        self._hovered_card_index = nil
+    end
 end
 
 function M:mousepressed(x, y, button)
@@ -1303,11 +1330,16 @@ function M:mousepressed(x, y, button)
             return
         end
     end
-    -- Fall through to card hit-test only when no button arms. The hand
-    -- card rects are rebuilt every draw, so we cache the *card identity*
-    -- (suit + rank) rather than the rect entry — release on the next
-    -- frame would otherwise see a different table reference even though
-    -- the card under the cursor hasn't changed.
+    -- Fall through to card hit-test only when no button arms AND the
+    -- hand is interactive (auction is bid-or-pass — cards aren't
+    -- pickable yet). Card rects are rebuilt every draw, so we cache
+    -- the *card identity* (suit + rank) rather than the rect entry —
+    -- release on the next frame would otherwise see a different
+    -- table reference even though the card under the cursor hasn't
+    -- changed.
+    if not self:_hand_is_interactive() then
+        return
+    end
     local entry = self:_card_hit(x, y)
     if entry then
         self._pending_card = { suit = entry.card.suit, rank = entry.card.rank }

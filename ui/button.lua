@@ -121,7 +121,14 @@ function Button:draw()
     else
         love.graphics.setColor(0.55, 0.55, 0.55, 1)
     end
-    love.graphics.print(t(self.label_key, self.label_params), self.x + 16, self.y + 18)
+    -- Center-align so narrow buttons (the responsive bid panel on a
+    -- small window) don't clip the label against the right edge.
+    local text = t(self.label_key, self.label_params)
+    if self.w and self.w > 0 then
+        love.graphics.printf(text, self.x, self.y + 18, self.w, "center")
+    else
+        love.graphics.print(text, self.x + 16, self.y + 18)
+    end
 end
 
 return M
