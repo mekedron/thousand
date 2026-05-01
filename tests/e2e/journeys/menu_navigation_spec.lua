@@ -86,6 +86,18 @@ local function any_setcolor_in_frame(j, expected)
     return false
 end
 
+local function press_with_shift(j, key)
+    -- Override the love-mock's keyboard.isDown so the menu's shift
+    -- detection sees lshift held while the journey dispatches the press.
+    local kb = _G.love.keyboard
+    local original = kb.isDown
+    kb.isDown = function(name)
+        return name == "lshift"
+    end
+    j:press_key(key)
+    kb.isDown = original
+end
+
 describe("e2e: menu navigation", function()
     local j
 
@@ -153,6 +165,41 @@ describe("e2e: menu navigation", function()
         end)
     end)
 
+    describe("Continue resumes an in-progress session", function()
+        it("is disabled on a fresh menu", function()
+            local rect = smallest_rect_under_text(j, j:find_localised("scene.menu.continue"))
+            assert.is_not_nil(rect)
+            assert.is_true(color_matches(rect_bg_color(j, rect), DISABLED_BG))
+        end)
+
+        it("becomes enabled after a New Game and routes back into the table", function()
+            click_button(j, j:find_localised("scene.menu.new_game"))
+            j:step()
+            click_button(j, j:find_localised("scene.table.back_to_menu"))
+            j:step()
+            local cont_rect = smallest_rect_under_text(j, j:find_localised("scene.menu.continue"))
+            assert.is_not_nil(cont_rect)
+            assert.is_false(color_matches(rect_bg_color(j, cont_rect), DISABLED_BG))
+
+            click_button(j, j:find_localised("scene.menu.continue"))
+            j:step()
+            assert.is_not_nil(j:find_text(j:find_localised("scene.table.title")))
+        end)
+
+        it("greys out again after Abandon → Yes", function()
+            click_button(j, j:find_localised("scene.menu.new_game"))
+            j:step()
+            j:press_key("escape")
+            j:step()
+            click_button(j, j:find_localised("scene.menu.abandon"))
+            j:step()
+            click_button(j, j:find_localised("scene.menu.confirm_abandon.yes"))
+            j:step()
+            local cont_rect = smallest_rect_under_text(j, j:find_localised("scene.menu.continue"))
+            assert.is_true(color_matches(rect_bg_color(j, cont_rect), DISABLED_BG))
+        end)
+    end)
+
     describe("hover and pressed visual states", function()
         it("paints the hovered background when the cursor is over a button", function()
             hover_button(j, j:find_localised("scene.menu.new_game"))
@@ -187,39 +234,76 @@ describe("e2e: menu navigation", function()
     end)
 
     describe("keyboard navigation", function()
-        it("Down moves focus and Enter activates the focused button", function()
-            -- Start: New Game focused. Down → Continue (skipped, disabled)
-            -- → Abandon (skipped, also disabled here) → Quit. So Down twice
-            -- in a row from New Game lands on Quit. We don't want to quit
-            -- the test, so we activate New Game directly with Enter from
-            -- the initial focus.
+        it("Enter activates the focused button on a fresh menu", function()
+            -- New Game is the only enabled button on a fresh menu (Continue
+            -- and Abandon are greyed; Quit would exit). Start there.
             j:press_key("return")
             j:step()
             assert.is_not_nil(j:find_text(j:find_localised("scene.table.title")))
         end)
 
-        it("Tab cycles focus through enabled buttons", function()
+        it("Tab cycles forward through enabled buttons", function()
             j:press_key("tab")
             j:step()
-            -- Focus should still land on an enabled button (skips Continue
-            -- and Abandon when both are disabled, so Tab from New Game →
-            -- Quit). Activate it.
-            local quit_label = j:find_localised("scene.menu.quit")
-            local quit_rect = smallest_rect_under_text(j, quit_label)
-            assert.is_not_nil(quit_rect)
-            -- Both New Game and Quit are enabled with no disabled buttons
-            -- in between to skip; either is acceptably "focused" depending
-            -- on initial state. The structural assertion: the focus
-            -- outline color appears somewhere, i.e. a button is focused.
+            assert.is_true(any_setcolor_in_frame(j, FOCUS_OUTLINE))
+        end)
+
+        it("Shift+Tab cycles backward", function()
+            -- Forward once, then back — the focus outline must remain on
+            -- some enabled button.
+            j:press_key("tab")
+            press_with_shift(j, "tab")
+            j:step()
             assert.is_true(any_setcolor_in_frame(j, FOCUS_OUTLINE))
         end)
 
         it("Escape on the table returns to the menu", function()
-            j:press_key("return") -- activate New Game
+            j:press_key("return")
             j:step()
             j:press_key("escape")
             j:step()
             assert.is_not_nil(j:find_text(j:find_localised("scene.menu.title")))
+        end)
+
+        it("Left and Right move focus inside the horizontal modal", function()
+            -- Start a game so Abandon is enabled, then open the modal.
+            click_button(j, j:find_localised("scene.menu.new_game"))
+            j:step()
+            j:press_key("escape")
+            j:step()
+            click_button(j, j:find_localised("scene.menu.abandon"))
+            j:step()
+            assert.is_not_nil(j:find_text(j:find_localised("scene.menu.confirm_abandon.prompt")))
+
+            -- Default focus is on Cancel (right). Move left, press Enter:
+            -- the Yes-action runs (clears session, dismisses modal).
+            j:press_key("left")
+            j:press_key("return")
+            j:step()
+            assert.is_nil(j:find_text(j:find_localised("scene.menu.confirm_abandon.prompt")))
+            -- Session cleared; Continue and Abandon are greyed again.
+            local cont_rect = smallest_rect_under_text(j, j:find_localised("scene.menu.continue"))
+            assert.is_true(color_matches(rect_bg_color(j, cont_rect), DISABLED_BG))
+        end)
+
+        it("Right then Enter on the modal hits Cancel from the default focus", function()
+            click_button(j, j:find_localised("scene.menu.new_game"))
+            j:step()
+            j:press_key("escape")
+            j:step()
+            click_button(j, j:find_localised("scene.menu.abandon"))
+            j:step()
+            -- Default focus is Cancel; Right wraps to Yes; Right again
+            -- wraps back to Cancel; pressing Enter from Cancel dismisses
+            -- without clearing the session.
+            j:press_key("right")
+            j:press_key("right")
+            j:press_key("return")
+            j:step()
+            assert.is_nil(j:find_text(j:find_localised("scene.menu.confirm_abandon.prompt")))
+            -- Session was preserved (Cancel was activated, not Yes).
+            local cont_rect = smallest_rect_under_text(j, j:find_localised("scene.menu.continue"))
+            assert.is_false(color_matches(rect_bg_color(j, cont_rect), DISABLED_BG))
         end)
     end)
 

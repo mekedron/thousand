@@ -1,14 +1,17 @@
 -- Main menu scene. Renders title, subtitle and four buttons (New Game,
 -- Continue, Abandon Game, Quit) plus a confirm-abandon modal that the
--- Abandon button toggles. Continue is greyed until Phase 2's auto-save
--- task wires it; Abandon is greyed unless the manager reports a game
--- in progress.
+-- Abandon button toggles. Continue and Abandon are both greyed unless
+-- the manager reports a game in progress; Continue routes back into the
+-- table scene with the same session, and the auto-save task later in
+-- Phase 2 will broaden the "in progress" predicate to include
+-- on-disk auto-saves.
 --
 -- Each button has hover / focus / active visual states (see ui/button.lua)
--- and the scene is fully keyboard-navigable: Tab and Down move focus
--- forward to the next enabled button, Shift+Tab and Up move it back,
--- Enter and Space activate the focused button. The confirm-abandon
--- modal traps focus to its own two buttons until dismissed.
+-- and the scene is fully keyboard-navigable. The "next" direction is any
+-- of Tab / Down / Right; the "previous" direction is any of Shift+Tab /
+-- Up / Left. Enter and Space activate the focused button. This means
+-- the vertical main menu and the horizontal confirm-abandon modal each
+-- get a natural arrow-key axis without two separate keymaps.
 --
 -- Layout is recomputed each frame from the (w, h) passed into draw and
 -- cached on `self` so input handlers can hit-test against the same rects
@@ -82,7 +85,12 @@ function M:_build_buttons()
         Button.new({
             id = "continue", -- i18n-ok
             label_key = "scene.menu.continue",
-            enabled = false,
+            enabled = self._manager:is_game_active(),
+            on_press = function()
+                if self._manager:is_game_active() then
+                    self._manager:switch_to("table")
+                end
+            end,
         }),
         Button.new({
             id = "abandon", -- i18n-ok
@@ -128,9 +136,10 @@ function M:_build_buttons()
 end
 
 function M:_refresh_enabled_states()
+    local active = self._manager:is_game_active()
     for _, b in ipairs(self._buttons) do
-        if b.id == "abandon" then -- i18n-ok
-            b:set_enabled(self._manager:is_game_active())
+        if b.id == "abandon" or b.id == "continue" then -- i18n-ok
+            b:set_enabled(active)
         end
     end
     if self._focused and not self._focused.enabled then
@@ -268,21 +277,36 @@ function M:mousereleased(x, y, button)
     end
 end
 
-function M:keypressed(key)
+local function shift_held()
+    if not (love.keyboard and love.keyboard.isDown) then
+        return false
+    end
+    return love.keyboard.isDown("lshift") or love.keyboard.isDown("rshift") -- i18n-ok
+end
+
+local function focus_step(self, direction)
     local list, focused = active_list(self)
-    if key == "tab" or key == "down" then -- i18n-ok
-        local current = focused and index_of(list, focused) or 0
-        local nxt = next_enabled(list, current, 1)
-        if nxt then
-            set_focus(self, list, nxt)
-        end
-    elseif key == "up" then -- i18n-ok
-        local current = focused and index_of(list, focused) or (#list + 1)
-        local prv = next_enabled(list, current, -1)
-        if prv then
-            set_focus(self, list, prv)
-        end
+    local current
+    if focused then
+        current = index_of(list, focused)
+    else
+        current = direction > 0 and 0 or (#list + 1)
+    end
+    local target = next_enabled(list, current, direction)
+    if target then
+        set_focus(self, list, target)
+    end
+end
+
+function M:keypressed(key)
+    if key == "tab" then -- i18n-ok
+        focus_step(self, shift_held() and -1 or 1)
+    elseif key == "down" or key == "right" then -- i18n-ok
+        focus_step(self, 1)
+    elseif key == "up" or key == "left" then -- i18n-ok
+        focus_step(self, -1)
     elseif key == "return" or key == "space" or key == "kpenter" then -- i18n-ok
+        local _, focused = active_list(self)
         if focused then
             focused:activate()
         end
