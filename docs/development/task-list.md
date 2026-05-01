@@ -323,7 +323,7 @@ only for toggles marked selectable.
   - Defender contributions.
   - Failed-contract distribution.
   - Declarer rounding before contract check.
-- [ ] Add opening-game, barrel, and endgame toggles.
+- [x] Add opening-game, barrel, and endgame toggles.
   - Golden deal settings.
   - Barrel threshold, pit lock-in, deal count, fall-off penalty, collision
     rule, overshoot penalty, and reverse barrel.

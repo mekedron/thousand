@@ -424,8 +424,22 @@ describe("app.table_view_model", function()
                     failed_contract_distribution = "lost",
                     declarer_rounding_before_contract_check = "off",
                 },
-                barrel = { threshold = 880, deal_count = 3, fall_off_penalty = -120 },
-                endgame = { target_score = 1000 },
+                opening_game = { golden_deal = "off" },
+                barrel = {
+                    threshold = 880,
+                    deal_count = 3,
+                    fall_off_penalty = -120,
+                    pit_lock_in = "off",
+                    collision_rule = "last_mounter",
+                    overshoot_penalty = "off",
+                    reverse_barrel = "off",
+                },
+                endgame = {
+                    target_score = 1000,
+                    going_over_target = "win_immediately",
+                    tiebreaker = "declarer_wins",
+                    dump_truck = "off",
+                },
             })
         end
 
