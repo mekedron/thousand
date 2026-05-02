@@ -291,6 +291,15 @@ describe("app.table_view_model", function()
             assert.is_nil(view.current_trick)
             assert.is_nil(view.marriage_offer)
         end)
+
+        it("materialises an empty score_breakdown when no bonuses fired", function()
+            -- The drive_to_tricks fixture plays a vanilla deal (no
+            -- marriages declared, no last-trick bonus, no slam). Only
+            -- card-points contribute to deal_scores, so every breakdown
+            -- row sums to zero and the list is empty.
+            assert.is_table(view.deal_done.score_breakdown)
+            assert.are.equal(0, #view.deal_done.score_breakdown)
+        end)
     end)
 
     describe("from_session — finished session", function()
@@ -426,8 +435,11 @@ describe("app.table_view_model", function()
                     lazy_revoke = "off",
                     partial_trumping = "off",
                     last_trick_bonus = "off",
+                    last_trick_bonus_value = 10,
                     slam_bonus = "off",
+                    slam_bonus_value = 60,
                     slam_against_penalty = "off",
+                    slam_against_penalty_value = 120,
                     lead_trump_after_marriage = "off",
                 },
                 scoring = {

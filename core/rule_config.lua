@@ -923,8 +923,11 @@ local SCHEMA = {
             "lazy_revoke",
             "partial_trumping",
             "last_trick_bonus",
+            "last_trick_bonus_value",
             "slam_bonus",
+            "slam_bonus_value",
             "slam_against_penalty",
+            "slam_against_penalty_value",
             "lead_trump_after_marriage",
         },
         fields = {
@@ -972,7 +975,7 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "standard", "polish_strict" },
                 default = "standard",
-                status = "deferred",
+                status = "selectable",
             },
             -- House-rule: how strictly must-trump and must-overtrump
             -- apply when void in the led suit. `standard` matches the
@@ -984,7 +987,7 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "standard", "polish_strict" },
                 default = "standard",
-                status = "deferred",
+                status = "selectable",
             },
             -- House-rule: a defender who can overtrump the declarer's
             -- played trump must do so even when not strictly required by
@@ -996,7 +999,7 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
             -- House-rule: misplays (failure to follow / overtake / trump)
             -- are punished only when caught and called before the next
@@ -1008,7 +1011,7 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
             -- House-rule: a defender who cannot beat an existing trump
             -- but holds a lower trump may discard rather than play the
@@ -1019,44 +1022,88 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
             -- House-rule: the winner of the final (8th) trick earns a
             -- small bonus added to that side's deal score. Common at
-            -- many Russian and Polish tables. The bonus value is a
-            -- sibling field that lands with the gameplay task. See
+            -- many Russian and Polish tables. The bonus value lives in
+            -- the sibling `last_trick_bonus_value` field. See
             -- docs/variations/house-rules.md "Last-trick bonus".
             last_trick_bonus = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
+            },
+            -- Bonus credited to the seat that wins the eighth (final)
+            -- trick. Inert under `last_trick_bonus = "off"`; carried in
+            -- the schema so saved templates round-trip cleanly. Bounded
+            -- in [0, 100] — the documented "+10 typical" sits well
+            -- below the cap, leaving room for unusual house rules.
+            last_trick_bonus_value = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 0,
+                max = 100,
+                default = 10,
+                status = "selectable",
             },
             -- House-rule: bonus for the declarer winning all 8 tricks.
-            -- `fixed` adds a flat bonus (commonly +60 or +120);
-            -- `doubled_bid` doubles the contract value on success. The
-            -- amount of the fixed bonus is a sibling field that lands
-            -- with the gameplay task. See
+            -- `fixed` adds a flat bonus (sibling
+            -- `slam_bonus_value`); `doubled_bid` doubles the contract
+            -- value on success — that mode reads no sibling, the bid
+            -- doubling is realised in the scoring path. See
             -- docs/variations/house-rules.md "Slam bonus".
             slam_bonus = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "off", "fixed", "doubled_bid" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
-            -- House-rule: defender-side analogue of the slam bonus —
-            -- the declarer takes zero tricks and the defenders score a
-            -- bonus. Mostly relevant for mizère contracts, but a few
-            -- tables use it for ordinary contracts too. See
+            -- Fixed bonus credited to the declarer when they take all
+            -- eight tricks under `slam_bonus = "fixed"`. Inert under
+            -- `slam_bonus = "off"` and `slam_bonus = "doubled_bid"`;
+            -- carried in the schema so saved templates round-trip
+            -- cleanly. Bounded in [0, 240] — the documented range is
+            -- "+60 or +120" and 240 mirrors the slam-contract value
+            -- ceiling, leaving headroom for table-specific bumps.
+            slam_bonus_value = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 0,
+                max = 240,
+                default = 60,
+                status = "selectable",
+            },
+            -- House-rule: penalty levied on the declarer when they
+            -- take zero tricks. Defender-side analogue of the slam
+            -- bonus, mostly relevant for mizère contracts but
+            -- supported for ordinary contracts too. The penalty value
+            -- lives in the sibling `slam_against_penalty_value`. See
             -- docs/variations/house-rules.md "Slam bonus".
             slam_against_penalty = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
+            },
+            -- Penalty deducted from the declarer's deal score when
+            -- they take zero tricks under
+            -- `slam_against_penalty = "on"`. Inert under
+            -- `slam_against_penalty = "off"`; carried in the schema so
+            -- saved templates round-trip cleanly. Bounded in [0, 240]
+            -- — mirrors the canonical mizère contract value (120) by
+            -- default, with headroom for stiffer table conventions.
+            slam_against_penalty_value = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 0,
+                max = 240,
+                default = 120,
+                status = "selectable",
             },
             -- House-rule: after declaring a marriage, the declarer must
             -- lead trump on the next trick (not just the K or Q of the
@@ -1068,7 +1115,7 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
         },
     },
@@ -2365,8 +2412,11 @@ local function canonical_russian_blob()
             lazy_revoke = "off",
             partial_trumping = "off",
             last_trick_bonus = "off",
+            last_trick_bonus_value = 10,
             slam_bonus = "off",
+            slam_bonus_value = 60,
             slam_against_penalty = "off",
+            slam_against_penalty_value = 120,
             lead_trump_after_marriage = "off",
         },
         scoring = {
@@ -2445,11 +2495,13 @@ M.builtins = {
 
     -- Polish Tysiąc (docs/variations/polish.md): 2-card talon, declarer
     -- never picks it up — one card goes face-down to each opponent
-    -- (`distribution = "pass_without_taking"`, wired in Phase 3.6's
-    -- Polish 2-card task). Bidding climbs in 10-step increments
-    -- throughout the auction (no 5-step phase below 200). The remaining
-    -- Polish tell — `tricks.must_overtake_strictness = "polish_strict"`
-    -- — flips to selectable in Phase 3.6's trick-play house-rules task.
+    -- (`distribution = "pass_without_taking"`). Bidding climbs in
+    -- 10-step increments throughout the auction (no 5-step phase below
+    -- 200). Polish *przebijanie* lifts the Russian must-beat / must-trump
+    -- rules into "play your highest of the obligatory category", and
+    -- defenders are required to overtrump declarer's trump when able —
+    -- see docs/variations/polish.md lines 40–50 and house-rules.md
+    -- "Trick-play house rules".
     polish = M.new(with_overrides(canonical_russian_blob(), {
         talon = {
             size = 2,
@@ -2458,6 +2510,11 @@ M.builtins = {
         bidding = {
             increment_below_200 = 10,
             increment_from_200 = 10,
+        },
+        tricks = {
+            must_overtake_strictness = "polish_strict",
+            must_trump_strictness = "polish_strict",
+            defender_must_overtrump_declarer = "on",
         },
     })),
 

@@ -848,8 +848,11 @@ local function canonical_with_bidding(bidding_overrides, extra_overrides)
             lazy_revoke = "off",
             partial_trumping = "off",
             last_trick_bonus = "off",
+            last_trick_bonus_value = 10,
             slam_bonus = "off",
+            slam_bonus_value = 60,
             slam_against_penalty = "off",
+            slam_against_penalty_value = 120,
             lead_trump_after_marriage = "off",
         },
         scoring = {

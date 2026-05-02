@@ -126,6 +126,23 @@ local function copy_int_list(list, count)
     return copy
 end
 
+local function copy_revoke_violations(list)
+    if list == nil then
+        return nil
+    end
+    local copy = {}
+    for i = 1, #list do
+        local v = list[i]
+        copy[i] = {
+            player = v.player,
+            code = v.code,
+            rule = v.rule,
+            card = v.card,
+        }
+    end
+    return copy
+end
+
 local function copy_completed(completed)
     local copy = {}
     for i = 1, #completed do
@@ -137,6 +154,7 @@ local function copy_completed(completed)
             trump = t.trump,
             led_suit = t.led_suit,
             plays = copy_play_list(t.plays),
+            revoke_violations = copy_revoke_violations(t.revoke_violations),
         }
     end
     return copy
@@ -155,6 +173,8 @@ local function copy_history(history)
             winner = entry.winner,
             captured_points = entry.captured_points,
             phase = entry.phase,
+            code = entry.code,
+            rule = entry.rule,
         }
     end
     return copy
@@ -170,7 +190,10 @@ local function clone_state(state)
         config = state.config,
         trump = state.trump,
         hands = shallow_copy_hands(state.hands),
-        current_trick = { plays = copy_play_list(state.current_trick.plays) },
+        current_trick = {
+            plays = copy_play_list(state.current_trick.plays),
+            revoke_violations = copy_revoke_violations(state.current_trick.revoke_violations),
+        },
         next_to_play = state.next_to_play,
         tricks_played = state.tricks_played,
         tricks_per_deal = state.tricks_per_deal,
@@ -187,6 +210,8 @@ local function clone_state(state)
         stock = shallow_copy_list(state.stock),
         trump_indicator = state.trump_indicator,
         phase = state.phase,
+        declarer = state.declarer,
+        lead_trump_after_marriage_pending = state.lead_trump_after_marriage_pending or false,
     }
 end
 
@@ -489,6 +514,24 @@ function M.new(config, hands, leader, opts)
         )
     end
 
+    local declarer = opts.declarer
+    if declarer ~= nil then
+        if not is_integer(declarer) or declarer < 1 or declarer > count then
+            return failure(
+                "bad_declarer",
+                "opts.declarer must be nil or an integer in 1.." .. count,
+                { actual = declarer, player_count = count }
+            )
+        end
+        if declarer == sits_out then
+            return failure(
+                "bad_declarer",
+                "declarer must be an active seat (not the sitting-out seat)",
+                { declarer = declarer, sits_out = sits_out }
+            )
+        end
+    end
+
     local active_seats
     if sits_out then
         active_seats = active_seats_skipping(sits_out, count)
@@ -529,6 +572,8 @@ function M.new(config, hands, leader, opts)
         stock = stock,
         trump_indicator = trump_indicator,
         phase = phase,
+        declarer = declarer,
+        lead_trump_after_marriage_pending = false,
     })
     return { ok = true, tricks = state }
 end
@@ -591,6 +636,29 @@ function M.set_trump(state, suit)
     next_state.history = append_history(state.history, {
         action = "set_trump",
         suit = suit,
+    })
+    return { ok = true, tricks = tag_as_tricks(next_state) }
+end
+
+-- Phase 3.6 lead_trump_after_marriage = "on" path. The session marks
+-- the tricks state when a marriage is declared so that the next lead
+-- (whoever wins the current trick or, for between-trick declarations,
+-- the seat already on lead) is restricted to trump cards if the
+-- player holds any. The flag clears once a card is played to that
+-- lead.
+function M.mark_lead_trump_after_marriage(state)
+    local err = ensure_tricks(state)
+    if err then
+        return err
+    end
+    local phase_err = ensure_status(state, "in_progress", "mark_lead_trump_after_marriage")
+    if phase_err then
+        return phase_err
+    end
+    local next_state = clone_state(state)
+    next_state.lead_trump_after_marriage_pending = true
+    next_state.history = append_history(state.history, {
+        action = "mark_lead_trump_after_marriage",
     })
     return { ok = true, tricks = tag_as_tricks(next_state) }
 end
@@ -679,21 +747,25 @@ local function highest_rank_played_in_suit(plays, suit, config)
     return best
 end
 
--- Compute (required_suit, must_beat_threshold) given the current trick
--- state and the player's hand. `required_suit` is nil when the player
--- may discard freely. During a 2-player A draw phase the must-follow
--- and must-beat rules are relaxed (the player may always discard).
-local function play_constraints(hand, plays, trump, rules, config, phase)
+-- Compute (required_suit, must_beat_threshold, restrict_to_max) given
+-- the current trick state and the player's hand. `required_suit` is
+-- nil when the player may discard freely. `restrict_to_max` is true
+-- when the player must additionally narrow to the single highest card
+-- meeting the constraint (Polish *przebijanie*). During a 2-player A
+-- draw phase the must-follow and must-beat rules are relaxed (the
+-- player may always discard).
+local function play_constraints(hand, plays, trump, rules, config, phase, player, declarer)
     if #plays == 0 then
-        return nil, 0
+        return nil, 0, false
     end
     if phase == "draw" then
-        return nil, 0
+        return nil, 0, false
     end
 
     local led_suit = plays[1].card.suit
     local has_led = player_holds_suit(hand, led_suit)
     local has_trump = player_holds_suit(hand, trump)
+    local is_defender = declarer ~= nil and player ~= declarer
 
     if has_led and rules.must_follow then
         local threshold = 0
@@ -703,31 +775,108 @@ local function play_constraints(hand, plays, trump, rules, config, phase)
                 threshold = highest_rank_played_in_suit(plays, led_suit, config)
             end
         end
-        return led_suit, threshold
+        local restrict_to_max = false
+        if
+            threshold > 0
+            and rules.must_overtake_strictness == "polish_strict"
+            and highest_rank_in_suit(hand, led_suit, config) > threshold
+        then
+            restrict_to_max = true
+        end
+        return led_suit, threshold, restrict_to_max
     end
 
     if (not has_led) and trump and has_trump and rules.must_trump then
+        if rules.partial_trumping == "on" and is_defender then
+            local trump_on_trick = highest_rank_played_in_suit(plays, trump, config)
+            if
+                trump_on_trick > 0
+                and highest_rank_in_suit(hand, trump, config) <= trump_on_trick
+            then
+                return nil, 0, false
+            end
+        end
         local threshold = 0
         if rules.must_overtrump then
             threshold = highest_rank_played_in_suit(plays, trump, config)
         end
-        return trump, threshold
+        -- polish_strict trump applies whenever must_trump fires (even at
+        -- threshold=0): the player must play their highest trump, not just
+        -- any trump. See docs/variations/polish.md *przebijanie*.
+        local restrict_to_max = rules.must_trump_strictness == "polish_strict"
+        return trump, threshold, restrict_to_max
     end
 
-    return nil, 0
+    if
+        not has_led
+        and trump
+        and has_trump
+        and rules.defender_must_overtrump_declarer == "on"
+        and is_defender
+    then
+        local declarer_trump_rank = 0
+        for i = 1, #plays do
+            local p = plays[i]
+            if p.player == declarer and p.card.suit == trump then
+                local r = card.trick_rank(p.card, config)
+                if r > declarer_trump_rank then
+                    declarer_trump_rank = r
+                end
+            end
+        end
+        if
+            declarer_trump_rank > 0
+            and highest_rank_in_suit(hand, trump, config) > declarer_trump_rank
+        then
+            local restrict_to_max = (rules.must_trump_strictness == "polish_strict")
+            return trump, declarer_trump_rank, restrict_to_max
+        end
+    end
+
+    return nil, 0, false
+end
+
+local function lead_trump_only_active(state, hand)
+    if state.phase == "draw" then
+        return false
+    end
+    if state.config.tricks.lead_trump_after_marriage ~= "on" then
+        return false
+    end
+    if not state.lead_trump_after_marriage_pending then
+        return false
+    end
+    return state.trump ~= nil and player_holds_suit(hand, state.trump)
 end
 
 local function compute_legal_cards(state, player)
     local hand = state.hands[player]
     if #state.current_trick.plays == 0 then
+        if lead_trump_only_active(state, hand) then
+            local trump_only = {}
+            for i = 1, #hand do
+                if hand[i].suit == state.trump then
+                    trump_only[#trump_only + 1] = hand[i]
+                end
+            end
+            return trump_only
+        end
         return shallow_copy_list(hand)
     end
 
     local config = state.config
     local rules = config.tricks
     local trump = state.trump
-    local required_suit, threshold =
-        play_constraints(hand, state.current_trick.plays, trump, rules, config, state.phase)
+    local required_suit, threshold, restrict_to_max = play_constraints(
+        hand,
+        state.current_trick.plays,
+        trump,
+        rules,
+        config,
+        state.phase,
+        player,
+        state.declarer
+    )
 
     if required_suit == nil then
         return shallow_copy_list(hand)
@@ -740,11 +889,33 @@ local function compute_legal_cards(state, player)
         end
     end
 
+    local function narrow_to_max(cards)
+        if #cards <= 1 then
+            return cards
+        end
+        local best = cards[1]
+        local best_rank = card.trick_rank(best, config)
+        for i = 2, #cards do
+            local r = card.trick_rank(cards[i], config)
+            if r > best_rank then
+                best = cards[i]
+                best_rank = r
+            end
+        end
+        return { best }
+    end
+
     if threshold == 0 then
+        if restrict_to_max then
+            return narrow_to_max(in_suit)
+        end
         return in_suit
     end
 
     if highest_rank_in_suit(hand, required_suit, config) <= threshold then
+        if restrict_to_max then
+            return narrow_to_max(in_suit)
+        end
         return in_suit
     end
 
@@ -754,6 +925,11 @@ local function compute_legal_cards(state, player)
             higher[#higher + 1] = in_suit[i]
         end
     end
+
+    if restrict_to_max then
+        return narrow_to_max(higher)
+    end
+
     return higher
 end
 
@@ -817,8 +993,28 @@ local function resolve_trick(state)
     return winner, captured, led_suit
 end
 
-local function check_legality(hand, plays, trump, rules, config, played_card, phase)
+local function check_legality(state, player, played_card)
+    local hand = state.hands[player]
+    local plays = state.current_trick.plays
+    local trump = state.trump
+    local rules = state.config.tricks
+    local config = state.config
+    local phase = state.phase
+    local declarer = state.declarer
+    local is_defender = declarer ~= nil and player ~= declarer
+
     if #plays == 0 then
+        if lead_trump_only_active(state, hand) and played_card.suit ~= trump then
+            return failure(
+                "lead_trump_after_marriage_violation",
+                "must lead trump on the trick after a marriage declaration",
+                {
+                    rule = "lead_trump_after_marriage",
+                    trump = trump,
+                    played_suit = played_card.suit,
+                }
+            )
+        end
         return nil
     end
     if phase == "draw" then
@@ -854,43 +1050,125 @@ local function check_legality(hand, plays, trump, rules, config, played_card, ph
                     }
                 )
             end
+            if can_beat and rules.must_overtake_strictness == "polish_strict" then
+                local hand_high = highest_rank_in_suit(hand, led_suit, config)
+                if card.trick_rank(played_card, config) ~= hand_high then
+                    return failure(
+                        "polish_strict_overtake_violation",
+                        "polish_strict requires playing the highest card of the led suit",
+                        {
+                            rule = "must_overtake_strictness",
+                            led_suit = led_suit,
+                            played_rank = played_card.rank,
+                            max_rank_in_hand = hand_high,
+                        }
+                    )
+                end
+            end
         end
     end
 
-    if (not has_led) and trump and has_trump and rules.must_trump and played_card.suit ~= trump then
-        return failure(
-            "must_trump_violation",
-            "must play trump when void in the led suit and holding trump",
-            {
-                rule = "must_trump",
-                trump = trump,
-                played_suit = played_card.suit,
-            }
-        )
+    if (not has_led) and trump and has_trump and rules.must_trump then
+        local trump_on_trick = highest_rank_played_in_suit(plays, trump, config)
+        local has_only_lower_trumps = trump_on_trick > 0
+            and highest_rank_in_suit(hand, trump, config) <= trump_on_trick
+        local relaxed = rules.partial_trumping == "on" and is_defender and has_only_lower_trumps
+
+        if not relaxed then
+            if played_card.suit ~= trump then
+                return failure(
+                    "must_trump_violation",
+                    "must play trump when void in the led suit and holding trump",
+                    {
+                        rule = "must_trump",
+                        trump = trump,
+                        played_suit = played_card.suit,
+                    }
+                )
+            end
+            if rules.must_trump_strictness == "polish_strict" then
+                local hand_high = highest_rank_in_suit(hand, trump, config)
+                if card.trick_rank(played_card, config) ~= hand_high then
+                    return failure(
+                        "polish_strict_trump_violation",
+                        "polish_strict requires playing the highest trump when forced to trump",
+                        {
+                            rule = "must_trump_strictness",
+                            trump = trump,
+                            played_rank = played_card.rank,
+                            max_rank_in_hand = hand_high,
+                        }
+                    )
+                end
+            elseif rules.must_overtrump and trump_on_trick > 0 then
+                local can_over = highest_rank_in_suit(hand, trump, config) > trump_on_trick
+                if can_over and card.trick_rank(played_card, config) <= trump_on_trick then
+                    return failure(
+                        "must_overtrump_violation",
+                        "must play a higher trump than any already on the trick when held",
+                        {
+                            rule = "must_overtrump",
+                            trump = trump,
+                            played_rank = played_card.rank,
+                            current_high_rank = trump_on_trick,
+                        }
+                    )
+                end
+            end
+        end
     end
 
     if
         not has_led
         and trump
         and has_trump
-        and rules.must_trump
-        and played_card.suit == trump
-        and rules.must_overtrump
+        and rules.defender_must_overtrump_declarer == "on"
+        and is_defender
     then
-        local cur_high = highest_rank_played_in_suit(plays, trump, config)
-        if cur_high > 0 then
-            local can_over = highest_rank_in_suit(hand, trump, config) > cur_high
-            if can_over and card.trick_rank(played_card, config) <= cur_high then
+        local declarer_trump_rank = 0
+        for i = 1, #plays do
+            local p = plays[i]
+            if p.player == declarer and p.card.suit == trump then
+                local r = card.trick_rank(p.card, config)
+                if r > declarer_trump_rank then
+                    declarer_trump_rank = r
+                end
+            end
+        end
+        if
+            declarer_trump_rank > 0
+            and highest_rank_in_suit(hand, trump, config) > declarer_trump_rank
+        then
+            if
+                played_card.suit ~= trump
+                or card.trick_rank(played_card, config) <= declarer_trump_rank
+            then
                 return failure(
-                    "must_overtrump_violation",
-                    "must play a higher trump than any already on the trick when held",
+                    "defender_must_overtrump_declarer_violation",
+                    "defender must overtrump the declarer's trump when able",
                     {
-                        rule = "must_overtrump",
+                        rule = "defender_must_overtrump_declarer",
                         trump = trump,
+                        played_suit = played_card.suit,
                         played_rank = played_card.rank,
-                        current_high_rank = cur_high,
+                        declarer_trump_rank = declarer_trump_rank,
                     }
                 )
+            end
+            if rules.must_trump_strictness == "polish_strict" then
+                local hand_high = highest_rank_in_suit(hand, trump, config)
+                if card.trick_rank(played_card, config) ~= hand_high then
+                    return failure(
+                        "polish_strict_trump_violation",
+                        "polish_strict requires playing the highest trump when overtrumping",
+                        {
+                            rule = "must_trump_strictness",
+                            trump = trump,
+                            played_rank = played_card.rank,
+                            max_rank_in_hand = hand_high,
+                        }
+                    )
+                end
             end
         end
     end
@@ -984,17 +1262,24 @@ function M.play(state, player, played)
     end
 
     local actual_card = hand[idx]
-    local legality_err = check_legality(
-        hand,
-        state.current_trick.plays,
-        state.trump,
-        state.config.tricks,
-        state.config,
-        actual_card,
-        state.phase
-    )
+    local was_lead = #state.current_trick.plays == 0
+    local legality_err = check_legality(state, player, actual_card)
+    local revoke_violation = nil
     if legality_err then
-        return legality_err
+        local violation = legality_err.error
+        if
+            state.config.tricks.lazy_revoke == "on"
+            and violation.code ~= "lead_trump_after_marriage_violation"
+        then
+            revoke_violation = {
+                player = player,
+                code = violation.code,
+                rule = violation.rule,
+                card = { suit = actual_card.suit, rank = actual_card.rank },
+            }
+        else
+            return legality_err
+        end
     end
 
     local next_state = clone_state(state)
@@ -1003,11 +1288,28 @@ function M.play(state, player, played)
         player = player,
         card = actual_card,
     }
-    next_state.history = append_history(state.history, {
-        action = "play",
-        player = player,
-        card = actual_card,
-    })
+    if revoke_violation then
+        local list = next_state.current_trick.revoke_violations or {}
+        list[#list + 1] = revoke_violation
+        next_state.current_trick.revoke_violations = list
+        next_state.history = append_history(state.history, {
+            action = "revoke",
+            player = player,
+            card = actual_card,
+            code = revoke_violation.code,
+            rule = revoke_violation.rule,
+        })
+    else
+        next_state.history = append_history(state.history, {
+            action = "play",
+            player = player,
+            card = actual_card,
+        })
+    end
+
+    if was_lead and next_state.lead_trump_after_marriage_pending then
+        next_state.lead_trump_after_marriage_pending = false
+    end
 
     if #next_state.current_trick.plays < #next_state.active_seats then
         next_state.next_to_play = next_active_seat(next_state.active_seats, player)
@@ -1024,6 +1326,7 @@ function M.play(state, player, played)
         trump = next_state.trump,
         led_suit = led_suit,
         plays = copy_play_list(next_state.current_trick.plays),
+        revoke_violations = copy_revoke_violations(next_state.current_trick.revoke_violations),
     }
     next_state.tricks_played = next_state.tricks_played + 1
     next_state.history = append_history(next_state.history, {

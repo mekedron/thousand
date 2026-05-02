@@ -91,8 +91,11 @@ local function valid_table()
             lazy_revoke = "off",
             partial_trumping = "off",
             last_trick_bonus = "off",
+            last_trick_bonus_value = 10,
             slam_bonus = "off",
+            slam_bonus_value = 60,
             slam_against_penalty = "off",
+            slam_against_penalty_value = 120,
             lead_trump_after_marriage = "off",
         },
         scoring = {
@@ -823,8 +826,11 @@ describe("core.rule_config", function()
                         "lazy_revoke",
                         "partial_trumping",
                         "last_trick_bonus",
+                        "last_trick_bonus_value",
                         "slam_bonus",
+                        "slam_bonus_value",
                         "slam_against_penalty",
+                        "slam_against_penalty_value",
                         "lead_trump_after_marriage",
                     },
                 },
@@ -3291,293 +3297,449 @@ describe("core.rule_config", function()
     end)
 
     describe("tricks.must_overtake_strictness", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("tricks.must_overtake_strictness")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("standard", d.default)
-            assert.are.equal("deferred", d.status)
-            local allowed = {}
-            for _, v in ipairs(d.allowed) do
-                allowed[v] = true
-            end
-            assert.is_true(allowed["standard"])
-            assert.is_true(allowed["polish_strict"])
+            assert.are.equal("selectable", d.status)
+            assert.are.same({ "standard", "polish_strict" }, d.allowed)
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts every allowed value", function()
+            for _, value in ipairs({ "standard", "polish_strict" }) do
+                local t = valid_table()
+                t.tricks.must_overtake_strictness = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " must be accepted")
+            end
+        end)
+
+        it("rejects an unknown value with value_not_allowed", function()
             local t = valid_table()
-            t.tricks.must_overtake_strictness = "polish_strict"
+            t.tricks.must_overtake_strictness = "bogus"
             local res = rule_config.try_new(t)
             assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("tricks.must_overtake_strictness", res.error.path)
+            assert.are.equal("value_not_allowed", res.error.code)
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
-            local res = rule_config.from_json(s)
+        it("survives a JSON round trip with a non-default value", function()
+            local t = valid_table()
+            t.tricks.must_overtake_strictness = "polish_strict"
+            local config = rule_config.new(t)
+            local res = rule_config.from_json(rule_config.to_json(config))
             assert.is_true(res.ok)
-            assert.are.equal("standard", res.config.tricks.must_overtake_strictness)
+            assert.are.equal("polish_strict", res.config.tricks.must_overtake_strictness)
         end)
     end)
 
     describe("tricks.must_trump_strictness", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("tricks.must_trump_strictness")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("standard", d.default)
-            assert.are.equal("deferred", d.status)
-            local allowed = {}
-            for _, v in ipairs(d.allowed) do
-                allowed[v] = true
-            end
-            assert.is_true(allowed["standard"])
-            assert.is_true(allowed["polish_strict"])
+            assert.are.equal("selectable", d.status)
+            assert.are.same({ "standard", "polish_strict" }, d.allowed)
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts every allowed value", function()
+            for _, value in ipairs({ "standard", "polish_strict" }) do
+                local t = valid_table()
+                t.tricks.must_trump_strictness = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " must be accepted")
+            end
+        end)
+
+        it("rejects an unknown value with value_not_allowed", function()
             local t = valid_table()
-            t.tricks.must_trump_strictness = "polish_strict"
+            t.tricks.must_trump_strictness = "bogus"
             local res = rule_config.try_new(t)
             assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("tricks.must_trump_strictness", res.error.path)
+            assert.are.equal("value_not_allowed", res.error.code)
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
-            local res = rule_config.from_json(s)
+        it("survives a JSON round trip with a non-default value", function()
+            local t = valid_table()
+            t.tricks.must_trump_strictness = "polish_strict"
+            local config = rule_config.new(t)
+            local res = rule_config.from_json(rule_config.to_json(config))
             assert.is_true(res.ok)
-            assert.are.equal("standard", res.config.tricks.must_trump_strictness)
+            assert.are.equal("polish_strict", res.config.tricks.must_trump_strictness)
         end)
     end)
 
     describe("tricks.defender_must_overtrump_declarer", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("tricks.defender_must_overtrump_declarer")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
-            local allowed = {}
-            for _, v in ipairs(d.allowed) do
-                allowed[v] = true
-            end
-            assert.is_true(allowed["off"])
-            assert.is_true(allowed["on"])
+            assert.are.equal("selectable", d.status)
+            assert.are.same({ "off", "on" }, d.allowed)
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts every allowed value", function()
+            for _, value in ipairs({ "off", "on" }) do
+                local t = valid_table()
+                t.tricks.defender_must_overtrump_declarer = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " must be accepted")
+            end
+        end)
+
+        it("rejects an unknown value with value_not_allowed", function()
             local t = valid_table()
-            t.tricks.defender_must_overtrump_declarer = "on"
+            t.tricks.defender_must_overtrump_declarer = "bogus"
             local res = rule_config.try_new(t)
             assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("tricks.defender_must_overtrump_declarer", res.error.path)
+            assert.are.equal("value_not_allowed", res.error.code)
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
-            local res = rule_config.from_json(s)
+        it("survives a JSON round trip with a non-default value", function()
+            local t = valid_table()
+            t.tricks.defender_must_overtrump_declarer = "on"
+            local config = rule_config.new(t)
+            local res = rule_config.from_json(rule_config.to_json(config))
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.tricks.defender_must_overtrump_declarer)
+            assert.are.equal("on", res.config.tricks.defender_must_overtrump_declarer)
         end)
     end)
 
     describe("tricks.lazy_revoke", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("tricks.lazy_revoke")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
-            local allowed = {}
-            for _, v in ipairs(d.allowed) do
-                allowed[v] = true
-            end
-            assert.is_true(allowed["off"])
-            assert.is_true(allowed["on"])
+            assert.are.equal("selectable", d.status)
+            assert.are.same({ "off", "on" }, d.allowed)
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts every allowed value", function()
+            for _, value in ipairs({ "off", "on" }) do
+                local t = valid_table()
+                t.tricks.lazy_revoke = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " must be accepted")
+            end
+        end)
+
+        it("rejects an unknown value with value_not_allowed", function()
             local t = valid_table()
-            t.tricks.lazy_revoke = "on"
+            t.tricks.lazy_revoke = "bogus"
             local res = rule_config.try_new(t)
             assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("tricks.lazy_revoke", res.error.path)
+            assert.are.equal("value_not_allowed", res.error.code)
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
-            local res = rule_config.from_json(s)
+        it("survives a JSON round trip with a non-default value", function()
+            local t = valid_table()
+            t.tricks.lazy_revoke = "on"
+            local config = rule_config.new(t)
+            local res = rule_config.from_json(rule_config.to_json(config))
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.tricks.lazy_revoke)
+            assert.are.equal("on", res.config.tricks.lazy_revoke)
         end)
     end)
 
     describe("tricks.partial_trumping", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("tricks.partial_trumping")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
-            local allowed = {}
-            for _, v in ipairs(d.allowed) do
-                allowed[v] = true
-            end
-            assert.is_true(allowed["off"])
-            assert.is_true(allowed["on"])
+            assert.are.equal("selectable", d.status)
+            assert.are.same({ "off", "on" }, d.allowed)
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts every allowed value", function()
+            for _, value in ipairs({ "off", "on" }) do
+                local t = valid_table()
+                t.tricks.partial_trumping = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " must be accepted")
+            end
+        end)
+
+        it("rejects an unknown value with value_not_allowed", function()
             local t = valid_table()
-            t.tricks.partial_trumping = "on"
+            t.tricks.partial_trumping = "bogus"
             local res = rule_config.try_new(t)
             assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("tricks.partial_trumping", res.error.path)
+            assert.are.equal("value_not_allowed", res.error.code)
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
-            local res = rule_config.from_json(s)
+        it("survives a JSON round trip with a non-default value", function()
+            local t = valid_table()
+            t.tricks.partial_trumping = "on"
+            local config = rule_config.new(t)
+            local res = rule_config.from_json(rule_config.to_json(config))
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.tricks.partial_trumping)
+            assert.are.equal("on", res.config.tricks.partial_trumping)
         end)
     end)
 
     describe("tricks.last_trick_bonus", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("tricks.last_trick_bonus")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
-            local allowed = {}
-            for _, v in ipairs(d.allowed) do
-                allowed[v] = true
-            end
-            assert.is_true(allowed["off"])
-            assert.is_true(allowed["on"])
+            assert.are.equal("selectable", d.status)
+            assert.are.same({ "off", "on" }, d.allowed)
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts every allowed value", function()
+            for _, value in ipairs({ "off", "on" }) do
+                local t = valid_table()
+                t.tricks.last_trick_bonus = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " must be accepted")
+            end
+        end)
+
+        it("rejects an unknown value with value_not_allowed", function()
             local t = valid_table()
-            t.tricks.last_trick_bonus = "on"
+            t.tricks.last_trick_bonus = "bogus"
             local res = rule_config.try_new(t)
             assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("tricks.last_trick_bonus", res.error.path)
+            assert.are.equal("value_not_allowed", res.error.code)
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
-            local res = rule_config.from_json(s)
+        it("survives a JSON round trip with a non-default value", function()
+            local t = valid_table()
+            t.tricks.last_trick_bonus = "on"
+            local config = rule_config.new(t)
+            local res = rule_config.from_json(rule_config.to_json(config))
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.tricks.last_trick_bonus)
+            assert.are.equal("on", res.config.tricks.last_trick_bonus)
+        end)
+    end)
+
+    describe("tricks.last_trick_bonus_value", function()
+        it("exposes a selectable bounded number-leaf descriptor", function()
+            local d = rule_config.schema_for("tricks.last_trick_bonus_value")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(10, d.default)
+            assert.are.equal(0, d.min)
+            assert.are.equal(100, d.max)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("accepts numeric values inside the bound", function()
+            local t = valid_table()
+            t.tricks.last_trick_bonus_value = 25
+            local res = rule_config.try_new(t)
+            assert.is_true(res.ok)
+            assert.are.equal(25, res.config.tricks.last_trick_bonus_value)
+        end)
+
+        it("rejects out-of-bound values", function()
+            for _, bad in ipairs({ -1, 200 }) do
+                local t = valid_table()
+                t.tricks.last_trick_bonus_value = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. tostring(bad) .. " must be rejected")
+            end
+        end)
+
+        it("survives a JSON round trip with a non-default value", function()
+            local t = valid_table()
+            t.tricks.last_trick_bonus_value = 15
+            local config = rule_config.new(t)
+            local res = rule_config.from_json(rule_config.to_json(config))
+            assert.is_true(res.ok)
+            assert.are.equal(15, res.config.tricks.last_trick_bonus_value)
         end)
     end)
 
     describe("tricks.slam_bonus", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("tricks.slam_bonus")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
-            local allowed = {}
-            for _, v in ipairs(d.allowed) do
-                allowed[v] = true
-            end
-            assert.is_true(allowed["off"])
-            assert.is_true(allowed["fixed"])
-            assert.is_true(allowed["doubled_bid"])
+            assert.are.equal("selectable", d.status)
+            assert.are.same({ "off", "fixed", "doubled_bid" }, d.allowed)
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
-            for _, bad in ipairs({ "fixed", "doubled_bid" }) do
+        it("accepts every allowed value", function()
+            for _, value in ipairs({ "off", "fixed", "doubled_bid" }) do
                 local t = valid_table()
-                t.tricks.slam_bonus = bad
+                t.tricks.slam_bonus = value
                 local res = rule_config.try_new(t)
-                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
-                assert.are.equal("deferred_field_changed", res.error.code)
-                assert.are.equal("tricks.slam_bonus", res.error.path)
+                assert.is_true(res.ok, "value " .. value .. " must be accepted")
             end
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
-            local res = rule_config.from_json(s)
+        it("rejects an unknown value with value_not_allowed", function()
+            local t = valid_table()
+            t.tricks.slam_bonus = "bogus"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("value_not_allowed", res.error.code)
+        end)
+
+        it("survives a JSON round trip with a non-default value", function()
+            local t = valid_table()
+            t.tricks.slam_bonus = "doubled_bid"
+            local config = rule_config.new(t)
+            local res = rule_config.from_json(rule_config.to_json(config))
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.tricks.slam_bonus)
+            assert.are.equal("doubled_bid", res.config.tricks.slam_bonus)
+        end)
+    end)
+
+    describe("tricks.slam_bonus_value", function()
+        it("exposes a selectable bounded number-leaf descriptor", function()
+            local d = rule_config.schema_for("tricks.slam_bonus_value")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(60, d.default)
+            assert.are.equal(0, d.min)
+            assert.are.equal(240, d.max)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("accepts numeric values inside the bound", function()
+            local t = valid_table()
+            t.tricks.slam_bonus_value = 120
+            local res = rule_config.try_new(t)
+            assert.is_true(res.ok)
+            assert.are.equal(120, res.config.tricks.slam_bonus_value)
+        end)
+
+        it("rejects out-of-bound values", function()
+            for _, bad in ipairs({ -1, 300 }) do
+                local t = valid_table()
+                t.tricks.slam_bonus_value = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. tostring(bad) .. " must be rejected")
+            end
+        end)
+
+        it("survives a JSON round trip with a non-default value", function()
+            local t = valid_table()
+            t.tricks.slam_bonus_value = 80
+            local config = rule_config.new(t)
+            local res = rule_config.from_json(rule_config.to_json(config))
+            assert.is_true(res.ok)
+            assert.are.equal(80, res.config.tricks.slam_bonus_value)
         end)
     end)
 
     describe("tricks.slam_against_penalty", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("tricks.slam_against_penalty")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
-            local allowed = {}
-            for _, v in ipairs(d.allowed) do
-                allowed[v] = true
-            end
-            assert.is_true(allowed["off"])
-            assert.is_true(allowed["on"])
+            assert.are.equal("selectable", d.status)
+            assert.are.same({ "off", "on" }, d.allowed)
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts every allowed value", function()
+            for _, value in ipairs({ "off", "on" }) do
+                local t = valid_table()
+                t.tricks.slam_against_penalty = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " must be accepted")
+            end
+        end)
+
+        it("rejects an unknown value with value_not_allowed", function()
             local t = valid_table()
-            t.tricks.slam_against_penalty = "on"
+            t.tricks.slam_against_penalty = "bogus"
             local res = rule_config.try_new(t)
             assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("tricks.slam_against_penalty", res.error.path)
+            assert.are.equal("value_not_allowed", res.error.code)
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
-            local res = rule_config.from_json(s)
+        it("survives a JSON round trip with a non-default value", function()
+            local t = valid_table()
+            t.tricks.slam_against_penalty = "on"
+            local config = rule_config.new(t)
+            local res = rule_config.from_json(rule_config.to_json(config))
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.tricks.slam_against_penalty)
+            assert.are.equal("on", res.config.tricks.slam_against_penalty)
+        end)
+    end)
+
+    describe("tricks.slam_against_penalty_value", function()
+        it("exposes a selectable bounded number-leaf descriptor", function()
+            local d = rule_config.schema_for("tricks.slam_against_penalty_value")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(120, d.default)
+            assert.are.equal(0, d.min)
+            assert.are.equal(240, d.max)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("accepts numeric values inside the bound", function()
+            local t = valid_table()
+            t.tricks.slam_against_penalty_value = 60
+            local res = rule_config.try_new(t)
+            assert.is_true(res.ok)
+            assert.are.equal(60, res.config.tricks.slam_against_penalty_value)
+        end)
+
+        it("rejects out-of-bound values", function()
+            for _, bad in ipairs({ -1, 300 }) do
+                local t = valid_table()
+                t.tricks.slam_against_penalty_value = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. tostring(bad) .. " must be rejected")
+            end
+        end)
+
+        it("survives a JSON round trip with a non-default value", function()
+            local t = valid_table()
+            t.tricks.slam_against_penalty_value = 80
+            local config = rule_config.new(t)
+            local res = rule_config.from_json(rule_config.to_json(config))
+            assert.is_true(res.ok)
+            assert.are.equal(80, res.config.tricks.slam_against_penalty_value)
         end)
     end)
 
     describe("tricks.lead_trump_after_marriage", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("tricks.lead_trump_after_marriage")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
-            local allowed = {}
-            for _, v in ipairs(d.allowed) do
-                allowed[v] = true
-            end
-            assert.is_true(allowed["off"])
-            assert.is_true(allowed["on"])
+            assert.are.equal("selectable", d.status)
+            assert.are.same({ "off", "on" }, d.allowed)
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts every allowed value", function()
+            for _, value in ipairs({ "off", "on" }) do
+                local t = valid_table()
+                t.tricks.lead_trump_after_marriage = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " must be accepted")
+            end
+        end)
+
+        it("rejects an unknown value with value_not_allowed", function()
             local t = valid_table()
-            t.tricks.lead_trump_after_marriage = "on"
+            t.tricks.lead_trump_after_marriage = "bogus"
             local res = rule_config.try_new(t)
             assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("tricks.lead_trump_after_marriage", res.error.path)
+            assert.are.equal("value_not_allowed", res.error.code)
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
-            local res = rule_config.from_json(s)
+        it("survives a JSON round trip with a non-default value", function()
+            local t = valid_table()
+            t.tricks.lead_trump_after_marriage = "on"
+            local config = rule_config.new(t)
+            local res = rule_config.from_json(rule_config.to_json(config))
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.tricks.lead_trump_after_marriage)
+            assert.are.equal("on", res.config.tricks.lead_trump_after_marriage)
         end)
     end)
 

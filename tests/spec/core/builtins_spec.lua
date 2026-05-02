@@ -283,6 +283,13 @@ describe("core.rule_config builtins (engine integration)", function()
     end)
 
     describe("polish", function()
+        it("flips polish_strict overtake / trump and defender_must_overtrump_declarer", function()
+            local config = rule_config.builtins.polish
+            assert.are.equal("polish_strict", config.tricks.must_overtake_strictness)
+            assert.are.equal("polish_strict", config.tricks.must_trump_strictness)
+            assert.are.equal("on", config.tricks.defender_must_overtrump_declarer)
+        end)
+
         it("uses 10-step bid increments end-to-end on a constructed auction", function()
             local config = rule_config.builtins.polish
             local a = auction_module.new(config, 1).auction

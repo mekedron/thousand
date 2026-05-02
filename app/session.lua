@@ -141,6 +141,7 @@ local function reset_deal_state(self, dealer, seed_bump)
     self._scoring = nil
     self._raspassy_active = false
     self._pending_trump_apply = nil
+    self._pending_lead_trump_after_marriage = nil
     -- Phase 3.6 bidding-house-rules per-deal state.
     self._revealed_hands = {}
     self._re_entry_used = {}
@@ -273,6 +274,11 @@ function M.new(opts)
         -- consequent trick resolves. Drives the "trump engages from
         -- the next trick" timing rule from core/marriages.lua.
         _pending_trump_apply = nil,
+        -- Phase 3.6 lead_trump_after_marriage = "on": set on
+        -- declare_marriage, applied to tricks state at the next trick
+        -- boundary so the trick AFTER the marriage trick is restricted
+        -- to a trump lead.
+        _pending_lead_trump_after_marriage = nil,
         -- Phase 3.6 dealing-and-redeal state.
         --   _redeal_offer: nil when no entitlement is open, otherwise
         --       { seat, kind, forced }. Forced offers are applied
@@ -401,6 +407,7 @@ function M.from_state(state)
         _deal_done = state.deal_done,
         _deal_index = state.deal_index or 1,
         _pending_trump_apply = nil,
+        _pending_lead_trump_after_marriage = nil,
         _redeal_offer = state.redeal_offer,
         _redeal_log = state.redeal_log or {},
         _misdeal_log = state.misdeal_log or {},
@@ -829,6 +836,7 @@ end
 local function start_tricks(self, hands, declarer, opts)
     opts = opts or {}
     opts.dealer = self._dealer
+    opts.declarer = declarer
     if self._stock then
         opts.stock = self._stock
         opts.trump_indicator = self._trump_indicator
@@ -1182,13 +1190,47 @@ local function on_tricks_end(self)
             kq_bonuses[i] = 0
         end
     end
+    -- Phase 3.6 trick-play house-rule bonuses. Computed from the
+    -- finalised tricks state — last-trick winner, declarer trick count
+    -- — and the active toggles. Each bonus array is per-seat to fit
+    -- the partnership-mode pooling that score_deal already does.
+    local trick_rules = self._config.tricks
+    local last_trick_bonus = {}
+    local slam_bonus = {}
+    local slam_against_penalty = {}
+    for i = 1, player_count do
+        last_trick_bonus[i] = 0
+        slam_bonus[i] = 0
+        slam_against_penalty[i] = 0
+    end
+    if trick_rules.last_trick_bonus == "on" and #t.completed_tricks > 0 then
+        local last_winner = t.completed_tricks[#t.completed_tricks].winner
+        last_trick_bonus[last_winner] = trick_rules.last_trick_bonus_value
+    end
+    local declarer_tricks_won = t.tricks_won[declarer] or 0
+    local bid_multiplier = 1
+    if declarer_tricks_won == t.tricks_per_deal then
+        if trick_rules.slam_bonus == "fixed" then
+            slam_bonus[declarer] = trick_rules.slam_bonus_value
+        elseif trick_rules.slam_bonus == "doubled_bid" then
+            bid_multiplier = 2
+        end
+    end
+    if trick_rules.slam_against_penalty == "on" and declarer_tricks_won == 0 then
+        slam_against_penalty[declarer] = -trick_rules.slam_against_penalty_value
+    end
+
     local sd = scoring.score_deal(self._config, {
         declarer = declarer,
         bid = bid,
+        bid_multiplier = bid_multiplier,
         captured_points = t.captured_points,
         marriage_bonuses = kq_bonuses,
         half_marriage_capture_bonuses = half_capture_bonuses,
         ace_marriage_bonuses = ace_marriage_bonuses,
+        last_trick_bonus = last_trick_bonus,
+        slam_bonus = slam_bonus,
+        slam_against_penalty = slam_against_penalty,
         running_totals = self._running_totals,
     })
     if not sd.ok then
@@ -1216,6 +1258,15 @@ local function on_tricks_end(self)
             declarer = declarer,
             made_contract = sd.scoring.made_contract,
             deal_scores = sd.scoring.deal_scores,
+            -- Phase 3.6 score-breakdown inputs. Per-seat arrays for
+            -- every bonus / penalty that contributed to deal_scores so
+            -- the view-model can surface a row per non-zero kind.
+            marriage_bonuses = sd.scoring.marriage_bonuses,
+            half_marriage_capture_bonuses = sd.scoring.half_marriage_capture_bonuses,
+            ace_marriage_bonuses = sd.scoring.ace_marriage_bonuses,
+            last_trick_bonus = sd.scoring.last_trick_bonus,
+            slam_bonus = sd.scoring.slam_bonus,
+            slam_against_penalty = sd.scoring.slam_against_penalty,
         }
     end
 end
@@ -1696,6 +1747,28 @@ local function apply_marriage_trump_rule(self, suit)
     else
         self._pending_trump_apply = suit
     end
+    -- Phase 3.6 lead_trump_after_marriage: the flag should engage on
+    -- the lead of the trick AFTER the marriage trick (not on the
+    -- declaration trick itself, where the K/Q is led under on_lead).
+    -- For pre_first_trick mode there is no marriage trick — the
+    -- announcement happens before any trick — so engage immediately
+    -- on trick 1's lead.
+    if self._config.tricks.lead_trump_after_marriage == "on" then
+        local timing = self._config.marriages.marriage_announcement_timing
+        if
+            timing == "pre_first_trick"
+            and self._tricks
+            and self._tricks.status == "in_progress"
+            and self._tricks.tricks_played == 0
+        then
+            local r = tricks_module.mark_lead_trump_after_marriage(self._tricks)
+            if r.ok then
+                self._tricks = r.tricks
+            end
+        else
+            self._pending_lead_trump_after_marriage = true
+        end
+    end
 end
 
 function Session:declare_marriage(player, suit)
@@ -2083,6 +2156,13 @@ function Session:play(player, card)
             end
             self._tricks = set_result.tricks
             self._pending_trump_apply = nil
+        end
+        if self._pending_lead_trump_after_marriage and self._tricks.status == "in_progress" then
+            local r = tricks_module.mark_lead_trump_after_marriage(self._tricks)
+            if r.ok then
+                self._tricks = r.tricks
+            end
+            self._pending_lead_trump_after_marriage = nil
         end
         if self._tricks.status == "done" then
             if self._raspassy_active then

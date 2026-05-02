@@ -151,9 +151,9 @@ describe("app.templates", function()
             local created = templates.create({ fromBuiltin = "russian", name = "Mine" }).template
             local snapshot = store["templates.json"]
             local bad = builtin_blob("russian")
-            -- tricks.must_overtake_strictness is deferred while the
-            -- Phase 3.6 trick-play house-rules task is still pending.
-            bad.tricks.must_overtake_strictness = "polish_strict"
+            -- barrel.pit_lock_in stays deferred until Phase 3.6's
+            -- opening-game / barrel / endgame task lands.
+            bad.barrel.pit_lock_in = "on"
             local r = templates.update(created.id, bad)
             assert.is_false(r.ok)
             assert.are.equal("invalid_rule_config", r.error.code)

@@ -732,6 +732,74 @@ local function build_all_pass_banner_block(session)
     return nil
 end
 
+local function nonzero_total(list)
+    if list == nil then
+        return 0
+    end
+    local total = 0
+    for i = 1, #list do
+        total = total + list[i]
+    end
+    return total
+end
+
+-- Phase 3.6: build the deal-done score breakdown from the per-seat
+-- bonus arrays surfaced by Session:deal_done(). Each row materialises
+-- only when its `total ~= 0`, so the table scene can iterate the list
+-- without skip checks. Order mirrors the scoreboard reading order:
+-- marriage bonuses first (already part of deal_scores), then capture
+-- and ace marriages, then trick-play bonuses.
+local function build_score_breakdown(payload)
+    if not payload then
+        return nil
+    end
+    local rows = {}
+    local row_specs = {
+        {
+            kind = "marriage_bonus",
+            label_key = "scene.table.scoreboard.marriage_row",
+            list = payload.marriage_bonuses,
+        },
+        {
+            kind = "half_marriage_capture",
+            label_key = "scene.table.scoreboard.half_marriage_capture_row",
+            list = payload.half_marriage_capture_bonuses,
+        },
+        {
+            kind = "ace_marriage",
+            label_key = "scene.table.scoreboard.ace_marriage_row",
+            list = payload.ace_marriage_bonuses,
+        },
+        {
+            kind = "last_trick",
+            label_key = "scene.table.scoreboard.last_trick_row",
+            list = payload.last_trick_bonus,
+        },
+        {
+            kind = "slam_bonus",
+            label_key = "scene.table.scoreboard.slam_bonus_row",
+            list = payload.slam_bonus,
+        },
+        {
+            kind = "slam_against",
+            label_key = "scene.table.scoreboard.slam_against_row",
+            list = payload.slam_against_penalty,
+        },
+    }
+    for _, spec in ipairs(row_specs) do
+        local total = nonzero_total(spec.list)
+        if total ~= 0 then
+            rows[#rows + 1] = {
+                kind = spec.kind,
+                label_key = spec.label_key,
+                amounts_by_seat = copy_list(spec.list),
+                total = total,
+            }
+        end
+    end
+    return rows
+end
+
 local function build_deal_done_block(session)
     local payload = session:deal_done()
     if not payload then
@@ -750,6 +818,7 @@ local function build_deal_done_block(session)
     if payload.deal_scores then
         block.deal_scores = copy_list(payload.deal_scores)
     end
+    block.score_breakdown = build_score_breakdown(payload)
     return block
 end
 

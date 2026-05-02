@@ -1184,4 +1184,598 @@ describe("core.tricks", function()
             assert.are.equal(15, last.captured_points)
         end)
     end)
+
+    -- Phase 3.6 trick-play house rules ------------------------------------
+    --
+    -- Build a config that overrides the canonical Russian baseline only
+    -- in the tricks group — every other rule stays at canonical defaults
+    -- so the new branches isolate cleanly.
+    local function with_tricks(overrides)
+        local app_json = require("app.json")
+        local parsed = app_json.decode(rule_config.to_json(rule_config.canonical_russian))
+        for k, v in pairs(overrides) do
+            parsed.tricks[k] = v
+        end
+        return rule_config.new(parsed)
+    end
+
+    local function tricks_with(cfg, hands, leader, opts)
+        local result = tricks.new(cfg, hands, leader, opts)
+        assert.is_true(
+            result.ok,
+            "fixture: tricks.new must succeed (got "
+                .. (result.error and result.error.code or "?")
+                .. ")"
+        )
+        return result.tricks
+    end
+
+    describe("polish_strict overtake", function()
+        local function follow_with_three_beating_hearts()
+            return {
+                {
+                    c("hearts", "9"),
+                    c("clubs", "9"),
+                    c("clubs", "J"),
+                    c("clubs", "Q"),
+                    c("clubs", "K"),
+                    c("clubs", "10"),
+                    c("clubs", "A"),
+                    c("spades", "9"),
+                },
+                {
+                    c("hearts", "Q"),
+                    c("hearts", "10"),
+                    c("hearts", "A"),
+                    c("diamonds", "9"),
+                    c("diamonds", "J"),
+                    c("diamonds", "Q"),
+                    c("diamonds", "K"),
+                    c("spades", "J"),
+                },
+                {
+                    c("hearts", "J"),
+                    c("hearts", "K"),
+                    c("diamonds", "10"),
+                    c("diamonds", "A"),
+                    c("spades", "Q"),
+                    c("spades", "K"),
+                    c("spades", "10"),
+                    c("spades", "A"),
+                },
+            }
+        end
+
+        it("narrows legal cards to the single highest beating card", function()
+            local cfg = with_tricks({ must_overtake_strictness = "polish_strict" })
+            local s = tricks_with(cfg, follow_with_three_beating_hearts(), 1)
+            s = play_ok(s, 1, c("hearts", "9"))
+            local r = tricks.legal_cards(s, 2)
+            assert.is_true(r.ok)
+            assert.are.equal(1, #r.cards)
+            assert.are.equal("hearts", r.cards[1].suit)
+            assert.are.equal("A", r.cards[1].rank)
+        end)
+
+        it("standard mode admits every beating card", function()
+            local cfg = with_tricks({ must_overtake_strictness = "standard" })
+            local s = tricks_with(cfg, follow_with_three_beating_hearts(), 1)
+            s = play_ok(s, 1, c("hearts", "9"))
+            local r = tricks.legal_cards(s, 2)
+            assert.is_true(r.ok)
+            assert.are.equal(3, #r.cards)
+        end)
+
+        it("rejects a non-highest beating card with polish_strict_overtake_violation", function()
+            local cfg = with_tricks({ must_overtake_strictness = "polish_strict" })
+            local s = tricks_with(cfg, follow_with_three_beating_hearts(), 1)
+            s = play_ok(s, 1, c("hearts", "9"))
+            local r = tricks.play(s, 2, c("hearts", "Q"))
+            assert.is_false(r.ok)
+            assert.are.equal("polish_strict_overtake_violation", r.error.code)
+            assert.are.equal("must_overtake_strictness", r.error.rule)
+        end)
+
+        it("does not engage when the player cannot beat the threshold", function()
+            -- p1 leads hearts.A; p2 must follow with hearts but holds only Q,10
+            -- (no card above A). Polish_strict should not narrow anything.
+            local hands = {
+                {
+                    c("hearts", "A"),
+                    c("hearts", "K"),
+                    c("clubs", "9"),
+                    c("clubs", "J"),
+                    c("clubs", "Q"),
+                    c("clubs", "K"),
+                    c("clubs", "10"),
+                    c("spades", "9"),
+                },
+                {
+                    c("hearts", "Q"),
+                    c("hearts", "10"),
+                    c("hearts", "9"),
+                    c("clubs", "A"),
+                    c("diamonds", "9"),
+                    c("diamonds", "J"),
+                    c("diamonds", "Q"),
+                    c("spades", "J"),
+                },
+                {
+                    c("hearts", "J"),
+                    c("diamonds", "K"),
+                    c("diamonds", "10"),
+                    c("diamonds", "A"),
+                    c("spades", "Q"),
+                    c("spades", "K"),
+                    c("spades", "10"),
+                    c("spades", "A"),
+                },
+            }
+            local cfg = with_tricks({ must_overtake_strictness = "polish_strict" })
+            local s = tricks_with(cfg, hands, 1)
+            s = play_ok(s, 1, c("hearts", "A"))
+            local r = tricks.legal_cards(s, 2)
+            assert.is_true(r.ok)
+            assert.are.equal(3, #r.cards)
+        end)
+    end)
+
+    describe("polish_strict trump", function()
+        local function void_in_led_with_two_high_trumps()
+            return {
+                {
+                    c("hearts", "Q"),
+                    c("hearts", "10"),
+                    c("hearts", "A"),
+                    c("clubs", "9"),
+                    c("clubs", "J"),
+                    c("clubs", "K"),
+                    c("clubs", "10"),
+                    c("clubs", "A"),
+                },
+                {
+                    c("spades", "9"),
+                    c("spades", "J"),
+                    c("spades", "Q"),
+                    c("spades", "K"),
+                    c("spades", "A"),
+                    c("diamonds", "9"),
+                    c("diamonds", "J"),
+                    c("diamonds", "Q"),
+                },
+                {
+                    c("hearts", "9"),
+                    c("hearts", "J"),
+                    c("hearts", "K"),
+                    c("clubs", "Q"),
+                    c("diamonds", "K"),
+                    c("diamonds", "10"),
+                    c("diamonds", "A"),
+                    c("spades", "10"),
+                },
+            }
+        end
+
+        it("narrows to the single highest trump when must_trump fires", function()
+            local cfg = with_tricks({ must_trump_strictness = "polish_strict" })
+            local s = tricks_with(cfg, void_in_led_with_two_high_trumps(), 1)
+            s = set_trump_ok(s, "spades")
+            s = play_ok(s, 1, c("hearts", "Q"))
+            -- p2 is void in hearts, holds spades 9/J/Q/K/A. Polish_strict
+            -- says only spades.A is legal (the highest).
+            local r = tricks.legal_cards(s, 2)
+            assert.is_true(r.ok)
+            assert.are.equal(1, #r.cards)
+            assert.are.equal("spades", r.cards[1].suit)
+            assert.are.equal("A", r.cards[1].rank)
+        end)
+
+        it("standard mode allows any trump when must_trump fires", function()
+            local cfg = with_tricks({ must_trump_strictness = "standard" })
+            local s = tricks_with(cfg, void_in_led_with_two_high_trumps(), 1)
+            s = set_trump_ok(s, "spades")
+            s = play_ok(s, 1, c("hearts", "Q"))
+            local r = tricks.legal_cards(s, 2)
+            assert.is_true(r.ok)
+            -- Standard with must_overtrump=true and no trump on trick yet:
+            -- threshold = 0 → all spades legal.
+            assert.are.equal(5, #r.cards)
+        end)
+    end)
+
+    describe("defender_must_overtrump_declarer", function()
+        local function void_in_clubs_setup()
+            -- p1 (declarer) and p2 (defender) both void in clubs. p3
+            -- holds all six clubs and leads one. p1 has spades.Q
+            -- (trump). p2 has spades.K and spades.A (both higher than
+            -- Q). Other cards distributed so each hand has 8 cards.
+            return {
+                {
+                    c("hearts", "9"),
+                    c("hearts", "J"),
+                    c("hearts", "Q"),
+                    c("hearts", "K"),
+                    c("spades", "9"),
+                    c("spades", "Q"),
+                    c("diamonds", "9"),
+                    c("diamonds", "J"),
+                },
+                {
+                    c("hearts", "10"),
+                    c("hearts", "A"),
+                    c("spades", "K"),
+                    c("spades", "A"),
+                    c("diamonds", "Q"),
+                    c("diamonds", "K"),
+                    c("diamonds", "10"),
+                    c("diamonds", "A"),
+                },
+                {
+                    c("clubs", "9"),
+                    c("clubs", "J"),
+                    c("clubs", "Q"),
+                    c("clubs", "K"),
+                    c("clubs", "10"),
+                    c("clubs", "A"),
+                    c("spades", "J"),
+                    c("spades", "10"),
+                },
+            }
+        end
+
+        it("forces a defender to overtrump declarer's trump even with must_trump=off", function()
+            local cfg = with_tricks({
+                must_trump = false,
+                must_overtrump = false,
+                defender_must_overtrump_declarer = "on",
+            })
+            local s = tricks_with(cfg, void_in_clubs_setup(), 3, { declarer = 1 })
+            s = set_trump_ok(s, "spades")
+            s = play_ok(s, 3, c("clubs", "J"))
+            s = play_ok(s, 1, c("spades", "Q")) -- declarer trumps with spades.Q
+            -- p2 is void in clubs, has spades.K and spades.A (both > Q).
+            -- defender_must_overtrump_declarer="on" + must_trump=off:
+            -- p2 must overtrump (play spades.K or spades.A).
+            local r = tricks.legal_cards(s, 2)
+            assert.is_true(r.ok)
+            assert.are.equal(2, #r.cards)
+            local ranks = {}
+            for _, card_obj in ipairs(r.cards) do
+                assert.are.equal("spades", card_obj.suit)
+                ranks[card_obj.rank] = true
+            end
+            assert.is_true(ranks["K"])
+            assert.is_true(ranks["A"])
+        end)
+
+        it("rejects a non-overtrumping play with the dedicated violation code", function()
+            local cfg = with_tricks({
+                must_trump = false,
+                must_overtrump = false,
+                defender_must_overtrump_declarer = "on",
+            })
+            local s = tricks_with(cfg, void_in_clubs_setup(), 3, { declarer = 1 })
+            s = set_trump_ok(s, "spades")
+            s = play_ok(s, 3, c("clubs", "J"))
+            s = play_ok(s, 1, c("spades", "Q"))
+            local r = tricks.play(s, 2, c("diamonds", "A"))
+            assert.is_false(r.ok)
+            assert.are.equal("defender_must_overtrump_declarer_violation", r.error.code)
+        end)
+
+        it("does not engage for the declarer themselves", function()
+            local cfg = with_tricks({
+                must_trump = false,
+                must_overtrump = false,
+                defender_must_overtrump_declarer = "on",
+            })
+            -- Same fixture but p2 is now the declarer. p1 (defender)
+            -- plays spades.Q; p2 (declarer) is void in clubs, holds
+            -- spades.K, spades.A — but the defender rule does not bind
+            -- the declarer, so p2 may discard freely.
+            local s = tricks_with(cfg, void_in_clubs_setup(), 3, { declarer = 2 })
+            s = set_trump_ok(s, "spades")
+            s = play_ok(s, 3, c("clubs", "J"))
+            s = play_ok(s, 1, c("spades", "Q"))
+            local r = tricks.legal_cards(s, 2)
+            assert.is_true(r.ok)
+            -- p2 has 8 cards, all legal (no must_trump, no defender
+            -- rule applies to declarer).
+            assert.are.equal(8, #r.cards)
+        end)
+    end)
+
+    describe("partial_trumping", function()
+        local function partial_trumping_fixture()
+            -- p1 = declarer, void in clubs, holds spades.A (highest trump).
+            -- p2 = defender, void in clubs, holds only sub-A trumps + diamonds.
+            -- p3 = leader, holds 6 clubs + 2 diamonds.
+            return {
+                {
+                    c("hearts", "9"),
+                    c("hearts", "J"),
+                    c("hearts", "Q"),
+                    c("hearts", "K"),
+                    c("hearts", "10"),
+                    c("hearts", "A"),
+                    c("spades", "A"),
+                    c("diamonds", "A"),
+                },
+                {
+                    c("spades", "9"),
+                    c("spades", "J"),
+                    c("spades", "Q"),
+                    c("spades", "K"),
+                    c("spades", "10"),
+                    c("diamonds", "9"),
+                    c("diamonds", "J"),
+                    c("diamonds", "Q"),
+                },
+                {
+                    c("clubs", "9"),
+                    c("clubs", "J"),
+                    c("clubs", "Q"),
+                    c("clubs", "K"),
+                    c("clubs", "10"),
+                    c("clubs", "A"),
+                    c("diamonds", "K"),
+                    c("diamonds", "10"),
+                },
+            }
+        end
+
+        it("lifts must_trump when defender holds only sub-threshold trumps", function()
+            local cfg = with_tricks({ partial_trumping = "on" })
+            local s = tricks_with(cfg, partial_trumping_fixture(), 3, { declarer = 1 })
+            s = set_trump_ok(s, "spades")
+            s = play_ok(s, 3, c("clubs", "K"))
+            s = play_ok(s, 1, c("spades", "A")) -- declarer trumps with the top spade
+            -- p2 (defender) is void in clubs and holds only spades 9/J/Q/K/10
+            -- (all < A). partial_trumping="on" lifts must_trump → may discard.
+            local r = tricks.legal_cards(s, 2)
+            assert.is_true(r.ok)
+            assert.are.equal(8, #r.cards)
+        end)
+
+        it("standard mode forces must_trump even with only lower trumps", function()
+            local cfg = with_tricks({ partial_trumping = "off" })
+            local s = tricks_with(cfg, partial_trumping_fixture(), 3, { declarer = 1 })
+            s = set_trump_ok(s, "spades")
+            s = play_ok(s, 3, c("clubs", "K"))
+            s = play_ok(s, 1, c("spades", "A"))
+            -- Standard: defender must play one of their (lower) trumps. With
+            -- must_overtrump on but no card can beat A, all spades are legal.
+            local r = tricks.legal_cards(s, 2)
+            assert.is_true(r.ok)
+            assert.are.equal(5, #r.cards)
+            for _, card_obj in ipairs(r.cards) do
+                assert.are.equal("spades", card_obj.suit)
+            end
+        end)
+
+        it("does not engage for the declarer themselves", function()
+            local cfg = with_tricks({ partial_trumping = "on" })
+            -- Swap p1/p2 roles: p2 = declarer this time. Even with
+            -- partial_trumping="on", the declarer is not relaxed.
+            local s = tricks_with(cfg, partial_trumping_fixture(), 3, { declarer = 2 })
+            s = set_trump_ok(s, "spades")
+            s = play_ok(s, 3, c("clubs", "K"))
+            s = play_ok(s, 1, c("spades", "A")) -- p1 (defender) plays trump A
+            -- p2 is the declarer, void in clubs, only sub-A trumps. Standard
+            -- must_trump engages because partial_trumping is defender-only.
+            local r = tricks.legal_cards(s, 2)
+            assert.is_true(r.ok)
+            assert.are.equal(5, #r.cards)
+        end)
+    end)
+
+    describe("lead_trump_after_marriage", function()
+        it("restricts the on-lead seat to trump cards when the flag is pending", function()
+            local cfg = with_tricks({ lead_trump_after_marriage = "on" })
+            local s = tricks_with(cfg, default_hands(), 1)
+            s = set_trump_ok(s, "spades")
+            -- Mark the flag (session would call this after a marriage).
+            local mark = tricks.mark_lead_trump_after_marriage(s)
+            assert.is_true(mark.ok)
+            s = mark.tricks
+            -- p1 hand: hearts 9/J/Q, diamonds 9/J, clubs 9, spades 9/J.
+            -- Lead is restricted to spades (the trump suit).
+            local r = tricks.legal_cards(s, 1)
+            assert.is_true(r.ok)
+            assert.are.equal(2, #r.cards)
+            for _, card_obj in ipairs(r.cards) do
+                assert.are.equal("spades", card_obj.suit)
+            end
+        end)
+
+        it("drops the constraint when the leader holds no trump", function()
+            local cfg = with_tricks({ lead_trump_after_marriage = "on" })
+            local hands = {
+                {
+                    c("hearts", "9"),
+                    c("hearts", "J"),
+                    c("hearts", "Q"),
+                    c("clubs", "9"),
+                    c("clubs", "J"),
+                    c("diamonds", "9"),
+                    c("diamonds", "J"),
+                    c("diamonds", "Q"),
+                },
+                {
+                    c("hearts", "K"),
+                    c("hearts", "10"),
+                    c("hearts", "A"),
+                    c("clubs", "Q"),
+                    c("diamonds", "K"),
+                    c("spades", "9"),
+                    c("spades", "J"),
+                    c("spades", "Q"),
+                },
+                {
+                    c("clubs", "K"),
+                    c("clubs", "10"),
+                    c("clubs", "A"),
+                    c("diamonds", "10"),
+                    c("diamonds", "A"),
+                    c("spades", "K"),
+                    c("spades", "10"),
+                    c("spades", "A"),
+                },
+            }
+            local s = tricks_with(cfg, hands, 1)
+            s = set_trump_ok(s, "spades")
+            local mark = tricks.mark_lead_trump_after_marriage(s)
+            s = mark.tricks
+            -- p1 holds no spades; the constraint lifts and the full hand is legal.
+            local r = tricks.legal_cards(s, 1)
+            assert.is_true(r.ok)
+            assert.are.equal(8, #r.cards)
+        end)
+
+        it("clears the flag once a card is played to the lead", function()
+            local cfg = with_tricks({ lead_trump_after_marriage = "on" })
+            local s = tricks_with(cfg, default_hands(), 1)
+            s = set_trump_ok(s, "spades")
+            s = tricks.mark_lead_trump_after_marriage(s).tricks
+            assert.is_true(s.lead_trump_after_marriage_pending)
+            s = play_ok(s, 1, c("spades", "9"))
+            assert.is_false(s.lead_trump_after_marriage_pending)
+        end)
+
+        it("rejects a non-trump lead with lead_trump_after_marriage_violation", function()
+            local cfg = with_tricks({ lead_trump_after_marriage = "on" })
+            local s = tricks_with(cfg, default_hands(), 1)
+            s = set_trump_ok(s, "spades")
+            s = tricks.mark_lead_trump_after_marriage(s).tricks
+            local r = tricks.play(s, 1, c("hearts", "9"))
+            assert.is_false(r.ok)
+            assert.are.equal("lead_trump_after_marriage_violation", r.error.code)
+        end)
+    end)
+
+    describe("lazy_revoke", function()
+        it('accepts an otherwise-illegal play under "on" and tags the violation', function()
+            local cfg = with_tricks({ lazy_revoke = "on" })
+            local s = tricks_with(cfg, default_hands(), 1)
+            s = play_ok(s, 1, c("hearts", "9"))
+            -- p2 holds hearts.K and hearts.10; must follow. Under lazy_revoke=off
+            -- playing clubs.J would be a must_follow_violation.
+            local r = tricks.play(s, 2, c("clubs", "J"))
+            assert.is_true(r.ok, "lazy_revoke=on must accept the illegal play")
+            -- The violation is tagged in current_trick.revoke_violations.
+            local s2 = r.tricks
+            assert.is_table(s2.current_trick.revoke_violations)
+            assert.are.equal(1, #s2.current_trick.revoke_violations)
+            assert.are.equal("must_follow_violation", s2.current_trick.revoke_violations[1].code)
+            assert.are.equal(2, s2.current_trick.revoke_violations[1].player)
+        end)
+
+        it('still rejects illegal plays under "off" (the standard rule)', function()
+            local cfg = with_tricks({ lazy_revoke = "off" })
+            local s = tricks_with(cfg, default_hands(), 1)
+            s = play_ok(s, 1, c("hearts", "9"))
+            local r = tricks.play(s, 2, c("clubs", "J"))
+            assert.is_false(r.ok)
+            assert.are.equal("must_follow_violation", r.error.code)
+        end)
+
+        it("preserves revoke_violations into completed_tricks", function()
+            local cfg = with_tricks({ lazy_revoke = "on" })
+            local s = tricks_with(cfg, default_hands(), 1)
+            s = play_ok(s, 1, c("hearts", "9"))
+            s = play_ok(s, 2, c("clubs", "J")) -- revoke
+            s = play_ok(s, 3, c("hearts", "A"))
+            local last = s.completed_tricks[#s.completed_tricks]
+            assert.is_table(last.revoke_violations)
+            assert.are.equal(1, #last.revoke_violations)
+            assert.are.equal("must_follow_violation", last.revoke_violations[1].code)
+        end)
+
+        it("records the revoke action in history", function()
+            local cfg = with_tricks({ lazy_revoke = "on" })
+            local s = tricks_with(cfg, default_hands(), 1)
+            s = play_ok(s, 1, c("hearts", "9"))
+            s = play_ok(s, 2, c("clubs", "J"))
+            local revoke_entry = nil
+            for i = 1, #s.history do
+                if s.history[i].action == "revoke" then
+                    revoke_entry = s.history[i]
+                    break
+                end
+            end
+            assert.is_table(revoke_entry)
+            assert.are.equal(2, revoke_entry.player)
+            assert.are.equal("must_follow_violation", revoke_entry.code)
+        end)
+    end)
+
+    describe("draw phase short-circuit", function()
+        it("polish_strict and partial_trumping do not engage during draw phase", function()
+            -- 2-player Variant A engages the draw phase. Build a config
+            -- under that variant with polish_strict + partial_trumping set
+            -- and confirm legality stays unrestricted (the existing
+            -- short-circuit on phase=="draw" still wins).
+            local app_json = require("app.json")
+            local parsed = app_json.decode(rule_config.to_json(rule_config.canonical_russian))
+            parsed.players.count = 2
+            parsed.players.two_player_config = "closed_talon_draw_stock"
+            parsed.talon.size = 0
+            parsed.tricks.must_overtake_strictness = "polish_strict"
+            parsed.tricks.must_trump_strictness = "polish_strict"
+            parsed.tricks.partial_trumping = "on"
+            local cfg = rule_config.new(parsed)
+            -- 2-player Variant A: 9 cards each in hand, 6 in stock.
+            local hands_2p = {
+                {
+                    c("hearts", "9"),
+                    c("hearts", "J"),
+                    c("hearts", "Q"),
+                    c("hearts", "K"),
+                    c("hearts", "10"),
+                    c("hearts", "A"),
+                    c("clubs", "9"),
+                    c("clubs", "J"),
+                    c("clubs", "Q"),
+                },
+                {
+                    c("clubs", "K"),
+                    c("clubs", "10"),
+                    c("clubs", "A"),
+                    c("diamonds", "9"),
+                    c("diamonds", "J"),
+                    c("diamonds", "Q"),
+                    c("diamonds", "K"),
+                    c("diamonds", "10"),
+                    c("diamonds", "A"),
+                },
+            }
+            local stock = {
+                c("spades", "9"),
+                c("spades", "J"),
+                c("spades", "Q"),
+                c("spades", "K"),
+                c("spades", "10"),
+                c("spades", "A"),
+            }
+            local result = tricks.new(cfg, hands_2p, 1, {
+                stock = stock,
+                trump_indicator = c("spades", "A"),
+                declarer = 1,
+            })
+            assert.is_true(
+                result.ok,
+                "2-player A fixture must succeed (got "
+                    .. (result.error and result.error.code or "?")
+                    .. ")"
+            )
+            local s = result.tricks
+            assert.are.equal("draw", s.phase)
+            local r = tricks.play(s, 1, c("hearts", "9"))
+            assert.is_true(r.ok)
+            -- p2 may discard freely under draw phase regardless of polish_strict.
+            local lc = tricks.legal_cards(r.tricks, 2)
+            assert.is_true(lc.ok)
+            assert.are.equal(9, #lc.cards)
+        end)
+    end)
 end)

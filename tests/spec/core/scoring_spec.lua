@@ -303,8 +303,11 @@ describe("core.scoring", function()
                     lazy_revoke = "off",
                     partial_trumping = "off",
                     last_trick_bonus = "off",
+                    last_trick_bonus_value = 10,
                     slam_bonus = "off",
+                    slam_bonus_value = 60,
                     slam_against_penalty = "off",
+                    slam_against_penalty_value = 120,
                     lead_trump_after_marriage = "off",
                 },
                 scoring = {
@@ -595,6 +598,80 @@ describe("core.scoring", function()
             }))
             assert.are.same({ 0, 0, 0 }, s.half_marriage_capture_bonuses)
             assert.are.same({ 0, 0, 0 }, s.ace_marriage_bonuses)
+        end)
+    end)
+
+    describe("score_deal() trick-play bonuses", function()
+        it("adds last_trick_bonus to the winning seat's deal_score", function()
+            local s = score_ok(default_opts({
+                captured_points = { 75, 25, 20 },
+                last_trick_bonus = { 0, 10, 0 },
+            }))
+            assert.are.same({ 0, 10, 0 }, s.last_trick_bonus)
+            assert.are.equal(25 + 10, s.deal_scores[2])
+        end)
+
+        it("adds slam_bonus to the declarer's deal_score under fixed mode", function()
+            local s = score_ok(default_opts({
+                bid = 120,
+                captured_points = { 120, 0, 0 },
+                slam_bonus = { 60, 0, 0 },
+            }))
+            assert.are.same({ 60, 0, 0 }, s.slam_bonus)
+            assert.are.equal(120 + 60, s.deal_scores[1])
+        end)
+
+        it("doubles the bid when bid_multiplier=2 (slam_bonus=doubled_bid path)", function()
+            -- Declarer takes 120 captured points, bid was 100, multiplier 2.
+            -- effective_bid = 200. Declarer made it (deal_scores[1] = 120 < 200
+            -- → wait, made_contract should be false then). Let's check the
+            -- doubled bid against a deal that *can* meet 2*bid: bid 60, mult 2,
+            -- effective_bid 120, declarer deal_score 120 → made.
+            local s = score_ok(default_opts({
+                bid = 60,
+                bid_multiplier = 2,
+                captured_points = { 120, 0, 0 },
+            }))
+            assert.are.equal(2, s.bid_multiplier)
+            assert.are.equal(120, s.effective_bid)
+            assert.is_true(s.made_contract)
+            assert.are.equal(120, s.deltas[1])
+        end)
+
+        it("doubles the failure penalty when bid_multiplier=2 fails", function()
+            local s = score_ok(default_opts({
+                bid = 100,
+                bid_multiplier = 2,
+                captured_points = { 75, 25, 20 },
+            }))
+            assert.are.equal(200, s.effective_bid)
+            assert.is_false(s.made_contract)
+            assert.are.equal(-200, s.deltas[1])
+        end)
+
+        it("subtracts slam_against_penalty from declarer when signed negative", function()
+            local s = score_ok(default_opts({
+                bid = 100,
+                captured_points = { 0, 60, 60 },
+                slam_against_penalty = { -120, 0, 0 },
+            }))
+            assert.are.same({ -120, 0, 0 }, s.slam_against_penalty)
+            assert.are.equal(0 - 120, s.deal_scores[1])
+        end)
+
+        it("rejects bid_multiplier <= 0", function()
+            local res = scoring.score_deal(config, default_opts({ bid_multiplier = 0 }))
+            assert.is_false(res.ok)
+            assert.are.equal("bad_bid_multiplier", res.error.code)
+        end)
+
+        it("defaults all three trick-play bonus arrays to zero when absent", function()
+            local s = score_ok(default_opts())
+            assert.are.same({ 0, 0, 0 }, s.last_trick_bonus)
+            assert.are.same({ 0, 0, 0 }, s.slam_bonus)
+            assert.are.same({ 0, 0, 0 }, s.slam_against_penalty)
+            assert.are.equal(1, s.bid_multiplier)
+            assert.are.equal(s.bid, s.effective_bid)
         end)
     end)
 

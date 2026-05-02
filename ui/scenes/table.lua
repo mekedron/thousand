@@ -2105,14 +2105,32 @@ local function draw_deal_done_banner(view, regions)
     if key then
         love.graphics.print(t(key), centre.x + 24, centre.y + 24)
     end
+    local cursor_y = centre.y + 50
     if view.deal_done.running_totals then
         local totals = view.deal_done.running_totals
         for i, total in ipairs(totals) do
             love.graphics.print(
                 t("scene.table.player_label.other", { n = i }) .. " " .. tostring(total),
                 centre.x + 24,
-                centre.y + 50 + (i - 1) * 18
+                cursor_y
             )
+            cursor_y = cursor_y + 18
+        end
+    end
+    -- Phase 3.6 score-breakdown rows. One row per non-zero bonus /
+    -- penalty contributor (marriage, half-marriage capture, ace
+    -- marriage, last-trick, slam, slam-against). Future-Phase-5.1 will
+    -- replace the static text with an enter animation per row.
+    local breakdown = view.deal_done.score_breakdown
+    if breakdown and #breakdown > 0 then
+        cursor_y = cursor_y + 12
+        for _, row in ipairs(breakdown) do
+            love.graphics.print(
+                t(row.label_key) .. " " .. tostring(row.total),
+                centre.x + 24,
+                cursor_y
+            )
+            cursor_y = cursor_y + 18
         end
     end
 end

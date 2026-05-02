@@ -192,6 +192,52 @@ function M.score_deal(config, opts)
         end
     end
 
+    -- Phase 3.6 trick-play house-rule bonus inputs. Same default-zero
+    -- contract as the marriage bonuses; signed (last-trick adds,
+    -- slam-against subtracts) so the session can express the
+    -- declarer-loses-on-zero-tricks penalty as a negative entry.
+    local function default_zero_list_or_validate(name, list)
+        if list == nil then
+            local zeros = {}
+            for i = 1, player_count do
+                zeros[i] = 0
+            end
+            return zeros, nil
+        end
+        return list, validate_player_list(name, list, player_count)
+    end
+
+    local last_trick_bonus, err1 =
+        default_zero_list_or_validate("last_trick_bonus", opts.last_trick_bonus)
+    if err1 then
+        return err1
+    end
+    local slam_bonus, err2 = default_zero_list_or_validate("slam_bonus", opts.slam_bonus)
+    if err2 then
+        return err2
+    end
+    local slam_against_penalty, err3 =
+        default_zero_list_or_validate("slam_against_penalty", opts.slam_against_penalty)
+    if err3 then
+        return err3
+    end
+
+    -- bid_multiplier realises `slam_bonus = "doubled_bid"` (2 on success;
+    -- 1 otherwise). Applied to the input `bid` before the contract check
+    -- and the +/-bid delta, so the success/failure reward scales but
+    -- everything else (deal scores, marriage bonuses, trick bonuses) stays
+    -- in raw card-point units.
+    local bid_multiplier = opts.bid_multiplier
+    if bid_multiplier == nil then
+        bid_multiplier = 1
+    elseif type(bid_multiplier) ~= "number" or bid_multiplier <= 0 then
+        return failure(
+            "bad_bid_multiplier",
+            "bid_multiplier must be a positive number when set",
+            { actual = bid_multiplier }
+        )
+    end
+
     local totals_err = validate_player_list("running_totals", opts.running_totals, player_count)
     if totals_err then
         return totals_err
@@ -258,6 +304,9 @@ function M.score_deal(config, opts)
             + opts.marriage_bonuses[i]
             + half_marriage_capture_bonuses[i]
             + ace_marriage_bonuses[i]
+            + last_trick_bonus[i]
+            + slam_bonus[i]
+            + slam_against_penalty[i]
     end
 
     local partnership_mode = config.players.partnership_mode
@@ -270,6 +319,7 @@ function M.score_deal(config, opts)
         sides = { side_of_seat(1), side_of_seat(2), side_of_seat(3), side_of_seat(4) }
     end
 
+    local effective_bid = bid * bid_multiplier
     local made_contract
     local side_deal_scores
     local declarer_side
@@ -280,9 +330,9 @@ function M.score_deal(config, opts)
             side_deal_scores[s] = side_deal_scores[s] + deal_scores[i]
         end
         declarer_side = sides[declarer]
-        made_contract = side_deal_scores[declarer_side] >= bid
+        made_contract = side_deal_scores[declarer_side] >= effective_bid
     else
-        made_contract = deal_scores[declarer] >= bid
+        made_contract = deal_scores[declarer] >= effective_bid
     end
 
     -- Per-seat deltas. Partnership accounting credits the contract delta
@@ -293,7 +343,7 @@ function M.score_deal(config, opts)
     local deltas = {}
     for i = 1, player_count do
         if i == declarer then
-            deltas[i] = made_contract and bid or -bid
+            deltas[i] = made_contract and effective_bid or -effective_bid
         elseif sides and sides[i] == declarer_side then
             deltas[i] = 0
         else
@@ -330,11 +380,16 @@ function M.score_deal(config, opts)
         config = config,
         declarer = declarer,
         bid = bid,
+        bid_multiplier = bid_multiplier,
+        effective_bid = effective_bid,
         captured_points = copy_int_list(opts.captured_points, player_count),
         card_points_rounded = card_points_rounded,
         marriage_bonuses = copy_int_list(opts.marriage_bonuses, player_count),
         half_marriage_capture_bonuses = copy_int_list(half_marriage_capture_bonuses, player_count),
         ace_marriage_bonuses = copy_int_list(ace_marriage_bonuses, player_count),
+        last_trick_bonus = copy_int_list(last_trick_bonus, player_count),
+        slam_bonus = copy_int_list(slam_bonus, player_count),
+        slam_against_penalty = copy_int_list(slam_against_penalty, player_count),
         deal_scores = deal_scores,
         made_contract = made_contract,
         deltas = deltas,

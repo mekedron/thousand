@@ -559,7 +559,7 @@ ships scripted engine tests covering every value.
   - All six fields flip to selectable.
   - Engine tests cover every variant value against scripted marriage
     scenarios.
-- [ ] Implement trick-play house rules.
+- [x] Implement trick-play house rules.
   - `must_overtake_strictness` `polish_strict` enforces the Polish
     `przebijanie` escalation when following suit.
   - `must_trump_strictness` `polish_strict` extends the same
