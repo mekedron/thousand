@@ -110,8 +110,9 @@ describe("core.templates", function()
 
         it("bubbles up a deferred-field change as invalid_rule_config", function()
             local blob = valid_wrapper()
-            -- forced_dealer_bid is deferred in the Phase 3.2 schema.
-            blob.ruleConfig.bidding.forced_dealer_bid = "on"
+            -- half_marriage_capture_bonus is deferred while the Phase 3.6
+            -- marriage-house-rules task is still pending.
+            blob.ruleConfig.marriages.half_marriage_capture_bonus = "on"
             local r = templates.try_new(blob)
             assert.is_false(r.ok)
             assert.are.equal("invalid_rule_config", r.error.code)

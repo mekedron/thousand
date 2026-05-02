@@ -17,10 +17,13 @@ exclude_files = {
 }
 
 -- Tests run under busted, which injects describe/it/before_each/after_each/setup/teardown
--- and the assert/spy/stub/mock helpers.
+-- and the assert/spy/stub/mock helpers. Test files routinely embed long
+-- assertion strings and inline RuleConfig blobs that exceed 100 cols;
+-- relax the line-length check there (production code stays strict).
 files["tests/**/*.lua"] = {
     std = "+busted",
     read_globals = { "describe", "it", "before_each", "after_each", "setup", "teardown" },
+    ignore = { "631" }, -- line is too long
 }
 
 -- Locale tables are pure data files keyed by locale code; they should not

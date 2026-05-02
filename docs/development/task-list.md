@@ -488,7 +488,7 @@ ships scripted engine tests covering every value.
     infrastructure.
   - `distribution` flips to selectable for `stock_draw`; engine tests
     cover a scripted full 2-player Variant A deal.
-- [ ] Implement bidding house rules.
+- [x] Implement bidding house rules.
   - `forced_opening` `on` forces forehand to open at the minimum bid.
   - `forced_dealer_bid` `on` lands the dealer in the minimum-100
     contract when everybody else passes.
@@ -693,6 +693,26 @@ ships scripted engine tests covering every value.
     once the same task lifts the guard for `count = 4`.
   - Tests live alongside `tests/spec/core/builtins_spec.lua` and
     replace the existing typed-error pins.
+- [ ] Implement named-contract scoring & play.
+  - Follow-up to the Phase 3.6 bidding-house-rules wiring: the
+    auction now accepts mizère / slam / open-hand bids and the table
+    scene renders the buttons, but `Session:on_auction_end` returns
+    `not_yet_supported_named_contract` when one wins because
+    `core/scoring.lua` does not yet understand structured `final_bid`
+    values. This task wires the scoring + play paths so a winning
+    named bid becomes a playable deal.
+  - Define mizère scoring (declarer must take zero tricks; canonical
+    contract value 120; failure penalises the bid amount).
+  - Define slam scoring (declarer must take all eight tricks; contract
+    value reads from `bidding.slam_contract_value` once that sibling
+    field exists).
+  - Define open-hand scoring (declarer plays face-up; success and
+    failure both doubled per house-rules.md).
+  - Extend `core/scoring.lua` to dispatch on `type(final_bid) ==
+    "table"`; route to the per-contract scorer.
+  - Drop the `not_yet_supported_named_contract` stub from
+    `app/session.lua`'s `on_auction_end`.
+  - Engine + session + e2e tests covering the three contracts.
 
 ---
 

@@ -481,10 +481,11 @@ local SCHEMA = {
     -- Bidding rules and house-rule toggles. The first five fields are
     -- "implemented" — the auction reads them. The remaining fields are
     -- the bidding house-rule catalogue from
-    -- docs/variations/house-rules.md "Bidding house rules", landing here
-    -- as deferred entries so built-in templates and saved customs can
-    -- reference them by shape today and the auction can wire them up in
-    -- a later task without another schema migration.
+    -- docs/variations/house-rules.md "Bidding house rules". Phase 3.6's
+    -- bidding-house-rules task flipped the nine toggles to "selectable"
+    -- and added six sibling fields (multipliers + the preset-ratio split
+    -- + the named-contract precedence list) plus four cross-field
+    -- invariants tying everything together.
     bidding = {
         kind = "section",
         field_order = {
@@ -496,12 +497,18 @@ local SCHEMA = {
             "forced_opening",
             "forced_dealer_bid",
             "blind_bid",
+            "blind_bid_success_multiplier",
+            "blind_bid_failure_multiplier",
             "re_entry_after_pass",
             "contra",
+            "contra_multiplier",
+            "redouble_multiplier",
             "forced_bid_concession",
+            "forced_bid_concession_preset_ratio",
             "no_contract_without_marriage",
             "negative_score_restriction",
             "named_contracts",
+            "named_contracts_precedence",
         },
         fields = {
             opening_min = {
@@ -553,7 +560,7 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
             -- House-rule: when every seat passes, the dealer is
             -- forced into the minimum-100 contract (Ukrainian *бовт*).
@@ -568,7 +575,7 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
             -- House-rule: a player may make their first bid before
             -- looking at the hand (*в тёмную* / *ciemny*). Successful
@@ -582,7 +589,33 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "first_bid_double" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
+            },
+            -- Sibling of `blind_bid`. Multiplier applied to the
+            -- declarer's deal score when a successful contract was
+            -- declared in the dark. Defaults to 2 (the canonical
+            -- "double on success") and is inert while
+            -- `blind_bid = "off"`.
+            blind_bid_success_multiplier = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 1,
+                max = 8,
+                default = 2,
+                status = "selectable",
+            },
+            -- Sibling of `blind_bid`. Multiplier applied to the
+            -- declarer's penalty when a failed contract was declared
+            -- in the dark. Defaults to 2 ("double on failure"); some
+            -- house rules let success and failure use different
+            -- multipliers, so the two siblings are independent.
+            blind_bid_failure_multiplier = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 1,
+                max = 8,
+                default = 2,
+                status = "selectable",
             },
             -- House-rule: a player who passed in the first round may
             -- re-enter the auction once on a later round. Relaxes the
@@ -593,7 +626,7 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
             -- House-rule: defenders may double the declarer's bid
             -- (*contra*) before play; the declarer may redouble
@@ -607,7 +640,32 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "contra_only", "contra_and_redouble" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
+            },
+            -- Sibling of `contra`. Multiplier applied to the contract
+            -- value when defenders declare contra. Defaults to 2 (the
+            -- canonical "doubled"); house rules occasionally use 3.
+            -- Inert while `contra = "off"`.
+            contra_multiplier = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 1,
+                max = 4,
+                default = 2,
+                status = "selectable",
+            },
+            -- Sibling of `contra`. Multiplier applied to the contract
+            -- value when the declarer redoubles in response to contra.
+            -- Composes multiplicatively with `contra_multiplier`, so the
+            -- canonical 2 × 2 = 4 holds for the default. Inert unless
+            -- `contra = "contra_and_redouble"`.
+            redouble_multiplier = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 1,
+                max = 8,
+                default = 2,
+                status = "selectable",
             },
             -- House-rule: when a player has been forced into the
             -- minimum-100 contract (forced-opening, forced-dealer-bid,
@@ -625,7 +683,22 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "equal_split", "each_full", "preset_ratio" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
+            },
+            -- Sibling of `forced_bid_concession`. House-defined split
+            -- when the concession mode is `preset_ratio`. Each entry is
+            -- a non-negative weight in [0, 1]; the entries sum to 1
+            -- (epsilon 1e-9), enforced by the
+            -- `forced_bid_concession_ratio_sums_to_one` invariant. The
+            -- list length must equal the active non-declarer seat count
+            -- (player_count - 1, minus the sits-out seat in 4-player B),
+            -- enforced by the `forced_bid_concession_ratio_length`
+            -- invariant. Inert under any other concession mode.
+            forced_bid_concession_preset_ratio = {
+                kind = "list",
+                element_type = "number",
+                default = { 0.5, 0.5 },
+                status = "selectable",
             },
             -- House-rule: forbid bidding 120 or higher without a
             -- marriage in the starting hand. The stricter
@@ -642,7 +715,7 @@ local SCHEMA = {
                     "capped_by_marriages",
                 },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
             -- House-rule: a player with a negative running score is
             -- barred from active bidding and may only receive the
@@ -655,7 +728,7 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
             -- Umbrella toggle: are the named contract bids (mizère,
             -- slam, open-hand) admissible at the auction? Each
@@ -669,7 +742,24 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
+            },
+            -- Sibling of `named_contracts`. Ordered list of named
+            -- contract kinds the auction admits, weakest first. The
+            -- canonical Russian default keeps the list populated so
+            -- the schema is self-documenting; the auction enforces
+            -- "first named bid wins; named-over-named is illegal" in
+            -- this commit. The precedence order will be honoured once
+            -- a follow-up task ("Implement named-contract scoring &
+            -- play") wires the gameplay through. Entries must be one
+            -- of {"mizere", "slam", "open_hand"}, with no duplicates,
+            -- enforced by the `named_contracts_precedence_well_formed`
+            -- invariant.
+            named_contracts_precedence = {
+                kind = "list",
+                element_type = "string",
+                default = { "mizere", "open_hand", "slam" },
+                status = "selectable",
             },
         },
     },
@@ -1246,7 +1336,7 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
             -- Slam: declarer commits to taking all 8 tricks. Common
             -- contract values are 240, 300, or simply double the
@@ -1257,7 +1347,7 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
             -- Open hand: declarer plays the entire deal face-up.
             -- Scoring is doubled on both success and failure. Almost
@@ -1268,7 +1358,7 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
         },
     },
@@ -1532,6 +1622,124 @@ local INVARIANTS = {
                 talon_distribution = blob.talon.distribution,
                 players_count = blob.players.count,
                 two_player_config = blob.players.two_player_config,
+            }
+        end,
+    },
+    -- Phase 3.6 forced-bid concession: `preset_ratio` mode requires a
+    -- per-defender split. The list length must equal the active
+    -- non-declarer seat count: `players.count - 1` for 3-player and
+    -- 2-player layouts, and `players.count - 2` (subtracting both
+    -- declarer and sits-out seat) for 4-player Configuration B. Other
+    -- modes ignore the ratio entirely. See
+    -- docs/variations/house-rules.md "Forced-bid concession".
+    {
+        name = "forced_bid_concession_ratio_length",
+        predicate = function(blob)
+            if blob.bidding.forced_bid_concession ~= "preset_ratio" then
+                return true
+            end
+            local expected = blob.players.count - 1
+            if blob.players.count == 4 and blob.players.four_player_config == "dealer_sits_out" then
+                expected = blob.players.count - 2
+            end
+            return #blob.bidding.forced_bid_concession_preset_ratio == expected
+        end,
+        context = function(blob)
+            local expected = blob.players.count - 1
+            if blob.players.count == 4 and blob.players.four_player_config == "dealer_sits_out" then
+                expected = blob.players.count - 2
+            end
+            return {
+                ratio_length = #blob.bidding.forced_bid_concession_preset_ratio,
+                expected_length = expected,
+                players_count = blob.players.count,
+                four_player_config = blob.players.four_player_config,
+            }
+        end,
+    },
+    -- Phase 3.6 forced-bid concession: `preset_ratio` weights must sum
+    -- to 1 (within an epsilon of 1e-9 to absorb the usual floating-
+    -- point drift on round-trip serialisation). Inert under any other
+    -- concession mode.
+    {
+        name = "forced_bid_concession_ratio_sums_to_one",
+        predicate = function(blob)
+            if blob.bidding.forced_bid_concession ~= "preset_ratio" then
+                return true
+            end
+            local total = 0
+            for _, weight in ipairs(blob.bidding.forced_bid_concession_preset_ratio) do
+                total = total + weight
+            end
+            return math.abs(total - 1) <= 1e-9
+        end,
+        context = function(blob)
+            local total = 0
+            for _, weight in ipairs(blob.bidding.forced_bid_concession_preset_ratio) do
+                total = total + weight
+            end
+            return {
+                ratio_sum = total,
+                expected_sum = 1,
+            }
+        end,
+    },
+    -- Phase 3.6 named-contracts wiring: the precedence list is the
+    -- weakest-first ordering the auction will honour once a follow-up
+    -- task implements named-contract scoring & play. For now the
+    -- invariant only enforces that every entry is one of the three
+    -- known kinds and that no kind appears twice. The on/off coupling
+    -- between `named_contracts` and `specials.*` is left to the same
+    -- follow-up task — the umbrella toggle wires the auction surface;
+    -- the gameplay task wires the consequences.
+    {
+        name = "named_contracts_precedence_well_formed",
+        predicate = function(blob)
+            if blob.bidding.named_contracts ~= "on" then
+                return true
+            end
+            local known = { mizere = true, slam = true, open_hand = true }
+            local seen = {}
+            for _, kind in ipairs(blob.bidding.named_contracts_precedence) do
+                if not known[kind] then
+                    return false
+                end
+                if seen[kind] then
+                    return false
+                end
+                seen[kind] = true
+            end
+            return true
+        end,
+        context = function(blob)
+            return {
+                named_contracts = blob.bidding.named_contracts,
+                precedence = table.concat(blob.bidding.named_contracts_precedence, ","),
+            }
+        end,
+    },
+    -- Phase 3.6 forced dealer bid: the rule presupposes a dealer who
+    -- actually participates in the auction. In 4-player Configuration
+    -- B the dealer sits out, so there is nobody to force into a
+    -- minimum-100 contract — the toggle is structurally inert and the
+    -- combination is rejected as a configuration error rather than a
+    -- runtime surprise.
+    {
+        name = "forced_dealer_bid_requires_active_dealer",
+        predicate = function(blob)
+            if blob.bidding.forced_dealer_bid ~= "on" then
+                return true
+            end
+            if blob.players.count ~= 4 then
+                return true
+            end
+            return blob.players.four_player_config ~= "dealer_sits_out"
+        end,
+        context = function(blob)
+            return {
+                forced_dealer_bid = blob.bidding.forced_dealer_bid,
+                players_count = blob.players.count,
+                four_player_config = blob.players.four_player_config,
             }
         end,
     },
@@ -2093,12 +2301,18 @@ local function canonical_russian_blob()
             forced_opening = "off",
             forced_dealer_bid = "off",
             blind_bid = "off",
+            blind_bid_success_multiplier = 2,
+            blind_bid_failure_multiplier = 2,
             re_entry_after_pass = "off",
             contra = "off",
+            contra_multiplier = 2,
+            redouble_multiplier = 2,
             forced_bid_concession = "off",
+            forced_bid_concession_preset_ratio = { 0.5, 0.5 },
             no_contract_without_marriage = "off",
             negative_score_restriction = "off",
             named_contracts = "off",
+            named_contracts_precedence = { "mizere", "open_hand", "slam" },
         },
         marriages = {
             values = { hearts = 100, diamonds = 80, clubs = 60, spades = 40 },

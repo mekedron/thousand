@@ -319,7 +319,12 @@ function M.new(config, auction, hands, talon_cards, opts)
             { status = auction.status }
         )
     end
-    if auction.status ~= "done" then
+    -- Phase 3.6 contra/redouble: the engine's `doubling` sub-phase
+    -- still has a finalized declarer + final_bid, so the talon may
+    -- be constructed against it. The session collapses doubling
+    -- back to done via its own contra mutators; this guard keeps
+    -- the talon from rejecting the intermediate state.
+    if auction.status ~= "done" and auction.status ~= "doubling" then
         return failure(
             "auction_not_done",
             "talon phase requires a finalized auction",

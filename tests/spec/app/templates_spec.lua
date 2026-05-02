@@ -151,7 +151,9 @@ describe("app.templates", function()
             local created = templates.create({ fromBuiltin = "russian", name = "Mine" }).template
             local snapshot = store["templates.json"]
             local bad = builtin_blob("russian")
-            bad.bidding.forced_dealer_bid = "on"
+            -- half_marriage_capture_bonus is deferred while the Phase 3.6
+            -- marriage-house-rules task is still pending.
+            bad.marriages.half_marriage_capture_bonus = "on"
             local r = templates.update(created.id, bad)
             assert.is_false(r.ok)
             assert.are.equal("invalid_rule_config", r.error.code)

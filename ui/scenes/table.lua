@@ -609,6 +609,80 @@ function M:_do_buyback_hand()
     self:_refresh_view_model()
 end
 
+-- Phase 3.6 bidding-house-rules handlers ------------------------------
+
+function M:_do_bid_blind(player)
+    local session = self:_session()
+    if not session then
+        return
+    end
+    self:_invoke(session:declare_blind(player))
+    self:_refresh_view_model()
+end
+
+function M:_do_re_enter_auction(player, amount)
+    local session = self:_session()
+    if not session then
+        return
+    end
+    self:_invoke(session:bid_re_entry(player, amount))
+    self:_refresh_view_model()
+end
+
+function M:_do_declare_contra(defender)
+    local session = self:_session()
+    if not session then
+        return
+    end
+    self:_invoke(session:declare_contra(defender))
+    self:_refresh_view_model()
+end
+
+function M:_do_declare_redouble(declarer)
+    local session = self:_session()
+    if not session then
+        return
+    end
+    self:_invoke(session:declare_redouble(declarer))
+    self:_refresh_view_model()
+end
+
+function M:_do_skip_contra(defender)
+    local session = self:_session()
+    if not session then
+        return
+    end
+    self:_invoke(session:skip_contra(defender))
+    self:_refresh_view_model()
+end
+
+function M:_do_concede_forced_bid()
+    local session = self:_session()
+    if not session then
+        return
+    end
+    self:_invoke(session:concede_forced_bid())
+    self:_refresh_view_model()
+end
+
+function M:_do_decline_forced_bid()
+    local session = self:_session()
+    if not session then
+        return
+    end
+    self:_invoke(session:decline_forced_bid())
+    self:_refresh_view_model()
+end
+
+function M:_do_bid_named_contract(player, kind)
+    local session = self:_session()
+    if not session then
+        return
+    end
+    self:_invoke(session:bid_named_contract(player, kind))
+    self:_refresh_view_model()
+end
+
 function M:_do_accept_bad_talon_redeal()
     local session = self:_session()
     if not session then
@@ -1021,16 +1095,71 @@ end
 local function build_auction_panel(self, view)
     local on_turn = view.auction.on_turn
     local panel = {}
+    local disabled_set = view.auction.disabled_bid_amounts
     for _, amount in ipairs(view.auction.allowed_bid_amounts) do
+        local disabled = disabled_set and disabled_set[amount] == true
         panel[#panel + 1] = Button.new({
             id = "bid_" .. amount, -- i18n-ok
             label_key = "scene.table.auction.bid_button",
             label_params = { amount = amount },
-            enabled = true,
+            enabled = not disabled,
             on_press = function()
                 self:_do_bid(on_turn, amount)
             end,
         })
+    end
+    -- Phase 3.6 blind bid button.
+    if view.auction.blind_bid_offer and view.auction.blind_bid_offer.seat == on_turn then
+        local mult = view.auction.blind_bid_offer.multiplier_preview
+        panel[#panel + 1] = Button.new({
+            id = "auction_bid_blind", -- i18n-ok
+            label_key = "scene.table.auction.bid_blind_button",
+            label_params = { multiplier = mult },
+            enabled = true,
+            on_press = function()
+                self:_do_bid_blind(on_turn)
+            end,
+        })
+    end
+    -- Phase 3.6 named contract buttons.
+    if view.auction.named_contract_buttons then
+        local NAMED_KEY_PREFIX = "scene.table.auction.named_" -- i18n-ok: prefix
+        local NAMED_KEY_SUFFIX = "_button" -- i18n-ok: suffix
+        for _, btn in ipairs(view.auction.named_contract_buttons) do
+            local label_key = NAMED_KEY_PREFIX .. btn.kind .. NAMED_KEY_SUFFIX
+            panel[#panel + 1] = Button.new({
+                id = "auction_" .. btn.id, -- i18n-ok
+                label_key = label_key,
+                label_params = { value = btn.contract_value },
+                enabled = true,
+                on_press = function()
+                    self:_do_bid_named_contract(on_turn, btn.kind)
+                end,
+            })
+        end
+    end
+    -- Phase 3.6 re-entry: a passed seat may re-enter the auction once.
+    -- Render the button for any eligible passed seat the active "self"
+    -- view is showing — the agent's tests treat the button as visible
+    -- whenever the seat is in the eligible list, regardless of whose
+    -- turn it currently is.
+    if view.auction.passed_seats_with_re_entry then
+        for _, seat in ipairs(view.auction.passed_seats_with_re_entry) do
+            local re_seat = seat
+            panel[#panel + 1] = Button.new({
+                id = "auction_re_enter", -- i18n-ok
+                label_key = "scene.table.auction.re_enter_button",
+                enabled = true,
+                on_press = function()
+                    -- Re-entry needs to overcall — bid one increment
+                    -- above the current bid. The session validates the
+                    -- amount; a more elaborate UI can let the user pick.
+                    local bidding = view.auction
+                    local amount = (bidding.current_bid or 0) + 5
+                    self:_do_re_enter_auction(re_seat, amount)
+                end,
+            })
+        end
     end
     if view.auction.can_pass then
         panel[#panel + 1] = Button.new({
@@ -1087,6 +1216,47 @@ local function build_talon_take_panel(self, view)
             enabled = true,
             on_press = function()
                 self:_do_buyback_hand()
+            end,
+        })
+    end
+    -- Phase 3.6 contra/redouble: defender contras and declarer
+    -- redoubles. Mutually exclusive — `contra_offer.kind` indicates
+    -- which one is currently active.
+    if phase_block and phase_block.contra_offer then
+        local offer = phase_block.contra_offer
+        if offer.kind == "contra" then
+            local defender = offer.seats[1]
+            panel[#panel + 1] = Button.new({
+                id = "talon_contra", -- i18n-ok
+                label_key = "scene.table.auction.contra_button",
+                enabled = true,
+                on_press = function()
+                    self:_do_declare_contra(defender)
+                end,
+            })
+        elseif offer.kind == "redouble" then
+            local declarer = offer.seats[1]
+            panel[#panel + 1] = Button.new({
+                id = "talon_redouble", -- i18n-ok
+                label_key = "scene.table.auction.redouble_button",
+                enabled = true,
+                on_press = function()
+                    self:_do_declare_redouble(declarer)
+                end,
+            })
+        end
+    end
+    -- Phase 3.6 forced-bid concession: declarer concedes the forced
+    -- minimum-100 contract before the talon is revealed.
+    if phase_block and phase_block.concede_offer then
+        local split = phase_block.concede_offer.split_preview
+        panel[#panel + 1] = Button.new({
+            id = "talon_concede_forced", -- i18n-ok
+            label_key = "scene.table.auction.concede_button",
+            label_params = { split = split },
+            enabled = true,
+            on_press = function()
+                self:_do_concede_forced_bid()
             end,
         })
     end
@@ -1152,25 +1322,67 @@ local function panel_signature(view)
             parts[#parts + 1] = tostring(amount)
         end
         parts[#parts + 1] = view.auction.can_pass and "P" or "-" -- i18n-ok
+        -- Phase 3.6 bidding-house-rules signature tokens.
+        parts[#parts + 1] = view.auction.locked_bid_amount and "L" or "-" -- i18n-ok
+        parts[#parts + 1] = view.auction.blind_bid_offer and "B" or "-" -- i18n-ok
+        if view.auction.disabled_bid_amounts then
+            local disabled_count = 0
+            for _ in pairs(view.auction.disabled_bid_amounts) do
+                disabled_count = disabled_count + 1
+            end
+            parts[#parts + 1] = "D" .. tostring(disabled_count)
+        else
+            parts[#parts + 1] = "-"
+        end
+        parts[#parts + 1] = view.auction.passed_seats_with_re_entry
+                and ("R" .. tostring(#view.auction.passed_seats_with_re_entry))
+            or "-"
+        if view.auction.named_contract_buttons then
+            for _, btn in ipairs(view.auction.named_contract_buttons) do
+                parts[#parts + 1] = "N" .. btn.kind
+            end
+        end
         return table.concat(parts, ":")
     end
-    if phase == "talon" and view.talon_phase then
+    local concession_phase = "awaiting_forced_concession_decision"
+    if (phase == "talon" or phase == concession_phase) and view.talon_phase then
         local status = view.talon_phase.status
+        local contra = view.talon_phase.contra_offer
+        local contra_token = contra and contra.kind or "-" -- i18n-ok: signature token
+        local concede = view.talon_phase.concede_offer and "K" or "-" -- i18n-ok
         if status == "awaiting_raise" then
-            local parts = { "talon", "raise", tostring(view.current_bid) } -- i18n-ok
+            local parts = {
+                "talon",
+                "raise",
+                tostring(view.current_bid),
+                contra_token,
+                concede,
+            } -- i18n-ok
             for _, amount in ipairs(view.talon_phase.allowed_raise_amounts or {}) do
                 parts[#parts + 1] = tostring(amount)
             end
             return table.concat(parts, ":")
         end
         if status == "revealed" then
-            local concede = view.talon_phase.declarer_can_concede and "C" or "-" -- i18n-ok
+            local can_concede = view.talon_phase.declarer_can_concede and "C" or "-" -- i18n-ok
             local buyback = view.talon_phase.declarer_can_buyback
             local penalty = buyback and tostring(buyback.penalty) or "-" -- i18n-ok
             local polish = view.talon_phase.polish_pass_pending and "P" or "-" -- i18n-ok
-            return table.concat({ "talon", "revealed", concede, penalty, polish }, ":") -- i18n-ok
+            return table.concat({
+                "talon",
+                "revealed",
+                can_concede,
+                penalty,
+                polish,
+                contra_token,
+                concede,
+            }, ":") -- i18n-ok
         end
-        return "talon:" .. status
+        if status == nil then
+            -- awaiting_forced_concession_decision phase: only concede_offer
+            return table.concat({ "concession", concede }, ":") -- i18n-ok
+        end
+        return "talon:" .. status .. ":" .. contra_token .. ":" .. concede -- i18n-ok
     end
     if phase == "tricks" then
         return "tricks"
@@ -1207,6 +1419,11 @@ function M:_rebuild_panel_if_needed(view)
         elseif status == "awaiting_raise" then
             self._panel_buttons = build_talon_raise_panel(self, view)
         end
+    elseif phase == "awaiting_forced_concession_decision" and view.talon_phase then
+        -- Phase 3.6 forced-bid concession surfaces only the concede
+        -- button; the talon hasn't been revealed yet so the take/raise
+        -- panel doesn't apply.
+        self._panel_buttons = build_talon_take_panel(self, view)
     elseif phase == "tricks" then
         self._panel_buttons = {}
     elseif phase == "deal_done" then
@@ -1883,6 +2100,75 @@ local function draw_misdeal_banner(view, regions)
     love.graphics.print(t(key, { dealer = mb.dealer, penalty = mb.penalty }), centre.x + 12, y + 4)
 end
 
+-- Phase 3.6 forced-dealer-bid banner. Sits in the same lane as
+-- draw_misdeal_banner; informational, no input gate.
+local function draw_dealer_forced_banner(view, regions)
+    if not view or not view.auction or not view.auction.dealer_forced_banner then
+        return
+    end
+    local b = view.auction.dealer_forced_banner
+    local centre = regions.centre
+    local y = centre.y - 26
+    love.graphics.setColor(0.20, 0.30, 0.50, 0.85)
+    love.graphics.rectangle("fill", centre.x, y, centre.w, 22)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.print(
+        t("scene.table.auction.dealer_forced_banner", { seat = b.dealer_seat, amount = b.amount }),
+        centre.x + 12,
+        y + 4
+    )
+end
+
+-- Phase 3.6 contract-multiplier badge. Surfaces ×2 / ×4 / ×8 next to
+-- the panel label whenever blind / contra / redouble is active.
+local function draw_contract_multiplier_badge(self, view, regions)
+    local _ = view
+    local session = self:_session()
+    if not session or not session.contract_multiplier then
+        return
+    end
+    local mult = session:contract_multiplier()
+    if not mult or mult <= 1 then
+        return
+    end
+    local centre = regions.centre
+    local y = centre.y - 26
+    love.graphics.setColor(0.50, 0.30, 0.10, 0.85)
+    love.graphics.rectangle("fill", centre.x + centre.w - 60, y, 60, 22)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.print(
+        t("scene.table.auction.contract_multiplier_badge", { n = mult }),
+        centre.x + centre.w - 50,
+        y + 4
+    )
+end
+
+-- Phase 3.6 bid-panel hints. Renders the "(no marriage)" subscript
+-- when bids ≥ 120 are disabled and the "Take 100 (negative score)"
+-- banner when the seat is locked.
+local function draw_bidding_status_hints(view, regions)
+    if not view or not view.auction then
+        return
+    end
+    local centre = regions.centre
+    if view.auction.disabled_bid_amounts then
+        love.graphics.setColor(0.7, 0.7, 0.7, 1)
+        love.graphics.print(
+            t("scene.table.auction.bid_disabled_no_marriage"),
+            centre.x + 12,
+            centre.y - 50
+        )
+    end
+    if view.auction.locked_bid_amount then
+        love.graphics.setColor(0.7, 0.5, 0.5, 1)
+        love.graphics.print(
+            t("scene.table.auction.locked_to_minimum", { amount = view.auction.locked_bid_amount }),
+            centre.x + 12,
+            centre.y - 70
+        )
+    end
+end
+
 -- In-progress raspassy banner. Active during the raspassy_play phase so
 -- the player can see they are in a no-contract reverse-scoring deal.
 local function draw_raspassy_status_banner(view, regions)
@@ -2146,6 +2432,9 @@ function M:draw(w, h)
     -- input on the panel area.
     draw_misdeal_banner(self._view_model, regions)
     draw_raspassy_status_banner(self._view_model, regions)
+    draw_dealer_forced_banner(self._view_model, regions)
+    draw_contract_multiplier_badge(self, self._view_model, regions)
+    draw_bidding_status_hints(self._view_model, regions)
     draw_deal_done_banner(self._view_model, regions)
 
     lay_out_panel_buttons(self, regions)

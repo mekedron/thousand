@@ -142,14 +142,244 @@ local function compute_allowed_raises(config, current_bid)
     return result
 end
 
+-- Phase 3.6 bidding-house-rules helpers ---------------------------------
+
+-- Whether forehand is gated from passing on round 1 by `forced_opening`.
+local function is_forehand_pass_disabled(session, auction)
+    if session:config().bidding.forced_opening ~= "on" then
+        return false
+    end
+    if #auction.history > 0 then
+        return false
+    end
+    if auction.turn ~= auction.forehand then
+        return false
+    end
+    return true
+end
+
+-- Banner data when the dealer was assigned the minimum-100 contract via
+-- `forced_dealer_bid`. Visible until the next deal starts.
+local function build_dealer_forced_banner(auction)
+    if not auction.dealer_forced then
+        return nil
+    end
+    return {
+        dealer_seat = auction.dealer,
+        amount = auction.final_bid,
+    }
+end
+
+-- Pre-reveal blind-bid offer for the seat on turn. Gated on the toggle
+-- being on, the seat not having acted yet this auction, and the seat
+-- not having dismissed its privacy curtain.
+local function build_blind_bid_offer(session, auction)
+    local config = session:config()
+    if config.bidding.blind_bid == "off" then
+        return nil
+    end
+    if auction.status ~= "in_progress" then
+        return nil
+    end
+    local seat = auction.turn
+    if seat == nil then
+        return nil
+    end
+    for i = 1, #auction.history do
+        if auction.history[i].player == seat then
+            return nil
+        end
+    end
+    if session:has_revealed_hand(seat) then
+        return nil
+    end
+    return {
+        seat = seat,
+        multiplier_preview = config.bidding.blind_bid_success_multiplier or 2,
+    }
+end
+
+-- Seats currently passed but still eligible to use their single
+-- re-entry. Sits-out and locked seats are excluded.
+local function build_passed_seats_with_re_entry(session, auction)
+    if session:config().bidding.re_entry_after_pass ~= "on" then
+        return nil
+    end
+    local seats = {}
+    for seat = 1, auction.player_count do
+        if
+            auction.passed[seat]
+            and not session:has_used_re_entry(seat)
+            and not (auction.sits_out and seat == auction.sits_out)
+            and not (auction.locked and auction.locked[seat])
+        then
+            seats[#seats + 1] = seat
+        end
+    end
+    if #seats == 0 then
+        return nil
+    end
+    return seats
+end
+
+-- Bid amounts greyed out by `no_contract_without_marriage` for the seat
+-- on turn. Returns nil when the rule is off or every amount is legal.
+local function build_disabled_bid_amounts(session, auction, allowed)
+    local mode = session:config().bidding.no_contract_without_marriage
+    if mode == "off" then
+        return nil
+    end
+    local turn = auction.turn
+    if turn == nil then
+        return nil
+    end
+    local holdings = auction.holdings
+    if not holdings or not holdings[turn] then
+        return nil
+    end
+    local marriage_total = holdings[turn].marriage_total or 0
+    local cap
+    if mode == "no_120_without_marriage" then
+        if marriage_total > 0 then
+            return nil
+        end
+        cap = 119
+    elseif mode == "capped_by_marriages" then
+        cap = 120 + marriage_total
+    end
+    local disabled = {}
+    local any = false
+    for _, amount in ipairs(allowed) do
+        if amount > cap then
+            disabled[amount] = true
+            any = true
+        end
+    end
+    if not any then
+        return nil
+    end
+    return disabled
+end
+
+-- Locked-to-100 amount for negative-score-restricted seats on turn.
+local function build_locked_bid_amount(session, auction)
+    if session:config().bidding.negative_score_restriction ~= "on" then
+        return nil
+    end
+    local turn = auction.turn
+    if turn == nil then
+        return nil
+    end
+    if not auction.locked or not auction.locked[turn] then
+        return nil
+    end
+    return session:config().bidding.opening_min
+end
+
+-- Special-contract bid buttons (mizère, slam, open hand) — one per
+-- enabled `specials.*` toggle when the umbrella `named_contracts` is
+-- on.
+local function build_named_contract_buttons(session, auction)
+    local config = session:config()
+    if config.bidding.named_contracts ~= "on" then
+        return nil
+    end
+    if auction.status ~= "in_progress" then
+        return nil
+    end
+    local buttons = {}
+    if config.specials.mizere == "on" then
+        buttons[#buttons + 1] = {
+            id = "named_mizere", -- i18n-ok
+            kind = "mizere",
+            contract_value = 120,
+        }
+    end
+    if config.specials.slam_contract == "on" then
+        buttons[#buttons + 1] = {
+            id = "named_slam", -- i18n-ok
+            kind = "slam",
+            contract_value = session:slam_contract_value(),
+        }
+    end
+    if config.specials.open_hand == "on" then
+        buttons[#buttons + 1] = {
+            id = "named_open_hand", -- i18n-ok
+            kind = "open_hand",
+            contract_value = 200,
+        }
+    end
+    if #buttons == 0 then
+        return nil
+    end
+    return buttons
+end
+
+-- Active contra/redouble offer surfaced to the talon-take panel.
+-- Returns the contra phase for defenders first, then the redouble
+-- phase for the declarer once contra has been declared. Returns nil
+-- once the window has closed.
+local function build_contra_offer(session)
+    if not session:contra_window_open() then
+        return nil
+    end
+    if not session:contra_declared() then
+        return {
+            kind = "contra",
+            seats = session:defender_seats(),
+        }
+    end
+    if
+        session:config().bidding.contra == "contra_and_redouble"
+        and not session:redouble_declared()
+    then
+        local declarer = session._auction and session._auction.declarer
+        if declarer == nil then
+            return nil
+        end
+        return {
+            kind = "redouble",
+            seats = { declarer },
+        }
+    end
+    return nil
+end
+
+-- Forced-bid concession offer surfaced to the talon-take panel during
+-- the `awaiting_forced_concession_decision` phase.
+local function build_concede_offer(session)
+    local offer = session:forced_concession_offer_state()
+    if not offer then
+        return nil
+    end
+    return {
+        split_preview = offer.split_mode,
+    }
+end
+
 local function build_auction_block(session)
-    if session:current_phase() ~= "auction" then
-        return nil
-    end
     local auction = session._auction
-    if not auction or auction.status ~= "in_progress" then
+    if not auction then
         return nil
     end
+    local current_phase_id = session:current_phase()
+    local in_auction = current_phase_id == "auction" -- i18n-ok: phase enums
+        and auction.status == "in_progress" -- i18n-ok: status enums
+    local dealer_forced = auction.dealer_forced == true
+    if not in_auction and not dealer_forced then
+        return nil
+    end
+
+    local block = {}
+    -- Banner is shown post-auction (dealer was forced into 100); it
+    -- remains until the next deal so the table scene has a frame to
+    -- render it before transitioning into talon.
+    block.dealer_forced_banner = build_dealer_forced_banner(auction)
+
+    if not in_auction then
+        return block
+    end
+
     local history_copy = {}
     for i = 1, #auction.history do
         local entry = auction.history[i]
@@ -159,14 +389,28 @@ local function build_auction_block(session)
             amount = entry.amount,
         }
     end
-    return {
-        history = history_copy,
-        current_bid = auction.current_bid,
-        leader = auction.current_leader,
-        on_turn = auction.turn,
-        can_pass = true,
-        allowed_bid_amounts = compute_allowed_bids(session:config(), auction.current_bid),
-    }
+    local config = session:config()
+    local allowed = compute_allowed_bids(config, auction.current_bid)
+    local locked_bid_amount = build_locked_bid_amount(session, auction)
+    if locked_bid_amount then
+        allowed = { locked_bid_amount }
+    end
+    local disabled_bid_amounts = build_disabled_bid_amounts(session, auction, allowed)
+    local forehand_pass_disabled = is_forehand_pass_disabled(session, auction)
+    block.history = history_copy
+    block.current_bid = auction.current_bid
+    block.leader = auction.current_leader
+    block.on_turn = auction.turn
+    block.can_pass = not forehand_pass_disabled
+    block.forehand_pass_disabled = forehand_pass_disabled
+    block.pass_disabled_reason = forehand_pass_disabled and "forced_opening" or nil
+    block.allowed_bid_amounts = allowed
+    block.disabled_bid_amounts = disabled_bid_amounts
+    block.locked_bid_amount = locked_bid_amount
+    block.blind_bid_offer = build_blind_bid_offer(session, auction)
+    block.passed_seats_with_re_entry = build_passed_seats_with_re_entry(session, auction)
+    block.named_contract_buttons = build_named_contract_buttons(session, auction)
+    return block
 end
 
 local function build_talon_phase_block(session)
@@ -174,6 +418,18 @@ local function build_talon_phase_block(session)
     local talon_phase = "talon" -- i18n-ok: phase enum
     local bad_talon_phase = "awaiting_bad_talon_decision" -- i18n-ok: phase enum
     local rebuy_phase = "awaiting_rebuy_decision" -- i18n-ok: phase enum
+    local concession_phase = "awaiting_forced_concession_decision" -- i18n-ok: phase enum
+    -- Phase 3.6 forced-bid concession: the concession-decision phase
+    -- has no live talon yet but the table-take panel still renders the
+    -- concede button. Surface a minimal block so the UI can find its
+    -- offer.
+    if phase == concession_phase then
+        local concede_offer = build_concede_offer(session)
+        if concede_offer then
+            return { concede_offer = concede_offer }
+        end
+        return nil
+    end
     if phase ~= talon_phase and phase ~= bad_talon_phase and phase ~= rebuy_phase then
         return nil
     end
@@ -241,6 +497,12 @@ local function build_talon_phase_block(session)
         distribution = distribution,
         polish_pass_pending = polish_pass_pending,
         polish_pass_remaining_seats = polish_pass_remaining_seats,
+        -- Phase 3.6 bidding-house-rules: contra/redouble window is
+        -- open from auction-done through tricks-phase start; concede
+        -- offer fires only in the awaiting-decision phase but is
+        -- mirrored here for the talon-take panel's convenience.
+        contra_offer = build_contra_offer(session),
+        concede_offer = build_concede_offer(session),
     }
 end
 

@@ -75,14 +75,37 @@ local function zero_totals(player_count)
     return out
 end
 
-local function build_initial_state(config, dealer, seed)
+-- Phase 3.6 bidding-house-rules: compute the per-seat marriage holdings
+-- from `hands` so the auction's `no_contract_without_marriage` rule
+-- can cap bids accurately. Returns a map { [seat] = { marriage_total
+-- = N } } where the total is the sum of `config.marriages.values`
+-- for every suit the seat holds both K and Q of. Empty hands yield
+-- marriage_total = 0.
+local function compute_holdings(hands, config)
+    local holdings = {}
+    for seat = 1, #hands do
+        local suits = marriages_module.detect(hands[seat])
+        local total = 0
+        for _, suit in ipairs(suits) do
+            total = total + (config.marriages.values[suit] or 0)
+        end
+        holdings[seat] = { marriage_total = total }
+    end
+    return holdings
+end
+
+local function build_initial_state(config, dealer, seed, running_totals)
     local deck = deck_module.shuffle(deck_module.build(), seed)
     local deal_result = dealing.deal(deck, config, { dealer = dealer })
     if not deal_result.ok then
         error("session: deal failed: " .. tostring(deal_result.error.message), 2)
     end
 
-    local auction_result = auction_module.new(config, dealer)
+    local holdings = compute_holdings(deal_result.hands, config)
+    local auction_result = auction_module.new(config, dealer, {
+        holdings = holdings,
+        running_totals = running_totals,
+    })
     if not auction_result.ok then
         error("session: auction.new failed: " .. tostring(auction_result.error.message), 2)
     end
@@ -104,7 +127,7 @@ local function reset_deal_state(self, dealer, seed_bump)
     self._dealer = dealer or self._dealer
     self._seed = (self._seed or os.time()) + (seed_bump or 0)
     local deal_result, auction, marriages =
-        build_initial_state(self._config, self._dealer, self._seed)
+        build_initial_state(self._config, self._dealer, self._seed, self._running_totals)
     self._hands = deal_result.hands
     self._talon_cards = deal_result.talon
     self._stock = deal_result.stock
@@ -118,6 +141,16 @@ local function reset_deal_state(self, dealer, seed_bump)
     self._scoring = nil
     self._raspassy_active = false
     self._pending_trump_apply = nil
+    -- Phase 3.6 bidding-house-rules per-deal state.
+    self._revealed_hands = {}
+    self._re_entry_used = {}
+    self._blind_bidders = {}
+    self._contra_declared = false
+    self._redouble_declared = false
+    self._contra_declarer = nil
+    self._forced_concession_offer = nil
+    self._forced_concession_resolved = false
+    self._first_trick_played = false
 end
 
 -- Compute the clockwise queue of non-declarer seats eligible to claim
@@ -212,7 +245,9 @@ function M.new(opts)
     local dealer = opts.dealer or 1
     local seed = opts.seed or os.time()
 
-    local deal_result, auction, marriages = build_initial_state(config, dealer, seed)
+    local initial_running_totals = zero_totals(config.players.count)
+    local deal_result, auction, marriages =
+        build_initial_state(config, dealer, seed, initial_running_totals)
 
     local self = setmetatable({
         _config = config,
@@ -229,7 +264,7 @@ function M.new(opts)
         _marriages = marriages,
         _tricks = nil,
         _scoring = nil,
-        _running_totals = zero_totals(config.players.count),
+        _running_totals = initial_running_totals,
         _barrel_state = scoring.initial_barrel_state(config),
         _winner = nil,
         _deal_done = nil,
@@ -277,6 +312,34 @@ function M.new(opts)
         _buyback_log = {},
         _rebuy_pending = nil,
         _rebuy_log = {},
+        -- Phase 3.6 bidding-house-rules per-deal state.
+        --   _revealed_hands: per-seat boolean — whether the player has
+        --       dismissed their privacy curtain at least once this deal.
+        --       Drives the `blind_bid` window: once revealed the seat
+        --       can no longer declare blind.
+        --   _re_entry_used:   per-seat boolean — whether the player has
+        --       exercised their single `re_entry_after_pass` claim this
+        --       deal.
+        --   _contra_declared / _redouble_declared / _contra_declarer:
+        --       track the doubling sub-phase the contra toggle gates.
+        --       Read by `contract_multiplier()` and the view-model.
+        --   _forced_concession_offer: nil or a record set by
+        --       `on_auction_end` when `forced_bid_concession` fires
+        --       under the dealer-forced-bid path. The session enters
+        --       the `awaiting_forced_concession_decision` phase until
+        --       the declarer accepts (`concede_forced_bid`) or
+        --       declines (`decline_forced_bid`).
+        --   _first_trick_played: gate for the contra-window accessor;
+        --       flipped on the first `Session:play` invocation that
+        --       resolves a card into a trick.
+        _revealed_hands = {},
+        _re_entry_used = {},
+        _blind_bidders = {},
+        _contra_declared = false,
+        _redouble_declared = false,
+        _contra_declarer = nil,
+        _forced_concession_offer = nil,
+        _first_trick_played = false,
     }, Session)
     evaluate_entitlement_with_forced_loop(self)
     return self
@@ -327,6 +390,14 @@ function M.from_state(state)
         _buyback_log = state.buyback_log or {},
         _rebuy_pending = state.rebuy_pending,
         _rebuy_log = state.rebuy_log or {},
+        _revealed_hands = state.revealed_hands or {},
+        _re_entry_used = state.re_entry_used or {},
+        _blind_bidders = state.blind_bidders or {},
+        _contra_declared = state.contra_declared or false,
+        _redouble_declared = state.redouble_declared or false,
+        _contra_declarer = state.contra_declarer,
+        _forced_concession_offer = state.forced_concession_offer,
+        _first_trick_played = state.first_trick_played or false,
     }, Session)
     return self
 end
@@ -463,6 +534,9 @@ function Session:current_phase()
             return "awaiting_rebuy_decision"
         end
         return "talon"
+    end
+    if self._forced_concession_offer then
+        return "awaiting_forced_concession_decision"
     end
     if self._redeal_offer then
         return "awaiting_redeal_decision"
@@ -746,6 +820,53 @@ local function on_auction_end(self)
     if not a or a.status == "in_progress" then
         return
     end
+    -- Phase 3.6 contra/redouble: the engine's auction state machine
+    -- exposes a `doubling` sub-phase for unit-test coverage of
+    -- `M.contra` / `M.redouble` / `M.skip_contra`. The session does
+    -- not drive those engine mutators — it tracks doubling via the
+    -- per-deal `_contra_declared` / `_redouble_declared` flags so
+    -- the talon can construct immediately and the contra window
+    -- spans both talon and tricks-pre-play. Treat `doubling` as
+    -- `done` for downstream session transitions.
+    local effective_status = a.status
+    if effective_status == "doubling" then
+        effective_status = "done"
+    end
+    -- Phase 3.6 named-contracts wiring is auction-only in this
+    -- commit. A winning structured (named) bid leaves the deal
+    -- unplayable until the follow-up "Implement named-contract
+    -- scoring & play" task lands; mark the deal done with a
+    -- stub-error reason rather than constructing a talon the
+    -- gameplay engine can't progress.
+    if effective_status == "done" and type(a.final_bid) == "table" then -- i18n-ok: status enums
+        self._deal_done = {
+            reason = "not_yet_supported_named_contract",
+            declarer = a.declarer,
+            contract = a.final_bid.contract,
+        }
+        return
+    end
+    -- Phase 3.6 forced-bid concession: the dealer-forced-bid path
+    -- (the only path that triggers concession) leaves a flag on the
+    -- auction state. When the forced_bid_concession toggle is on, the
+    -- session enters an awaiting-decision phase before constructing
+    -- the talon — declarer can concede the deal up-front per the
+    -- configured split or decline and continue into the talon.
+    -- `_forced_concession_resolved` blocks re-opening once the
+    -- declarer has already chosen.
+    if
+        effective_status == "done"
+        and a.dealer_forced
+        and self._config.bidding.forced_bid_concession ~= "off"
+        and not self._forced_concession_resolved
+    then
+        self._forced_concession_offer = {
+            declarer = a.declarer,
+            bid = a.final_bid,
+            split_mode = self._config.bidding.forced_bid_concession,
+        }
+        return
+    end
     if a.status == "all_pass" then
         local mode = self._config.dealing.all_pass_handling
         if mode == "raspassy" then
@@ -807,7 +928,7 @@ local function on_auction_end(self)
         self._deal_done = { reason = "all_pass" }
         return
     end
-    if a.status ~= "done" then
+    if effective_status ~= "done" then
         return
     end
     if self._config.talon.size == 0 then
@@ -1008,6 +1129,10 @@ function Session:bid(player, amount)
         return result
     end
     self._auction = result.auction
+    -- A normal (non-blind) bid implies the seat has consulted their
+    -- hand. Once revealed they can no longer declare blind. Phase 3.6
+    -- bidding-house-rules.
+    self._revealed_hands[player] = true
     on_auction_end(self)
     return { ok = true }
 end
@@ -1029,6 +1154,7 @@ function Session:pass(player)
         return result
     end
     self._auction = result.auction
+    self._revealed_hands[player] = true
     on_auction_end(self)
     return { ok = true }
 end
@@ -1686,6 +1812,434 @@ function Session:start_next_deal()
     self._rebuy_pending = nil
     reset_deal_state(self, next_dealer, self._deal_index)
     evaluate_entitlement_with_forced_loop(self)
+    return { ok = true }
+end
+
+-- Phase 3.6 bidding-house-rules ------------------------------------------
+--
+-- Read-only accessors and mutators for the nine bidding toggles wired
+-- in this commit. Mutators forward to core.auction (or apply a session-
+-- only effect for forced-bid concession) and return the same
+-- { ok | error={code, message, ...} } envelope used elsewhere.
+
+function Session:auction_status()
+    if not self._auction then
+        return nil
+    end
+    if self._auction.status == "done" and self._auction.dealer_forced then
+        return "forced_dealer_bid"
+    end
+    return self._auction.status
+end
+
+function Session:has_revealed_hand(seat)
+    return self._revealed_hands[seat] == true
+end
+
+-- Test / view-model hook to record a curtain dismissal. The table
+-- scene calls this when its privacy curtain leaves the on-screen
+-- queue for `seat`. Once true the seat can no longer declare a blind
+-- bid.
+function Session:mark_hand_revealed(seat)
+    self._revealed_hands[seat] = true
+end
+
+function Session:has_used_re_entry(seat)
+    return self._re_entry_used[seat] == true
+end
+
+function Session:contra_declared()
+    return self._contra_declared
+end
+
+function Session:redouble_declared()
+    return self._redouble_declared
+end
+
+-- The active "self" defenders (every non-declarer non-sits-out seat).
+-- Used by the view-model to render contra buttons and by the contra
+-- mutator to validate the actor.
+function Session:defender_seats()
+    if not self._auction or self._auction.declarer == nil then
+        return {}
+    end
+    local count = self._config.players.count
+    local sits_out = self._auction.sits_out or self._sits_out
+    local declarer = self._auction.declarer
+    local out = {}
+    for seat = 1, count do
+        if seat ~= declarer and seat ~= sits_out then
+            out[#out + 1] = seat
+        end
+    end
+    return out
+end
+
+-- The contra/redouble window opens once the talon has been revealed
+-- and closes when the first trick lands. Both edges are necessary so
+-- declarer can see their full hand before deciding to redouble while
+-- defenders cannot contra mid-trick.
+function Session:contra_window_open()
+    if self._config.bidding.contra == "off" then
+        return false
+    end
+    -- Window opens once the auction has settled on a declarer and
+    -- closes the moment the tricks phase begins (so the declarer can
+    -- redouble after seeing the talon but no defender can contra
+    -- once a card is led).
+    if self._tricks then
+        return false
+    end
+    if self._auction then
+        local s = self._auction.status
+        if s == "done" or s == "doubling" then -- i18n-ok: status enums
+            return true
+        end
+    end
+    if self._talon and self._talon.status == "revealed" then
+        return true
+    end
+    return false
+end
+
+-- True when the active declarer arrived at the contract via either
+-- the forced-dealer-bid path (toggle 2) or the forced-opening path
+-- (toggle 1) where forehand was the lone bidder at opening_min.
+function Session:was_forced_into_minimum_contract()
+    if not self._auction or self._auction.declarer == nil then
+        return false
+    end
+    if self._auction.dealer_forced then
+        return true
+    end
+    local opening_min = self._config.bidding.opening_min
+    if self._auction.final_bid ~= opening_min then
+        return false
+    end
+    if self._config.bidding.forced_opening ~= "on" then
+        return false
+    end
+    -- Forced-opening path: forehand was the only bidder at opening_min
+    -- and every other active seat passed.
+    if self._auction.declarer ~= self._auction.forehand then
+        return false
+    end
+    return true
+end
+
+-- Composite multiplier applied to the contract value: blind
+-- (success/failure picked by the scoring module), then contra, then
+-- redouble. Default 1 when no toggle fires.
+function Session:contract_multiplier()
+    local mult = 1
+    -- Honour both the engine's blind_at_win flag (set when the
+    -- declarer's winning bid was blind) and the in-flight blind flag
+    -- on the current leader (so the badge surfaces the moment the
+    -- blind bid lands, before the auction has terminated).
+    if self._auction then
+        local declarer_blind = self._auction.blind_at_win
+        local leader = self._auction.current_leader
+        local leader_blind = leader and self._auction.blind and self._auction.blind[leader]
+        if declarer_blind or leader_blind then
+            mult = mult * (self._config.bidding.blind_bid_success_multiplier or 2)
+        end
+    end
+    if self._contra_declared then
+        mult = mult * (self._config.bidding.contra_multiplier or 2)
+    end
+    if self._redouble_declared then
+        mult = mult * (self._config.bidding.redouble_multiplier or 2)
+    end
+    return mult
+end
+
+-- The slam contract value resolved from `bidding.named_contracts_*`
+-- and `specials.slam_contract`. When specials gameplay lands this
+-- will read a real sibling field on `self._config`; for now the
+-- canonical 240 is used.
+function Session:slam_contract_value()
+    local _ = self
+    return 240
+end
+
+-- Forced-bid concession state for the view-model.
+function Session:forced_concession_offer_state()
+    return self._forced_concession_offer
+end
+
+-- Bidding-house-rules mutators below reuse the file-scope `failure`
+-- helper defined above.
+
+-- Pre-reveal blind action by the seat on turn. Records the blind flag
+-- and bids the opening minimum via auction.bid with opts.blind. The
+-- engine's blind validator catches every failure (toggle off, seat
+-- already revealed, seat already acted) and the envelope is returned
+-- verbatim.
+function Session:declare_blind(player)
+    if not self._auction or self._auction.status ~= "in_progress" then
+        return failure("auction_already_done", "auction has already terminated", {
+            status = self._auction and self._auction.status or "unknown",
+        })
+    end
+    if self._config.bidding.blind_bid == "off" then
+        return failure("blind_disabled", "blind bidding is not enabled", {})
+    end
+    if self._revealed_hands[player] then
+        return failure("already_revealed", "hand already revealed; too late to bid blind", {
+            player = player,
+        })
+    end
+    local opening_min = self._config.bidding.opening_min
+    local result = auction_module.bid(self._auction, player, opening_min, { blind = true })
+    if not result.ok then
+        return result
+    end
+    self._auction = result.auction
+    self._blind_bidders[player] = true
+    on_auction_end(self)
+    return { ok = true }
+end
+
+-- Out-of-turn re-entry by a passed seat. Wraps auction.bid_re_entry
+-- and records the per-deal use so a second attempt fails fast.
+function Session:bid_re_entry(player, amount)
+    -- Toggle check fires first so the "rule disabled" message reaches
+    -- the UI even when the auction has already terminated; the engine
+    -- itself returns the same code via core.auction.bid_re_entry.
+    if self._config.bidding.re_entry_after_pass ~= "on" then
+        return failure("re_entry_disabled", "re-entry after pass is not enabled", {})
+    end
+    if not self._auction or self._auction.status ~= "in_progress" then
+        return failure("auction_already_done", "auction has already terminated", {
+            status = self._auction and self._auction.status or "unknown",
+        })
+    end
+    local result = auction_module.bid_re_entry(self._auction, player, amount)
+    if not result.ok then
+        return result
+    end
+    self._auction = result.auction
+    self._re_entry_used[player] = true
+    on_auction_end(self)
+    return { ok = true }
+end
+
+-- Bid a named special contract. Wraps auction.bid with a structured
+-- amount; the engine validates `bidding.named_contracts` and the
+-- per-contract `specials.<contract>` toggle. Resolves the contract
+-- value through the slam_contract_value helper for slam.
+function Session:bid_named_contract(player, kind)
+    if not self._auction or self._auction.status ~= "in_progress" then
+        return failure("auction_already_done", "auction has already terminated", {
+            status = self._auction and self._auction.status or "unknown",
+        })
+    end
+    if self._config.bidding.named_contracts ~= "on" then
+        return failure("named_contracts_disabled", "named contracts not enabled", {})
+    end
+    local value
+    if kind == "mizere" then
+        value = 120
+    elseif kind == "slam" then
+        value = self:slam_contract_value()
+    elseif kind == "open_hand" then
+        value = 200
+    else
+        return failure("unknown_kind", "unknown named contract kind", { kind = kind })
+    end
+    local result = auction_module.bid(self._auction, player, {
+        kind = "named",
+        contract = kind,
+        value = value,
+    })
+    if not result.ok then
+        return result
+    end
+    self._auction = result.auction
+    on_auction_end(self)
+    return { ok = true }
+end
+
+local function ensure_contra_window(self)
+    if not self:contra_window_open() then
+        return failure("wrong_phase", "contra window is closed", {
+            phase = self:current_phase(),
+        })
+    end
+    return nil
+end
+
+-- Defender doubles the contract. Updates the session's flags so
+-- `contract_multiplier()` reflects the change; the engine's auction
+-- state is unaffected because doubling lives on the session under
+-- this commit's design (the auction module's `doubling` sub-phase is
+-- only consulted at finalize-time, not during talon).
+function Session:declare_contra(defender)
+    if self._config.bidding.contra == "off" then
+        return failure("contra_disabled", "contra is not enabled", {})
+    end
+    local err = ensure_contra_window(self)
+    if err then
+        return err
+    end
+    if self._contra_declared then
+        return failure("already_contra", "contra already declared", {})
+    end
+    local defenders = self:defender_seats()
+    local found = false
+    for _, s in ipairs(defenders) do
+        if s == defender then
+            found = true
+            break
+        end
+    end
+    if not found then
+        return failure("not_a_defender", "this seat is not a defender", {
+            player = defender,
+            declarer = self._auction.declarer,
+        })
+    end
+    self._contra_declared = true
+    self._contra_declarer = defender
+    return { ok = true }
+end
+
+-- Declarer responds to a contra. Only legal under
+-- `bidding.contra = "contra_and_redouble"`.
+function Session:declare_redouble(declarer)
+    local err = ensure_contra_window(self)
+    if err then
+        return err
+    end
+    if self._config.bidding.contra ~= "contra_and_redouble" then
+        return failure("redouble_disabled", "redouble is not enabled", {
+            contra = self._config.bidding.contra,
+        })
+    end
+    if not self._contra_declared then
+        return failure("no_contra", "redouble requires a prior contra", {})
+    end
+    if self._redouble_declared then
+        return failure("already_redoubled", "redouble already declared", {})
+    end
+    if declarer ~= self._auction.declarer then
+        return failure("not_declarer", "only the declarer may redouble", {
+            player = declarer,
+            declarer = self._auction.declarer,
+        })
+    end
+    self._redouble_declared = true
+    return { ok = true }
+end
+
+-- Defender declines to declare contra. Currently a noop on session
+-- state — the contra window simply remains closed for that seat.
+-- Provided so the UI button has a callable target; engine semantics
+-- are identical to "no contra".
+function Session:skip_contra(defender)
+    if self._config.bidding.contra == "off" then
+        return failure("contra_disabled", "contra is not enabled", {})
+    end
+    local _ = defender
+    local err = ensure_contra_window(self)
+    if err then
+        return err
+    end
+    if self._contra_declared then
+        return failure("already_contra", "contra already declared", {})
+    end
+    return { ok = true }
+end
+
+-- Declarer concedes the forced minimum-100 contract before the talon
+-- is revealed. Distribution depends on `bidding.forced_bid_concession`:
+--   * equal_split — bid divided equally among non-conceders.
+--   * each_full   — every other active player gets the full bid.
+--   * preset_ratio — the configured ratio applies.
+-- Sets _deal_done so start_next_deal rotates the dealer normally.
+function Session:concede_forced_bid()
+    if not self._forced_concession_offer then
+        if self._config.bidding.forced_bid_concession == "off" then
+            return failure("concession_disabled", "forced-bid concession is not enabled", {})
+        end
+        return failure("not_forced", "concession is not currently offered", {})
+    end
+    local offer = self._forced_concession_offer
+    local declarer = offer.declarer
+    local bid = offer.bid
+    local mode = offer.split_mode
+    local count = self._config.players.count
+    local sits_out = self._auction.sits_out
+
+    local recipients = {}
+    for seat = 1, count do
+        if seat ~= declarer and seat ~= sits_out then
+            recipients[#recipients + 1] = seat
+        end
+    end
+
+    local deltas = {}
+    for seat = 1, count do
+        deltas[seat] = 0
+    end
+    deltas[declarer] = -bid
+    if mode == "equal_split" then
+        local share = math.floor(bid / #recipients)
+        for _, seat in ipairs(recipients) do
+            deltas[seat] = share
+        end
+    elseif mode == "each_full" then
+        for _, seat in ipairs(recipients) do
+            deltas[seat] = bid
+        end
+    elseif mode == "preset_ratio" then
+        local ratio = self._config.bidding.forced_bid_concession_preset_ratio
+        for i, seat in ipairs(recipients) do
+            local weight = ratio[i] or 0
+            deltas[seat] = math.floor(bid * weight + 0.5)
+        end
+    end
+
+    local g = scoring.advance_game(self._config, {
+        declarer = declarer,
+        deal_index = self._deal_index,
+        deltas = deltas,
+        running_totals_before = self._running_totals,
+        barrel_state_before = self._barrel_state,
+    })
+    if not g.ok then
+        return failure("scoring_failed", g.error.message or "advance_game failed", {
+            cause = g.error,
+        })
+    end
+    self._running_totals = g.game.running_totals
+    self._barrel_state = g.game.barrel_state
+    if g.game.winner then
+        self._winner = g.game.winner
+    end
+    self._deal_done = {
+        reason = "forced_bid_conceded",
+        declarer = declarer,
+        deal_scores = deltas,
+    }
+    self._forced_concession_offer = nil
+    self._forced_concession_resolved = true
+    return { ok = true }
+end
+
+-- Declarer declines the forced-bid concession; the deal proceeds
+-- through the talon path normally. Re-enters the talon construction
+-- block from `on_auction_end` against the same auction state.
+function Session:decline_forced_bid()
+    if not self._forced_concession_offer then
+        return failure("not_forced", "no concession offer to decline", {})
+    end
+    self._forced_concession_offer = nil
+    self._forced_concession_resolved = true
+    -- Run the post-finalize path that was deferred when the offer
+    -- opened. The auction state is unchanged so the talon-construction
+    -- branch runs normally now.
+    on_auction_end(self)
     return { ok = true }
 end
 

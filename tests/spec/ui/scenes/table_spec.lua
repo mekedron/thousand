@@ -733,3 +733,855 @@ describe("ui.scenes.table", function()
         end)
     end)
 end)
+
+-- ---------------------------------------------------------------------------
+-- Bidding house-rules UI tests (Phase 3.6)
+-- ---------------------------------------------------------------------------
+-- These tests are intentionally RED until the implementation lands.
+-- They match the API contract in sidebar-position-4-title-modular-narwhal.md
+-- exactly: view.auction.* keys, button IDs, and i18n keys are verbatim.
+-- ---------------------------------------------------------------------------
+
+local Session = require("app.session")
+local rule_config = require("core.rule_config")
+local auction_module = require("core.auction")
+local marriages_module = require("core.marriages")
+local card_module = require("core.card")
+
+-- ---------------------------------------------------------------------------
+-- Helper: build a RuleConfig with the Russian-style baseline plus arbitrary
+-- bidding overrides, optionally also merging talon / specials overrides.
+-- ---------------------------------------------------------------------------
+local function canonical_with_bidding(bidding_overrides, extra_overrides)
+    bidding_overrides = bidding_overrides or {}
+    extra_overrides = extra_overrides or {}
+
+    local bidding = {
+        opening_min = 100,
+        pre_talon_max = 120,
+        increment_threshold = 200,
+        increment_below_200 = 5,
+        increment_from_200 = 10,
+        forced_opening = "off",
+        forced_dealer_bid = "off",
+        blind_bid = "off",
+        blind_bid_success_multiplier = 2,
+        blind_bid_failure_multiplier = 2,
+        re_entry_after_pass = "off",
+        contra = "off",
+        contra_multiplier = 2,
+        redouble_multiplier = 2,
+        forced_bid_concession = "off",
+        forced_bid_concession_preset_ratio = { 0.5, 0.5 },
+        no_contract_without_marriage = "off",
+        negative_score_restriction = "off",
+        named_contracts = "off",
+        named_contracts_precedence = { "mizere", "open_hand", "slam" },
+    }
+    for k, v in pairs(bidding_overrides) do
+        bidding[k] = v
+    end
+
+    local blob = {
+        schema_version = 1,
+        cards = {
+            point_values = {
+                ["A"] = 11,
+                ["10"] = 10,
+                ["K"] = 4,
+                ["Q"] = 3,
+                ["J"] = 2,
+                ["9"] = 0,
+            },
+            trick_rank_order = { "9", "J", "Q", "K", "10", "A" },
+        },
+        players = {
+            count = 3,
+            partnership_mode = "none",
+            four_player_config = "dealer_plays_no_talon",
+            two_player_config = "closed_talon_draw_stock",
+        },
+        dealing = {
+            four_nine_redeal = "off",
+            three_nine_redeal = "off",
+            four_jack_redeal = "off",
+            weak_hand_redeal = "off",
+            weak_hand_threshold = 14,
+            misdeal_handling = "standard",
+            misdeal_flat_penalty = 20,
+            all_pass_handling = "redeal",
+        },
+        talon = {
+            size = 3,
+            distribution = "declarer_takes_then_passes",
+            flip_after_first_round = "off",
+            pass_the_talon = "off",
+            buyback = "off",
+            buyback_penalty = 50,
+            hidden_on_minimum_100 = "off",
+            bad_talon_redeal = "off",
+            bad_talon_threshold = 5,
+            rebuy = "off",
+            rebuy_contract_value = 240,
+            open_discard = "off",
+        },
+        bidding = bidding,
+        marriages = {
+            values = { hearts = 100, diamonds = 80, clubs = 60, spades = 40 },
+            half_marriage_capture_bonus = "off",
+            trump_activation_timing = "next_trick",
+            marriage_announcement_timing = "on_lead",
+            drowned_marriage = "off",
+            ace_marriage = "off",
+            one_trump_per_deal = "off",
+        },
+        tricks = {
+            must_follow = true,
+            must_beat = true,
+            must_trump = true,
+            must_overtrump = true,
+            must_overtake_strictness = "standard",
+            must_trump_strictness = "standard",
+            defender_must_overtrump_declarer = "off",
+            lazy_revoke = "off",
+            partial_trumping = "off",
+            last_trick_bonus = "off",
+            slam_bonus = "off",
+            slam_against_penalty = "off",
+            lead_trump_after_marriage = "off",
+        },
+        scoring = {
+            round_to_nearest = 5,
+            actual_points_on_success = "off",
+            defender_contributions = "standard",
+            failed_contract_distribution = "lost",
+            declarer_rounding_before_contract_check = "off",
+        },
+        opening_game = { golden_deal = "off" },
+        barrel = {
+            threshold = 880,
+            deal_count = 3,
+            fall_off_penalty = -120,
+            pit_lock_in = "off",
+            collision_rule = "last_mounter",
+            overshoot_penalty = "off",
+            reverse_barrel = "off",
+        },
+        endgame = {
+            target_score = 1000,
+            going_over_target = "win_immediately",
+            tiebreaker = "declarer_wins",
+            dump_truck = "off",
+        },
+        specials = {
+            mizere = extra_overrides.mizere or "off",
+            slam_contract = extra_overrides.slam_contract or "off",
+            open_hand = extra_overrides.open_hand or "off",
+        },
+        penalties = {
+            revoke = "standard",
+            talon_look = "standard",
+            showing_hand = "standard",
+            zero_tricks = "off",
+            cross = "off",
+        },
+    }
+    return rule_config.new(blob)
+end
+
+-- ---------------------------------------------------------------------------
+-- Helper: build a session wired from internal state (mirrors
+-- session_talon_variants_spec pattern). Dealer = 1 → forehand = seat 2.
+-- ---------------------------------------------------------------------------
+local function c(suit, rank)
+    return card_module.new(suit, rank)
+end
+
+-- A balanced hand set with no marriages in any hand and a neutral talon.
+-- Used for tests that must not trigger marriage-related rules.
+local function plain_hands()
+    local seat1 = {
+        c("spades", "9"),
+        c("clubs", "9"),
+        c("diamonds", "9"),
+        c("hearts", "J"),
+        c("spades", "J"),
+        c("clubs", "J"),
+        c("diamonds", "J"),
+    }
+    local seat2 = {
+        c("hearts", "9"),
+        c("spades", "10"),
+        c("clubs", "10"),
+        c("diamonds", "10"),
+        c("hearts", "10"),
+        c("spades", "A"),
+        c("clubs", "A"),
+    }
+    local seat3 = {
+        c("diamonds", "A"),
+        c("hearts", "A"),
+        c("spades", "K"),
+        c("clubs", "K"),
+        c("diamonds", "K"),
+        c("hearts", "K"),
+        c("spades", "Q"),
+    }
+    local talon = {
+        c("clubs", "Q"),
+        c("diamonds", "Q"),
+        c("hearts", "Q"),
+    }
+    return { seat1, seat2, seat3 }, talon
+end
+
+-- A hand set where seat 2 (forehand / typical declarer) holds a spades
+-- marriage (K+Q of spades) and no other marriages.
+-- luacheck: ignore hands_with_marriage_seat2
+local function hands_with_marriage_seat2()
+    local seat1 = {
+        c("spades", "9"),
+        c("clubs", "9"),
+        c("diamonds", "9"),
+        c("hearts", "J"),
+        c("spades", "J"),
+        c("clubs", "J"),
+        c("diamonds", "J"),
+    }
+    local seat2 = {
+        c("spades", "K"),
+        c("spades", "Q"),
+        c("hearts", "9"),
+        c("spades", "10"),
+        c("clubs", "10"),
+        c("diamonds", "10"),
+        c("hearts", "10"),
+    }
+    local seat3 = {
+        c("diamonds", "A"),
+        c("hearts", "A"),
+        c("spades", "A"),
+        c("clubs", "A"),
+        c("clubs", "K"),
+        c("diamonds", "K"),
+        c("hearts", "K"),
+    }
+    local talon = {
+        c("clubs", "Q"),
+        c("diamonds", "Q"),
+        c("hearts", "Q"),
+    }
+    return { seat1, seat2, seat3 }, talon
+end
+
+-- A hand set where NO seat holds any marriage (every K is separated from
+-- its Q by being in a different hand or the talon).
+local function hands_without_marriage()
+    local seat1 = {
+        c("spades", "9"),
+        c("clubs", "9"),
+        c("diamonds", "9"),
+        c("hearts", "9"),
+        c("spades", "J"),
+        c("clubs", "J"),
+        c("diamonds", "J"),
+    }
+    local seat2 = {
+        c("hearts", "J"),
+        c("spades", "10"),
+        c("clubs", "10"),
+        c("diamonds", "10"),
+        c("hearts", "10"),
+        c("spades", "A"),
+        c("clubs", "A"),
+    }
+    local seat3 = {
+        c("diamonds", "A"),
+        c("hearts", "A"),
+        c("spades", "K"),
+        c("clubs", "K"),
+        c("diamonds", "K"),
+        c("hearts", "K"),
+        c("spades", "Q"),
+    }
+    -- All queens in talon so no hand has a complete K+Q pair.
+    local talon = {
+        c("clubs", "Q"),
+        c("diamonds", "Q"),
+        c("hearts", "Q"),
+    }
+    return { seat1, seat2, seat3 }, talon
+end
+
+-- Build a Session from explicit hands/talon/config via from_state.
+local function session_at_auction(cfg, hands, talon, opts)
+    opts = opts or {}
+    local dealer = opts.dealer or 1
+    local running_totals = opts.running_totals or { 0, 0, 0 }
+    -- Mirror the session's marriage-holdings + running-totals threading
+    -- so auction.holdings and auction.locked are populated for tests.
+    local holdings = {}
+    for seat = 1, #hands do
+        local suits = marriages_module.detect(hands[seat])
+        local total = 0
+        for _, suit in ipairs(suits) do
+            total = total + (cfg.marriages.values[suit] or 0)
+        end
+        holdings[seat] = { marriage_total = total }
+    end
+    local auction = auction_module.new(cfg, dealer, {
+        holdings = holdings,
+        running_totals = running_totals,
+    }).auction
+    local marriages = marriages_module.new(cfg).marriages
+    return Session.from_state({
+        config = cfg,
+        seed = opts.seed or 1,
+        dealer = dealer,
+        hands = hands,
+        talon_cards = talon,
+        auction = auction,
+        marriages = marriages,
+        running_totals = running_totals,
+        deal_index = opts.deal_index or 1,
+    })
+end
+
+-- Dismiss the privacy curtain on a scene so subsequent interactions work.
+local function dismiss_curtain(sc)
+    sc._curtain = nil
+    if sc._view_model and sc._view_model.turn_player then
+        sc._last_revealed_seat = sc._view_model.turn_player
+    end
+end
+
+-- Find a button by id in scene._panel_buttons; returns nil if absent.
+local function find_button(sc, id)
+    for _, b in ipairs(sc._panel_buttons or {}) do
+        if b.id == id then
+            return b
+        end
+    end
+    return nil
+end
+
+-- ---------------------------------------------------------------------------
+-- The main describe block required by the plan.
+-- ---------------------------------------------------------------------------
+describe("bidding house rules", function()
+    -- luacheck: ignore scene_bhr
+    local mock_bhr, scene_bhr, t_bhr
+
+    before_each(function()
+        reset_modules()
+        mock_bhr = love_mock.new({ width = 1024, height = 720 })
+        mock_bhr:install()
+        local i18n = require("app.i18n")
+        i18n._reset()
+        i18n._set_logger(function() end)
+        i18n.set_locale("en")
+        t_bhr = i18n.t
+    end)
+
+    after_each(function()
+        if mock_bhr then
+            mock_bhr:restore()
+        end
+        reset_modules()
+    end)
+
+    -- -----------------------------------------------------------------------
+    -- 1. forced_opening: forehand cannot pass on first bid round
+    -- -----------------------------------------------------------------------
+    it("hides pass button when forced_opening is on at first action", function()
+        local cfg = canonical_with_bidding({ forced_opening = "on" })
+        local hands, talon = plain_hands()
+        -- Dealer = 1, forehand = seat 2. No bids yet — seat 2's first action.
+        local s = session_at_auction(cfg, hands, talon)
+
+        local table_scene = require("ui.scenes.table")
+        local sc = table_scene.new(fake_manager(s))
+        sc:enter(nil, nil)
+        dismiss_curtain(sc)
+        sc:draw(1024, 720)
+
+        -- The pass button must be absent (forehand_pass_disabled = true).
+        local pass_btn = find_button(sc, "auction_pass")
+        assert.is_nil(
+            pass_btn,
+            "pass button must be absent when forced_opening is on at forehand's first action"
+        )
+
+        -- Bid amount buttons must still appear.
+        local bid_btn = find_button(sc, "bid_100")
+        assert.is_not_nil(bid_btn, "bid_100 button must appear even when pass is blocked")
+
+        -- View-model should carry the disabled reason.
+        local view = sc._view_model
+        assert.is_not_nil(view, "view_model must be populated after draw")
+        assert.is_true(
+            view.auction and view.auction.forehand_pass_disabled,
+            "view.auction.forehand_pass_disabled must be true"
+        )
+        assert.are.equal(
+            "forced_opening",
+            view.auction and view.auction.pass_disabled_reason,
+            "pass_disabled_reason must be 'forced_opening'"
+        )
+    end)
+
+    -- -----------------------------------------------------------------------
+    -- 2. forced_dealer_bid: dealer-forced banner after all seats pass
+    -- -----------------------------------------------------------------------
+    it("renders dealer-forced banner under forced_dealer_bid after all-pass", function()
+        -- The auction terminates after pass_count >= player_count - 1
+        -- so two passes (forehand + middlehand) are sufficient — the
+        -- dealer (seat 1) is the "remaining" seat and gets forced
+        -- into the minimum-100 contract.
+        local cfg = canonical_with_bidding({ forced_dealer_bid = "on" })
+        local hands, talon = plain_hands()
+        local s = session_at_auction(cfg, hands, talon)
+        assert(s:pass(2).ok, "seat 2 pass must succeed")
+        assert(s:pass(3).ok, "seat 3 pass must succeed")
+        -- Session should NOT have redealed; dealer should be forced to 100.
+        -- Phase should not be "auction" anymore.
+        assert.are_not.equal(
+            "auction",
+            s:current_phase(),
+            "auction must be over after all-pass with forced_dealer_bid"
+        )
+
+        local table_scene = require("ui.scenes.table")
+        local sc = table_scene.new(fake_manager(s))
+        sc:enter(nil, nil)
+        dismiss_curtain(sc)
+        sc:draw(1024, 720)
+
+        -- The view-model must expose a dealer_forced_banner.
+        local view = sc._view_model
+        assert.is_not_nil(view, "view_model must be populated")
+        local banner = view.auction and view.auction.dealer_forced_banner
+        assert.is_not_nil(
+            banner,
+            "view.auction.dealer_forced_banner must be set after forced all-pass"
+        )
+        assert.are.equal(1, banner.dealer_seat, "banner.dealer_seat must be the dealer (1)")
+        assert.are.equal(100, banner.amount, "banner.amount must equal the opening_min (100)")
+
+        -- The scene must render the i18n-formatted banner text.
+        assert.is_not_nil(
+            find_text(
+                mock_bhr,
+                t_bhr("scene.table.auction.dealer_forced_banner", { seat = 1, amount = 100 })
+            ),
+            "dealer_forced_banner i18n text must be rendered"
+        )
+    end)
+
+    -- -----------------------------------------------------------------------
+    -- 3. blind_bid: "Bid blind" button rendered before curtain reveal
+    -- -----------------------------------------------------------------------
+    it("renders blind-bid button under blind_bid before reveal", function()
+        local cfg = canonical_with_bidding({ blind_bid = "first_bid_double" })
+        local hands, talon = plain_hands()
+        -- Dealer = 1, forehand = seat 2. No bids yet — blind offer active.
+        local s = session_at_auction(cfg, hands, talon)
+
+        local table_scene = require("ui.scenes.table")
+        local sc = table_scene.new(fake_manager(s))
+        sc:enter(nil, nil)
+        -- Do NOT dismiss curtain: blind_bid is only offered while the curtain
+        -- is still up (the plan: "Shown only while the seat's curtain is still up
+        -- and they have no prior action"). The view-model check is sufficient.
+        sc:draw(1024, 720)
+
+        -- View-model must expose a blind_bid_offer for the on-turn seat.
+        local view = sc._view_model
+        assert.is_not_nil(view, "view_model must be populated")
+        local offer = view.auction and view.auction.blind_bid_offer
+        assert.is_not_nil(
+            offer,
+            "view.auction.blind_bid_offer must be set when toggle is active and curtain up"
+        )
+        assert.are.equal(2, offer.seat, "offer.seat must be the forehand (2)")
+        assert.are.equal(
+            2,
+            offer.multiplier_preview,
+            "offer.multiplier_preview must be 2 (first_bid_double)"
+        )
+
+        -- The scene must render the blind-bid button.
+        local btn = find_button(sc, "auction_bid_blind")
+        assert.is_not_nil(
+            btn,
+            "auction_bid_blind button must be present when blind_bid_offer is active"
+        )
+        assert.is_not_nil(
+            find_text(mock_bhr, t_bhr("scene.table.auction.bid_blind_button", { multiplier = 2 })),
+            "bid_blind_button i18n text must be rendered"
+        )
+    end)
+
+    -- -----------------------------------------------------------------------
+    -- 4. re_entry_after_pass: passed seat sees a "Re-enter" button
+    -- -----------------------------------------------------------------------
+    it("renders re-enter button for passed seat under re_entry_after_pass", function()
+        local cfg = canonical_with_bidding({ re_entry_after_pass = "on" })
+        local hands, talon = plain_hands()
+        -- Dealer = 1, forehand = seat 2. Sequence: forehand passes
+        -- first, seat 3 opens at 100. Auction stays in_progress (only
+        -- one pass) so the view-model still surfaces the auction
+        -- block with seat 2 listed as eligible to re-enter.
+        local s = session_at_auction(cfg, hands, talon)
+        assert(s:pass(2).ok, "seat 2 passes — now eligible for re-entry")
+        assert(s:bid(3, 100).ok, "seat 3 opens the auction")
+        -- Now seat 1 is on turn; re-entry button for seat 2 would only appear
+        -- from seat 2's perspective. We check the view-model key is populated.
+        -- The scene always renders seat 2 as "self" (dealer=1 → forehand=2).
+
+        local table_scene = require("ui.scenes.table")
+        local sc = table_scene.new(fake_manager(s))
+        sc:enter(nil, nil)
+        dismiss_curtain(sc)
+        sc:draw(1024, 720)
+
+        local view = sc._view_model
+        assert.is_not_nil(view, "view_model must be populated")
+        local re_entry_seats = view.auction and view.auction.passed_seats_with_re_entry
+        assert.is_not_nil(re_entry_seats, "view.auction.passed_seats_with_re_entry must be set")
+
+        -- Seat 2 must appear in the list (it passed and has not yet re-entered).
+        local seat2_eligible = false
+        for _, seat in ipairs(re_entry_seats) do
+            if seat == 2 then
+                seat2_eligible = true
+            end
+        end
+        assert.is_true(seat2_eligible, "seat 2 must appear in passed_seats_with_re_entry")
+
+        -- Re-enter button must be rendered for the self seat.
+        local btn = find_button(sc, "auction_re_enter")
+        assert.is_not_nil(btn, "auction_re_enter button must be present for the passed self seat")
+        assert.is_not_nil(
+            find_text(mock_bhr, t_bhr("scene.table.auction.re_enter_button")),
+            "re_enter_button i18n text must be rendered"
+        )
+    end)
+
+    -- -----------------------------------------------------------------------
+    -- 5. contra=contra_only: defenders see "Contra" button after talon reveal
+    -- -----------------------------------------------------------------------
+    it("renders contra button at talon-revealed under contra=contra_only", function()
+        local cfg = canonical_with_bidding({ contra = "contra_only" })
+        local hands, talon = plain_hands()
+        local s = session_at_auction(cfg, hands, talon)
+        -- Seat 2 wins the auction; session enters the talon phase.
+        assert(s:bid(2, 100).ok)
+        assert(s:pass(3).ok)
+        assert(s:pass(1).ok)
+        -- Session must now be in the talon phase or a doubling phase.
+        assert.are_not.equal("auction", s:current_phase(), "should be past auction")
+
+        local table_scene = require("ui.scenes.table")
+        local sc = table_scene.new(fake_manager(s))
+        sc:enter(nil, nil)
+        dismiss_curtain(sc)
+        sc:draw(1024, 720)
+
+        -- View-model (talon_phase or auction) must expose a contra_offer.
+        local view = sc._view_model
+        assert.is_not_nil(view, "view_model must be populated")
+        local contra = view.talon_phase and view.talon_phase.contra_offer
+        assert.is_not_nil(
+            contra,
+            "view.talon_phase.contra_offer must be set when contra=contra_only and auction done"
+        )
+        assert.are.equal("contra", contra.kind, "contra_offer.kind must be 'contra'")
+
+        -- The scene must render the contra button in the talon take panel.
+        local btn = find_button(sc, "talon_contra")
+        assert.is_not_nil(btn, "talon_contra button must be present in the talon panel")
+        assert.is_not_nil(
+            find_text(mock_bhr, t_bhr("scene.table.auction.contra_button")),
+            "contra_button i18n text must be rendered"
+        )
+    end)
+
+    -- -----------------------------------------------------------------------
+    -- 6. contra=contra_and_redouble: both Contra and Redouble buttons present
+    -- -----------------------------------------------------------------------
+    it("renders contra and redouble buttons under contra_and_redouble", function()
+        local cfg = canonical_with_bidding({ contra = "contra_and_redouble" })
+        local hands, talon = plain_hands()
+        local s = session_at_auction(cfg, hands, talon)
+        assert(s:bid(2, 100).ok)
+        assert(s:pass(3).ok)
+        assert(s:pass(1).ok)
+        assert.are_not.equal("auction", s:current_phase(), "should be past auction")
+
+        -- Simulate a defender declaring contra so the redouble window opens.
+        -- If the mutator is not yet implemented this will be the RED signal.
+        local contra_res = s:declare_contra(3)
+        assert.is_true(
+            contra_res and contra_res.ok,
+            "declare_contra(3) must succeed when contra=contra_and_redouble"
+        )
+
+        local table_scene = require("ui.scenes.table")
+        local sc = table_scene.new(fake_manager(s))
+        sc:enter(nil, nil)
+        dismiss_curtain(sc)
+        sc:draw(1024, 720)
+
+        local view = sc._view_model
+        assert.is_not_nil(view, "view_model must be populated")
+        local contra_offer = view.talon_phase and view.talon_phase.contra_offer
+        assert.is_not_nil(contra_offer, "contra_offer must be set after contra declared")
+        assert.are.equal(
+            "redouble",
+            contra_offer.kind,
+            "contra_offer.kind must be 'redouble' once contra is declared"
+        )
+
+        -- After contra is declared, the contra button is replaced by
+        -- the redouble button — they share the talon-take panel slot
+        -- and the offer.kind switches to drive the rendering.
+        local btn_redouble = find_button(sc, "talon_redouble")
+        assert.is_not_nil(
+            btn_redouble,
+            "talon_redouble button must be present when redouble window open"
+        )
+        assert.is_not_nil(
+            find_text(mock_bhr, t_bhr("scene.table.auction.redouble_button")),
+            "redouble_button i18n text must be rendered"
+        )
+    end)
+
+    -- -----------------------------------------------------------------------
+    -- 7. forced_bid_concession: "Concede" button with split label
+    -- -----------------------------------------------------------------------
+    it("renders concede button under forced_bid_concession with split label", function()
+        -- forced_bid_concession fires when dealer is forced into 100 by
+        -- forced_dealer_bid. Use equal_split mode as the simplest case.
+        local cfg = canonical_with_bidding({
+            forced_dealer_bid = "on",
+            forced_bid_concession = "equal_split",
+        })
+        local hands, talon = plain_hands()
+        local s = session_at_auction(cfg, hands, talon)
+        -- The auction terminates after pass_count >= player_count - 1,
+        -- so two passes (forehand + middlehand) are sufficient to leave
+        -- the dealer as the forced declarer.
+        assert(s:pass(2).ok)
+        assert(s:pass(3).ok)
+        -- Session should now be in awaiting_forced_concession_decision phase.
+        assert.are.equal(
+            "awaiting_forced_concession_decision",
+            s:current_phase(),
+            "session must be in forced-concession phase after all-pass with forced_bid_concession on"
+        )
+
+        local table_scene = require("ui.scenes.table")
+        local sc = table_scene.new(fake_manager(s))
+        sc:enter(nil, nil)
+        dismiss_curtain(sc)
+        sc:draw(1024, 720)
+
+        local view = sc._view_model
+        assert.is_not_nil(view, "view_model must be populated")
+        local concede = view.talon_phase and view.talon_phase.concede_offer
+        assert.is_not_nil(
+            concede,
+            "view.talon_phase.concede_offer must be set in forced-concession phase"
+        )
+        assert.are.equal(
+            "equal_split",
+            concede.split_preview,
+            "split_preview must be 'equal_split'"
+        )
+
+        local btn = find_button(sc, "talon_concede_forced")
+        assert.is_not_nil(btn, "talon_concede_forced button must be present in the panel")
+        assert.is_not_nil(
+            find_text(
+                mock_bhr,
+                t_bhr("scene.table.auction.concede_button", { split = "equal_split" })
+            ),
+            "concede_button i18n text with split label must be rendered"
+        )
+    end)
+
+    -- -----------------------------------------------------------------------
+    -- 8. no_contract_without_marriage: bids >= 120 disabled when no marriage
+    -- -----------------------------------------------------------------------
+    it(
+        "disables bid amounts >=120 under no_contract_without_marriage with empty marriage hand",
+        function()
+            local cfg = canonical_with_bidding({
+                no_contract_without_marriage = "no_120_without_marriage",
+                pre_talon_max = 120,
+            })
+            -- Use a hand set where seat 2 (forehand) has NO marriage.
+            local hands, talon = hands_without_marriage()
+            local s = session_at_auction(cfg, hands, talon)
+            -- Seat 2 must have no marriages so the rule fires. Verify with the
+            -- view-model (the engine passes holdings so the auction knows).
+
+            local table_scene = require("ui.scenes.table")
+            local sc = table_scene.new(fake_manager(s))
+            sc:enter(nil, nil)
+            dismiss_curtain(sc)
+            sc:draw(1024, 720)
+
+            local view = sc._view_model
+            assert.is_not_nil(view, "view_model must be populated")
+            local disabled = view.auction and view.auction.disabled_bid_amounts
+            assert.is_not_nil(
+                disabled,
+                "view.auction.disabled_bid_amounts must be set when no_contract_without_marriage is on and seat has no marriage"
+            )
+            assert.is_true(disabled[120] == true, "bid amount 120 must be in disabled_bid_amounts")
+
+            -- The bid_120 button must exist but be disabled.
+            local bid120 = find_button(sc, "bid_120")
+            assert.is_not_nil(bid120, "bid_120 button must still appear in the panel (greyed out)")
+            assert.is_false(bid120.enabled, "bid_120 button must be disabled (no marriage in hand)")
+
+            -- Informational text must explain why.
+            assert.is_not_nil(
+                find_text(mock_bhr, t_bhr("scene.table.auction.bid_disabled_no_marriage")),
+                "bid_disabled_no_marriage i18n text must be rendered"
+            )
+        end
+    )
+
+    -- -----------------------------------------------------------------------
+    -- 9. negative_score_restriction: bid panel locked to 100 for negative seat
+    -- -----------------------------------------------------------------------
+    it(
+        "locks bid panel to 100 button only under negative_score_restriction with negative total",
+        function()
+            local cfg = canonical_with_bidding({ negative_score_restriction = "on" })
+            local hands, talon = plain_hands()
+            -- Seat 2 (forehand) has a negative running total → bid panel locked.
+            local s = session_at_auction(cfg, hands, talon, {
+                running_totals = { 0, -50, 0 },
+            })
+
+            local table_scene = require("ui.scenes.table")
+            local sc = table_scene.new(fake_manager(s))
+            sc:enter(nil, nil)
+            dismiss_curtain(sc)
+            sc:draw(1024, 720)
+
+            local view = sc._view_model
+            assert.is_not_nil(view, "view_model must be populated")
+            assert.are.equal(
+                100,
+                view.auction and view.auction.locked_bid_amount,
+                "view.auction.locked_bid_amount must be 100 for a negative-score forehand"
+            )
+
+            -- Only the 100 button must exist in the panel.
+            local bid100 = find_button(sc, "bid_100")
+            assert.is_not_nil(bid100, "bid_100 must appear as the sole bid button")
+            assert.is_true(bid100.enabled, "bid_100 must be enabled (the locked choice)")
+
+            local bid105 = find_button(sc, "bid_105")
+            assert.is_nil(bid105, "bid_105 must be absent when locked to 100")
+
+            -- The locked-reason label must appear.
+            assert.is_not_nil(
+                find_text(
+                    mock_bhr,
+                    t_bhr("scene.table.auction.locked_to_minimum", { amount = 100 })
+                ),
+                "locked_to_minimum i18n text must be rendered"
+            )
+        end
+    )
+
+    -- -----------------------------------------------------------------------
+    -- 10. named_contracts: mizère button appears when specials.mizere is on
+    -- -----------------------------------------------------------------------
+    it("renders mizère button under named_contracts=on with specials.mizere=on", function()
+        local cfg = canonical_with_bidding({ named_contracts = "on" }, { mizere = "on" })
+        local hands, talon = plain_hands()
+        local s = session_at_auction(cfg, hands, talon)
+
+        local table_scene = require("ui.scenes.table")
+        local sc = table_scene.new(fake_manager(s))
+        sc:enter(nil, nil)
+        dismiss_curtain(sc)
+        sc:draw(1024, 720)
+
+        local view = sc._view_model
+        assert.is_not_nil(view, "view_model must be populated")
+        local named_buttons = view.auction and view.auction.named_contract_buttons
+        assert.is_not_nil(
+            named_buttons,
+            "view.auction.named_contract_buttons must be set when named_contracts=on"
+        )
+
+        local found_mizere = false
+        for _, entry in ipairs(named_buttons) do
+            if entry.id == "named_mizere" and entry.kind == "mizere" then
+                found_mizere = true
+                assert.is_not_nil(
+                    entry.contract_value,
+                    "named_mizere entry must have a contract_value"
+                )
+            end
+        end
+        assert.is_true(found_mizere, "named_contract_buttons must include a mizere entry")
+
+        local btn = find_button(sc, "auction_named_mizere")
+        assert.is_not_nil(btn, "auction_named_mizere button must be present in the panel")
+        local mizere_value = (named_buttons[1] or {}).contract_value or 0
+        assert.is_not_nil(
+            find_text(
+                mock_bhr,
+                t_bhr("scene.table.auction.named_mizere_button", { value = mizere_value })
+            ),
+            "named_mizere_button i18n text must be rendered"
+        )
+    end)
+
+    -- -----------------------------------------------------------------------
+    -- 11. Multiplier badge rendered after blind / contra / redouble
+    -- -----------------------------------------------------------------------
+    it("renders multiplier badge after blind / contra / redouble", function()
+        -- Use blind_bid=first_bid_double so the multiplier is > 1 immediately
+        -- after the blind bid is declared.
+        local cfg = canonical_with_bidding({ blind_bid = "first_bid_double" })
+        local hands, talon = plain_hands()
+        local s = session_at_auction(cfg, hands, talon)
+
+        -- Declare blind for seat 2 (the mutator is expected to exist after impl).
+        local res = s:declare_blind(2)
+        assert.is_true(
+            res and res.ok,
+            "declare_blind(2) must succeed when blind_bid=first_bid_double and no prior action"
+        )
+
+        local table_scene = require("ui.scenes.table")
+        local sc = table_scene.new(fake_manager(s))
+        sc:enter(nil, nil)
+        dismiss_curtain(sc)
+        sc:draw(1024, 720)
+
+        -- contract_multiplier() must return 2 (blind ×2, no contra yet).
+        local multiplier = s:contract_multiplier()
+        assert.are.equal(
+            2,
+            multiplier,
+            "Session:contract_multiplier() must return 2 after blind bid"
+        )
+
+        -- The multiplier badge must be visible in the scene.
+        assert.is_not_nil(
+            find_text(mock_bhr, t_bhr("scene.table.auction.contract_multiplier_badge", { n = 2 })),
+            "contract_multiplier_badge ×2 must be rendered after blind bid"
+        )
+    end)
+end)
