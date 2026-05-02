@@ -320,7 +320,6 @@ function M.score_deal(config, opts)
     end
 
     local effective_bid = bid * bid_multiplier
-    local made_contract
     local side_deal_scores
     local declarer_side
     if sides then
@@ -330,24 +329,155 @@ function M.score_deal(config, opts)
             side_deal_scores[s] = side_deal_scores[s] + deal_scores[i]
         end
         declarer_side = sides[declarer]
-        made_contract = side_deal_scores[declarer_side] >= effective_bid
+    end
+
+    -- Phase 3.6 scoring house-rule: declarer_rounding_before_contract_check.
+    -- `on` (canonical Russian, Phase 1.7 default) checks the declarer's
+    -- rounded deal_score against the bid; `off` (strict tournament)
+    -- compares the raw captured-points + exact bonuses to the bid so a
+    -- 118-captured-vs-120-bid hand fails. Bonuses themselves are exact in
+    -- both modes; only captured card-points round.
+    local function exact_bonuses_at(seat)
+        return opts.marriage_bonuses[seat]
+            + half_marriage_capture_bonuses[seat]
+            + ace_marriage_bonuses[seat]
+            + last_trick_bonus[seat]
+            + slam_bonus[seat]
+            + slam_against_penalty[seat]
+    end
+    local rounding_mode = config.scoring.declarer_rounding_before_contract_check
+    local contract_check_value
+    if sides then
+        if rounding_mode == "off" then
+            contract_check_value = 0
+            for i = 1, player_count do
+                if sides[i] == declarer_side then
+                    contract_check_value = contract_check_value
+                        + opts.captured_points[i]
+                        + exact_bonuses_at(i)
+                end
+            end
+        else
+            contract_check_value = side_deal_scores[declarer_side]
+        end
     else
-        made_contract = deal_scores[declarer] >= effective_bid
+        if rounding_mode == "off" then
+            contract_check_value = opts.captured_points[declarer] + exact_bonuses_at(declarer)
+        else
+            contract_check_value = deal_scores[declarer]
+        end
+    end
+    local made_contract = contract_check_value >= effective_bid
+
+    -- Phase 3.6 scoring house-rule: actual_points_on_success. When `on`,
+    -- a successful declarer scores `max(bid, deal_score)` instead of
+    -- just the bid. Falls back to effective_bid on failure (loss path
+    -- unchanged).
+    local declarer_deal_value = sides and side_deal_scores[declarer_side] or deal_scores[declarer]
+    local success_payout = effective_bid
+    if
+        made_contract
+        and config.scoring.actual_points_on_success == "on"
+        and declarer_deal_value > effective_bid
+    then
+        success_payout = declarer_deal_value
+    end
+
+    -- Phase 3.6 scoring house-rules: defender_contributions and
+    -- failed_contract_distribution. Build the defender seat list (every
+    -- seat not on the declarer's side); pool defender deal scores when
+    -- requested; add the failed-contract distribution share on failure.
+    -- Inert under partnership_mode for `pooled` (the side accounting is
+    -- already pooled at the side level) — `failed_contract_distribution`
+    -- is honoured in both modes.
+    local defender_seats = {}
+    for i = 1, player_count do
+        if i ~= declarer and (not sides or sides[i] ~= declarer_side) then
+            defender_seats[#defender_seats + 1] = i
+        end
+    end
+
+    local defender_base = {}
+    for _, i in ipairs(defender_seats) do
+        defender_base[i] = deal_scores[i]
+    end
+
+    local defender_pool_total
+    if config.scoring.defender_contributions == "pooled" and not sides and #defender_seats > 0 then
+        local pool = 0
+        for _, i in ipairs(defender_seats) do
+            pool = pool + deal_scores[i]
+        end
+        defender_pool_total = pool
+        local share = math.floor(pool / #defender_seats)
+        local remainder = pool - share * #defender_seats
+        for k, i in ipairs(defender_seats) do
+            defender_base[i] = share + (k == 1 and remainder or 0)
+        end
+    end
+
+    local failed_contract_distribution_extras = {}
+    for i = 1, player_count do
+        failed_contract_distribution_extras[i] = 0
+    end
+    if not made_contract and #defender_seats > 0 then
+        local mode = config.scoring.failed_contract_distribution
+        if mode == "mirrors_forced_concession" then
+            local fbc = config.bidding.forced_bid_concession
+            if fbc == "equal_split" then
+                mode = "split_among_defenders"
+            elseif fbc == "each_full" then
+                mode = "each_defender_full"
+            elseif fbc == "preset_ratio" then
+                mode = "preset_ratio_via_concession"
+            else
+                mode = "lost"
+            end
+        end
+        if mode == "split_among_defenders" then
+            local share = math.floor(effective_bid / #defender_seats)
+            local remainder = effective_bid - share * #defender_seats
+            for k, i in ipairs(defender_seats) do
+                failed_contract_distribution_extras[i] = share + (k == 1 and remainder or 0)
+            end
+        elseif mode == "each_defender_full" then
+            for _, i in ipairs(defender_seats) do
+                failed_contract_distribution_extras[i] = effective_bid
+            end
+        elseif mode == "preset_ratio_via_concession" then
+            local ratios = config.bidding.forced_bid_concession_preset_ratio or {}
+            local credited = 0
+            for k, i in ipairs(defender_seats) do
+                local r = ratios[k] or 0
+                local share = math.floor(effective_bid * r + 0.5)
+                failed_contract_distribution_extras[i] = share
+                credited = credited + share
+            end
+            local residual = effective_bid - credited
+            if residual ~= 0 then
+                local first = defender_seats[1]
+                local extras = failed_contract_distribution_extras
+                extras[first] = extras[first] + residual
+            end
+        end
     end
 
     -- Per-seat deltas. Partnership accounting credits the contract delta
     -- to the declarer's seat alone (the partner contributes 0 at the seat
     -- level); the side total is derived by summing the partner pair so
     -- the declarer's seat carries the +/-bid and the partner's pooled
-    -- capture is dropped (the bid replaces it for the side).
+    -- capture is dropped (the bid replaces it for the side). Defender
+    -- deltas combine the (possibly pooled) defender base with the failed-
+    -- contract distribution extra.
     local deltas = {}
     for i = 1, player_count do
         if i == declarer then
-            deltas[i] = made_contract and effective_bid or -effective_bid
+            deltas[i] = made_contract and success_payout or -effective_bid
         elseif sides and sides[i] == declarer_side then
             deltas[i] = 0
         else
-            deltas[i] = deal_scores[i]
+            deltas[i] = (defender_base[i] or deal_scores[i])
+                + failed_contract_distribution_extras[i]
         end
     end
 
@@ -392,6 +522,13 @@ function M.score_deal(config, opts)
         slam_against_penalty = copy_int_list(slam_against_penalty, player_count),
         deal_scores = deal_scores,
         made_contract = made_contract,
+        contract_check_value = contract_check_value,
+        success_payout = success_payout,
+        defender_pool_total = defender_pool_total,
+        failed_contract_distribution_extras = copy_int_list(
+            failed_contract_distribution_extras,
+            player_count
+        ),
         deltas = deltas,
         running_totals_before = copy_int_list(opts.running_totals, player_count),
         running_totals = running_totals_after,

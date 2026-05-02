@@ -1152,25 +1152,30 @@ local SCHEMA = {
             -- on success rather than just the bid value. Reduces
             -- over-bidding pressure. See
             -- docs/variations/house-rules.md "Score actual points on
-            -- success".
+            -- success". Phase 3.6 wired: core/scoring.lua reads this
+            -- and replaces the +bid success delta with the higher of
+            -- the bid and the declarer's deal_score.
             actual_points_on_success = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
             -- House-rule: how defender deal points reach defender
             -- running totals. `standard` credits each defender their
             -- own captured points; `pooled` sums and splits equally.
             -- Almost never used outside partnership variants. See
             -- docs/variations/house-rules.md "Defender contributions".
+            -- Phase 3.6 wired: core/scoring.lua redistributes defender
+            -- deltas under `pooled`. Inert under partnership_mode
+            -- because the side accounting already pools.
             defender_contributions = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "standard", "pooled" },
                 default = "standard",
-                status = "deferred",
+                status = "selectable",
             },
             -- House-rule: where the bid value "goes" when the
             -- declarer fails. `lost` matches the canonical Russian
@@ -1179,7 +1184,9 @@ local SCHEMA = {
             -- with varying severity. `mirrors_forced_concession`
             -- reuses the bidding.forced_bid_concession setting for
             -- consistency. See docs/variations/house-rules.md
-            -- "Failed-contract distribution".
+            -- "Failed-contract distribution". Phase 3.6 wired:
+            -- core/scoring.lua adds the configured share to each
+            -- defender's delta on failure.
             failed_contract_distribution = {
                 kind = "leaf",
                 lua_type = "string",
@@ -1190,20 +1197,26 @@ local SCHEMA = {
                     "mirrors_forced_concession",
                 },
                 default = "lost",
-                status = "deferred",
+                status = "selectable",
             },
             -- House-rule: round the declarer's captured points before
             -- comparing them to the bid. A captured 118 against a 120
             -- bid then rounds up to 120 and makes the contract.
             -- Forgiving to near-misses; reduces over-bidding caution.
             -- See docs/variations/house-rules.md "Declarer rounding
-            -- before contract check".
+            -- before contract check". Phase 3.6 wired: default is
+            -- `"on"` to preserve canonical Russian Phase 1.7 behaviour
+            -- (`Declarer made contract when deal score is at least the
+            -- bid`, where deal_score uses rounded card-points). The
+            -- `"off"` mode flips to the strict tournament reading,
+            -- comparing raw captured-points + exact bonuses to the
+            -- bid.
             declarer_rounding_before_contract_check = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "off", "on" },
-                default = "off",
-                status = "deferred",
+                default = "on",
+                status = "selectable",
             },
         },
     },
@@ -2424,7 +2437,7 @@ local function canonical_russian_blob()
             actual_points_on_success = "off",
             defender_contributions = "standard",
             failed_contract_distribution = "lost",
-            declarer_rounding_before_contract_check = "off",
+            declarer_rounding_before_contract_check = "on",
         },
         opening_game = { golden_deal = "off" },
         barrel = {

@@ -592,7 +592,7 @@ ships scripted engine tests covering every value.
     on the trick after a marriage.
   - All nine fields flip to selectable.
   - Trick-resolution and legality tests cover every variant value.
-- [ ] Implement scoring house rules.
+- [x] Implement scoring house rules.
   - `actual_points_on_success` `on` scores `max(bid, actual deal
     points)` for the declarer.
   - `defender_contributions` `pooled` sums and splits defender deal

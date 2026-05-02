@@ -748,7 +748,9 @@ end
 -- only when its `total ~= 0`, so the table scene can iterate the list
 -- without skip checks. Order mirrors the scoreboard reading order:
 -- marriage bonuses first (already part of deal_scores), then capture
--- and ace marriages, then trick-play bonuses.
+-- and ace marriages, then trick-play bonuses, then scoring house-rule
+-- effects (actual-points override, pooled defenders, failed-contract
+-- distribution).
 local function build_score_breakdown(payload)
     if not payload then
         return nil
@@ -785,6 +787,11 @@ local function build_score_breakdown(payload)
             label_key = "scene.table.scoreboard.slam_against_row",
             list = payload.slam_against_penalty,
         },
+        {
+            kind = "failed_contract_distribution",
+            label_key = "scene.table.scoreboard.failed_contract_distribution_row",
+            list = payload.failed_contract_distribution_extras,
+        },
     }
     for _, spec in ipairs(row_specs) do
         local total = nonzero_total(spec.list)
@@ -797,6 +804,43 @@ local function build_score_breakdown(payload)
             }
         end
     end
+
+    -- actual_points_on_success: declarer's success delta jumped above
+    -- the bid. Single-seat row; total is the override delta (the part
+    -- of the declarer's running-total credit that exceeds the bid).
+    if
+        payload.success_payout
+        and payload.effective_bid
+        and payload.success_payout > payload.effective_bid
+        and payload.declarer
+    then
+        local override_amount = payload.success_payout - payload.effective_bid
+        local seat_count = payload.deal_scores and #payload.deal_scores or 0
+        local list = {}
+        for i = 1, seat_count do
+            list[i] = 0
+        end
+        list[payload.declarer] = override_amount
+        rows[#rows + 1] = {
+            kind = "actual_points_override",
+            label_key = "scene.table.scoreboard.actual_points_override_row",
+            amounts_by_seat = list,
+            total = override_amount,
+        }
+    end
+
+    -- defender_contributions = pooled: defenders' deal scores were
+    -- pooled and split equally. Single info row showing the pooled
+    -- total. amounts_by_seat is nil because the value is shared.
+    if payload.defender_pool_total and payload.defender_pool_total > 0 then
+        rows[#rows + 1] = {
+            kind = "defender_contributions_pooled",
+            label_key = "scene.table.scoreboard.defender_pooled_row",
+            amounts_by_seat = nil,
+            total = payload.defender_pool_total,
+        }
+    end
+
     return rows
 end
 
@@ -819,6 +863,25 @@ local function build_deal_done_block(session)
         block.deal_scores = copy_list(payload.deal_scores)
     end
     block.score_breakdown = build_score_breakdown(payload)
+
+    -- Phase 3.6 declarer_rounding_before_contract_check = "off": expose
+    -- the raw vs. rounded values so the table scene can render an
+    -- inline "(raw X, rounded Y)" suffix next to the declarer's deal
+    -- score. Skipped under the canonical `on` default and on raspassy
+    -- payloads (no contract).
+    local config = session:config()
+    if
+        config.scoring.declarer_rounding_before_contract_check == "off"
+        and payload.declarer ~= nil
+        and payload.contract_check_value ~= nil
+        and payload.deal_scores
+    then
+        block.declarer_rounding_strict = {
+            raw = payload.contract_check_value,
+            rounded = payload.deal_scores[payload.declarer],
+        }
+    end
+
     return block
 end
 

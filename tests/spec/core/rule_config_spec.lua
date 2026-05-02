@@ -103,7 +103,7 @@ local function valid_table()
             actual_points_on_success = "off",
             defender_contributions = "standard",
             failed_contract_distribution = "lost",
-            declarer_rounding_before_contract_check = "off",
+            declarer_rounding_before_contract_check = "on",
         },
         opening_game = { golden_deal = "off" },
         barrel = {
@@ -386,7 +386,7 @@ describe("core.rule_config", function()
             assert.are.equal("off", config.scoring.actual_points_on_success)
             assert.are.equal("standard", config.scoring.defender_contributions)
             assert.are.equal("lost", config.scoring.failed_contract_distribution)
-            assert.are.equal("off", config.scoring.declarer_rounding_before_contract_check)
+            assert.are.equal("on", config.scoring.declarer_rounding_before_contract_check)
         end)
 
         it("encodes the canonical barrel rules", function()
@@ -3792,12 +3792,12 @@ describe("core.rule_config", function()
     end)
 
     describe("scoring.actual_points_on_success", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("scoring.actual_points_on_success")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -3806,30 +3806,40 @@ describe("core.rule_config", function()
             assert.is_true(allowed["on"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts on as a non-default value", function()
             local t = valid_table()
             t.scoring.actual_points_on_success = "on"
             local res = rule_config.try_new(t)
-            assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("scoring.actual_points_on_success", res.error.path)
+            assert.is_true(res.ok)
+            assert.are.equal("on", res.config.scoring.actual_points_on_success)
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
+        it("rejects an unknown value with value_not_allowed", function()
+            local t = valid_table()
+            t.scoring.actual_points_on_success = "bogus"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("value_not_allowed", res.error.code)
+        end)
+
+        it("survives a JSON round trip with on", function()
+            local t = valid_table()
+            t.scoring.actual_points_on_success = "on"
+            local cfg = rule_config.new(t)
+            local s = rule_config.to_json(cfg)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.scoring.actual_points_on_success)
+            assert.are.equal("on", res.config.scoring.actual_points_on_success)
         end)
     end)
 
     describe("scoring.defender_contributions", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("scoring.defender_contributions")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("standard", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -3838,30 +3848,40 @@ describe("core.rule_config", function()
             assert.is_true(allowed["pooled"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts pooled as a non-default value", function()
             local t = valid_table()
             t.scoring.defender_contributions = "pooled"
             local res = rule_config.try_new(t)
-            assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("scoring.defender_contributions", res.error.path)
+            assert.is_true(res.ok)
+            assert.are.equal("pooled", res.config.scoring.defender_contributions)
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
+        it("rejects an unknown value with value_not_allowed", function()
+            local t = valid_table()
+            t.scoring.defender_contributions = "bogus"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("value_not_allowed", res.error.code)
+        end)
+
+        it("survives a JSON round trip with pooled", function()
+            local t = valid_table()
+            t.scoring.defender_contributions = "pooled"
+            local cfg = rule_config.new(t)
+            local s = rule_config.to_json(cfg)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("standard", res.config.scoring.defender_contributions)
+            assert.are.equal("pooled", res.config.scoring.defender_contributions)
         end)
     end)
 
     describe("scoring.failed_contract_distribution", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("scoring.failed_contract_distribution")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("lost", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -3872,26 +3892,39 @@ describe("core.rule_config", function()
             assert.is_true(allowed["mirrors_forced_concession"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
-            for _, bad in ipairs({
+        it("accepts each non-default value", function()
+            for _, value in ipairs({
                 "split_among_defenders",
                 "each_defender_full",
                 "mirrors_forced_concession",
             }) do
                 local t = valid_table()
-                t.scoring.failed_contract_distribution = bad
+                t.scoring.failed_contract_distribution = value
                 local res = rule_config.try_new(t)
-                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
-                assert.are.equal("deferred_field_changed", res.error.code)
-                assert.are.equal("scoring.failed_contract_distribution", res.error.path)
+                assert.is_true(res.ok, "value " .. value .. " should be accepted")
+                assert.are.equal(value, res.config.scoring.failed_contract_distribution)
             end
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
+        it("rejects an unknown value with value_not_allowed", function()
+            local t = valid_table()
+            t.scoring.failed_contract_distribution = "bogus"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("value_not_allowed", res.error.code)
+        end)
+
+        it("survives a JSON round trip with split_among_defenders", function()
+            local t = valid_table()
+            t.scoring.failed_contract_distribution = "split_among_defenders"
+            local cfg = rule_config.new(t)
+            local s = rule_config.to_json(cfg)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("lost", res.config.scoring.failed_contract_distribution)
+            assert.are.equal(
+                "split_among_defenders",
+                res.config.scoring.failed_contract_distribution
+            )
         end)
     end)
 
@@ -4161,12 +4194,12 @@ describe("core.rule_config", function()
     end)
 
     describe("scoring.declarer_rounding_before_contract_check", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor with default on", function()
             local d = rule_config.schema_for("scoring.declarer_rounding_before_contract_check")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
-            assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("on", d.default)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -4175,20 +4208,27 @@ describe("core.rule_config", function()
             assert.is_true(allowed["on"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts off as a non-default value", function()
             local t = valid_table()
-            t.scoring.declarer_rounding_before_contract_check = "on"
+            t.scoring.declarer_rounding_before_contract_check = "off"
+            local res = rule_config.try_new(t)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.scoring.declarer_rounding_before_contract_check)
+        end)
+
+        it("rejects an unknown value with value_not_allowed", function()
+            local t = valid_table()
+            t.scoring.declarer_rounding_before_contract_check = "bogus"
             local res = rule_config.try_new(t)
             assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("scoring.declarer_rounding_before_contract_check", res.error.path)
+            assert.are.equal("value_not_allowed", res.error.code)
         end)
 
         it("survives a JSON round trip at its default", function()
             local s = rule_config.to_json(rule_config.canonical_russian)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.scoring.declarer_rounding_before_contract_check)
+            assert.are.equal("on", res.config.scoring.declarer_rounding_before_contract_check)
         end)
     end)
 

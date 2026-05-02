@@ -2119,8 +2119,10 @@ local function draw_deal_done_banner(view, regions)
     end
     -- Phase 3.6 score-breakdown rows. One row per non-zero bonus /
     -- penalty contributor (marriage, half-marriage capture, ace
-    -- marriage, last-trick, slam, slam-against). Future-Phase-5.1 will
-    -- replace the static text with an enter animation per row.
+    -- marriage, last-trick, slam, slam-against, failed-contract
+    -- distribution, actual-points override, pooled-defender).
+    -- Future-Phase-5.1 will replace the static text with an enter
+    -- animation per row.
     local breakdown = view.deal_done.score_breakdown
     if breakdown and #breakdown > 0 then
         cursor_y = cursor_y + 12
@@ -2132,6 +2134,21 @@ local function draw_deal_done_banner(view, regions)
             )
             cursor_y = cursor_y + 18
         end
+    end
+    -- Phase 3.6 declarer_rounding_before_contract_check = "off":
+    -- inline "(raw X, rounded Y)" indicator showing how the strict
+    -- rule applied to the declarer's check value.
+    local strict = view.deal_done.declarer_rounding_strict
+    if strict then
+        cursor_y = cursor_y + 6
+        love.graphics.print(
+            t("scene.table.scoreboard.declarer_rounding_strict_suffix", {
+                raw = strict.raw,
+                rounded = strict.rounded,
+            }),
+            centre.x + 24,
+            cursor_y
+        )
     end
 end
 

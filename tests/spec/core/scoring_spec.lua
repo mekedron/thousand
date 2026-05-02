@@ -315,7 +315,7 @@ describe("core.scoring", function()
                     actual_points_on_success = "off",
                     defender_contributions = "standard",
                     failed_contract_distribution = "lost",
-                    declarer_rounding_before_contract_check = "off",
+                    declarer_rounding_before_contract_check = "on",
                 },
                 opening_game = { golden_deal = "off" },
                 barrel = {
@@ -1631,6 +1631,341 @@ describe("core.scoring", function()
             assert.are.equal(1, g.winner)
             -- Partner seats end the deal at the same side total.
             assert.are.equal(g.running_totals[1], g.running_totals[3])
+        end)
+    end)
+
+    -- Phase 3.6 scoring house-rule coverage. Each describe drives the
+    -- engine through a non-default value of one toggle and pins the
+    -- per-seat deltas + the new echoed fields on the result state.
+    -- The helper uses the same json-round-trip idiom as the trick-play
+    -- variants spec (tests/spec/app/session_trick_play_variants_spec.lua)
+    -- so the blob is a plain Lua table without metatables.
+    local json = require("app.json")
+    local function with_scoring_overrides(overrides)
+        local blob = json.decode(rule_config.to_json(rule_config.canonical_russian))
+        overrides = overrides or {}
+        for section, fields in pairs(overrides) do
+            blob[section] = blob[section] or {}
+            for k, v in pairs(fields) do
+                blob[section][k] = v
+            end
+        end
+        return rule_config.new(blob)
+    end
+
+    describe("scoring.actual_points_on_success", function()
+        it("scores max(bid, deal_score) when on and deal_score exceeds bid", function()
+            local cfg = with_scoring_overrides({ scoring = { actual_points_on_success = "on" } })
+            local r = scoring.score_deal(cfg, {
+                declarer = 1,
+                bid = 100,
+                captured_points = { 75, 25, 20 },
+                marriage_bonuses = { 100, 0, 0 },
+                running_totals = { 0, 0, 0 },
+            })
+            assert.is_true(r.ok)
+            -- declarer captured 75 → 75 + marriage 100 = 175 ≥ bid 100;
+            -- success_payout becomes 175 instead of 100.
+            assert.is_true(r.scoring.made_contract)
+            assert.are.equal(175, r.scoring.success_payout)
+            assert.are.equal(175, r.scoring.deltas[1])
+        end)
+
+        it("falls back to the bid when deal_score is below the bid", function()
+            local cfg = with_scoring_overrides({ scoring = { actual_points_on_success = "on" } })
+            local r = scoring.score_deal(cfg, {
+                declarer = 1,
+                bid = 100,
+                captured_points = { 100, 10, 10 },
+                marriage_bonuses = { 0, 0, 0 },
+                running_totals = { 0, 0, 0 },
+            })
+            assert.is_true(r.ok)
+            -- 100 captured = 100 (rounded). deal_score equals bid → no
+            -- override; success_payout stays at the bid.
+            assert.is_true(r.scoring.made_contract)
+            assert.are.equal(100, r.scoring.success_payout)
+            assert.are.equal(100, r.scoring.deltas[1])
+        end)
+
+        it("does not boost the loss path under failure", function()
+            local cfg = with_scoring_overrides({ scoring = { actual_points_on_success = "on" } })
+            local r = scoring.score_deal(cfg, {
+                declarer = 1,
+                bid = 120,
+                captured_points = { 50, 40, 30 },
+                marriage_bonuses = { 0, 0, 0 },
+                running_totals = { 0, 0, 0 },
+            })
+            assert.is_true(r.ok)
+            -- 50 captured + 0 marriage = 50 < 120 → fails; the loss
+            -- path always uses effective_bid.
+            assert.is_false(r.scoring.made_contract)
+            assert.are.equal(-120, r.scoring.deltas[1])
+        end)
+
+        it("leaves declarer at the bid when the toggle is off (parity)", function()
+            local r = scoring.score_deal(config, {
+                declarer = 1,
+                bid = 100,
+                captured_points = { 75, 25, 20 },
+                marriage_bonuses = { 100, 0, 0 },
+                running_totals = { 0, 0, 0 },
+            })
+            assert.is_true(r.ok)
+            assert.are.equal(100, r.scoring.success_payout)
+            assert.are.equal(100, r.scoring.deltas[1])
+        end)
+    end)
+
+    describe("scoring.defender_contributions", function()
+        it("pools defender deal_scores under pooled mode", function()
+            local cfg = with_scoring_overrides({ scoring = { defender_contributions = "pooled" } })
+            local r = scoring.score_deal(cfg, {
+                declarer = 1,
+                bid = 120,
+                captured_points = { 50, 40, 30 },
+                marriage_bonuses = { 0, 0, 0 },
+                running_totals = { 0, 0, 0 },
+            })
+            assert.is_true(r.ok)
+            -- Defenders captured 40 + 30 = 70; pooled split → 35/35.
+            -- (lowest-numbered defender absorbs the remainder; here pool
+            -- is even so both get 35.)
+            assert.are.equal(70, r.scoring.defender_pool_total)
+            assert.are.equal(35, r.scoring.deltas[2])
+            assert.are.equal(35, r.scoring.deltas[3])
+            -- Declarer fails 120 → -120.
+            assert.are.equal(-120, r.scoring.deltas[1])
+        end)
+
+        it("credits remainder to lowest-numbered defender on uneven pool", function()
+            local cfg = with_scoring_overrides({ scoring = { defender_contributions = "pooled" } })
+            local r = scoring.score_deal(cfg, {
+                declarer = 1,
+                bid = 120,
+                captured_points = { 50, 23, 22 },
+                marriage_bonuses = { 0, 0, 0 },
+                running_totals = { 0, 0, 0 },
+            })
+            assert.is_true(r.ok)
+            -- 23 → 25; 22 → 20. Pool = 45; floor(45/2)=22, remainder 1
+            -- → seat 2 gets 23, seat 3 gets 22.
+            assert.are.equal(45, r.scoring.defender_pool_total)
+            assert.are.equal(23, r.scoring.deltas[2])
+            assert.are.equal(22, r.scoring.deltas[3])
+        end)
+
+        it("keeps standard mode crediting each defender their own", function()
+            local cfg =
+                with_scoring_overrides({ scoring = { defender_contributions = "standard" } })
+            local r = scoring.score_deal(cfg, {
+                declarer = 1,
+                bid = 120,
+                captured_points = { 50, 40, 30 },
+                marriage_bonuses = { 0, 0, 0 },
+                running_totals = { 0, 0, 0 },
+            })
+            assert.is_true(r.ok)
+            assert.is_nil(r.scoring.defender_pool_total)
+            assert.are.equal(40, r.scoring.deltas[2])
+            assert.are.equal(30, r.scoring.deltas[3])
+        end)
+    end)
+
+    describe("scoring.failed_contract_distribution", function()
+        it("adds 0 to defenders under lost mode (default)", function()
+            local r = scoring.score_deal(config, {
+                declarer = 1,
+                bid = 120,
+                captured_points = { 50, 40, 30 },
+                marriage_bonuses = { 0, 0, 0 },
+                running_totals = { 0, 0, 0 },
+            })
+            assert.is_true(r.ok)
+            assert.is_false(r.scoring.made_contract)
+            assert.are.same({ 0, 0, 0 }, r.scoring.failed_contract_distribution_extras)
+            assert.are.equal(40, r.scoring.deltas[2])
+            assert.are.equal(30, r.scoring.deltas[3])
+        end)
+
+        it("splits the bid equally under split_among_defenders", function()
+            local cfg = with_scoring_overrides({
+                scoring = { failed_contract_distribution = "split_among_defenders" },
+            })
+            local r = scoring.score_deal(cfg, {
+                declarer = 1,
+                bid = 100,
+                captured_points = { 50, 40, 30 },
+                marriage_bonuses = { 0, 0, 0 },
+                running_totals = { 0, 0, 0 },
+            })
+            assert.is_true(r.ok)
+            -- Declarer fails 100; defender share = 50 each.
+            assert.is_false(r.scoring.made_contract)
+            assert.are.equal(50, r.scoring.failed_contract_distribution_extras[2])
+            assert.are.equal(50, r.scoring.failed_contract_distribution_extras[3])
+            assert.are.equal(40 + 50, r.scoring.deltas[2])
+            assert.are.equal(30 + 50, r.scoring.deltas[3])
+        end)
+
+        it("credits the remainder to lowest-numbered defender on uneven split", function()
+            local cfg = with_scoring_overrides({
+                scoring = { failed_contract_distribution = "split_among_defenders" },
+            })
+            -- bid 105 ÷ 2 defenders = 52 with remainder 1 → seat 2 gets
+            -- 53, seat 3 gets 52.
+            local r = scoring.score_deal(cfg, {
+                declarer = 1,
+                bid = 105,
+                captured_points = { 50, 40, 30 },
+                marriage_bonuses = { 0, 0, 0 },
+                running_totals = { 0, 0, 0 },
+            })
+            assert.is_true(r.ok)
+            assert.are.equal(53, r.scoring.failed_contract_distribution_extras[2])
+            assert.are.equal(52, r.scoring.failed_contract_distribution_extras[3])
+        end)
+
+        it("gives every defender the full bid under each_defender_full", function()
+            local cfg = with_scoring_overrides({
+                scoring = { failed_contract_distribution = "each_defender_full" },
+            })
+            local r = scoring.score_deal(cfg, {
+                declarer = 1,
+                bid = 100,
+                captured_points = { 50, 40, 30 },
+                marriage_bonuses = { 0, 0, 0 },
+                running_totals = { 0, 0, 0 },
+            })
+            assert.is_true(r.ok)
+            assert.are.equal(100, r.scoring.failed_contract_distribution_extras[2])
+            assert.are.equal(100, r.scoring.failed_contract_distribution_extras[3])
+            assert.are.equal(40 + 100, r.scoring.deltas[2])
+            assert.are.equal(30 + 100, r.scoring.deltas[3])
+        end)
+
+        it("mirrors forced_bid_concession = equal_split", function()
+            local cfg = with_scoring_overrides({
+                scoring = { failed_contract_distribution = "mirrors_forced_concession" },
+                bidding = { forced_bid_concession = "equal_split" },
+            })
+            local r = scoring.score_deal(cfg, {
+                declarer = 1,
+                bid = 100,
+                captured_points = { 50, 40, 30 },
+                marriage_bonuses = { 0, 0, 0 },
+                running_totals = { 0, 0, 0 },
+            })
+            assert.is_true(r.ok)
+            assert.are.equal(50, r.scoring.failed_contract_distribution_extras[2])
+            assert.are.equal(50, r.scoring.failed_contract_distribution_extras[3])
+        end)
+
+        it("mirrors forced_bid_concession = preset_ratio", function()
+            local cfg = with_scoring_overrides({
+                scoring = { failed_contract_distribution = "mirrors_forced_concession" },
+                bidding = {
+                    forced_bid_concession = "preset_ratio",
+                    forced_bid_concession_preset_ratio = { 0.6, 0.4 },
+                },
+            })
+            local r = scoring.score_deal(cfg, {
+                declarer = 1,
+                bid = 100,
+                captured_points = { 50, 40, 30 },
+                marriage_bonuses = { 0, 0, 0 },
+                running_totals = { 0, 0, 0 },
+            })
+            assert.is_true(r.ok)
+            -- 100 × 0.6 = 60; 100 × 0.4 = 40. Total credited = 100.
+            assert.are.equal(60, r.scoring.failed_contract_distribution_extras[2])
+            assert.are.equal(40, r.scoring.failed_contract_distribution_extras[3])
+        end)
+
+        it("falls back to lost when forced_bid_concession is off under mirrors", function()
+            local cfg = with_scoring_overrides({
+                scoring = { failed_contract_distribution = "mirrors_forced_concession" },
+                bidding = { forced_bid_concession = "off" },
+            })
+            local r = scoring.score_deal(cfg, {
+                declarer = 1,
+                bid = 100,
+                captured_points = { 50, 40, 30 },
+                marriage_bonuses = { 0, 0, 0 },
+                running_totals = { 0, 0, 0 },
+            })
+            assert.is_true(r.ok)
+            assert.are.same({ 0, 0, 0 }, r.scoring.failed_contract_distribution_extras)
+        end)
+
+        it("does not distribute under success", function()
+            local cfg = with_scoring_overrides({
+                scoring = { failed_contract_distribution = "split_among_defenders" },
+            })
+            local r = scoring.score_deal(cfg, {
+                declarer = 1,
+                bid = 100,
+                captured_points = { 75, 25, 20 },
+                marriage_bonuses = { 100, 0, 0 },
+                running_totals = { 0, 0, 0 },
+            })
+            assert.is_true(r.ok)
+            assert.is_true(r.scoring.made_contract)
+            assert.are.same({ 0, 0, 0 }, r.scoring.failed_contract_distribution_extras)
+        end)
+    end)
+
+    describe("scoring.declarer_rounding_before_contract_check", function()
+        it("rounds before checking under on (canonical default)", function()
+            -- 118 captured + 0 marriage. on → round to 120; meets bid 120.
+            local r = scoring.score_deal(config, {
+                declarer = 1,
+                bid = 120,
+                captured_points = { 118, 2, 0 },
+                marriage_bonuses = { 0, 0, 0 },
+                running_totals = { 0, 0, 0 },
+            })
+            assert.is_true(r.ok)
+            assert.is_true(r.scoring.made_contract)
+            assert.are.equal(120, r.scoring.contract_check_value)
+            assert.are.equal(120, r.scoring.deltas[1])
+        end)
+
+        it("uses raw captured under off (strict tournament)", function()
+            local cfg = with_scoring_overrides({
+                scoring = { declarer_rounding_before_contract_check = "off" },
+            })
+            -- 118 captured + 0 marriage = 118 raw < 120 → fails.
+            local r = scoring.score_deal(cfg, {
+                declarer = 1,
+                bid = 120,
+                captured_points = { 118, 2, 0 },
+                marriage_bonuses = { 0, 0, 0 },
+                running_totals = { 0, 0, 0 },
+            })
+            assert.is_true(r.ok)
+            assert.is_false(r.scoring.made_contract)
+            assert.are.equal(118, r.scoring.contract_check_value)
+            assert.are.equal(-120, r.scoring.deltas[1])
+        end)
+
+        it("preserves rounded deal_scores in the result regardless of the toggle", function()
+            local cfg = with_scoring_overrides({
+                scoring = { declarer_rounding_before_contract_check = "off" },
+            })
+            local r = scoring.score_deal(cfg, {
+                declarer = 1,
+                bid = 120,
+                captured_points = { 118, 2, 0 },
+                marriage_bonuses = { 0, 0, 0 },
+                running_totals = { 0, 0, 0 },
+            })
+            assert.is_true(r.ok)
+            -- 118 still rounds to 120 in deal_scores; only the contract
+            -- check uses the raw 118.
+            assert.are.equal(120, r.scoring.deal_scores[1])
+            assert.are.equal(120, r.scoring.card_points_rounded[1])
         end)
     end)
 end)

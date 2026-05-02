@@ -1267,6 +1267,17 @@ local function on_tricks_end(self)
             last_trick_bonus = sd.scoring.last_trick_bonus,
             slam_bonus = sd.scoring.slam_bonus,
             slam_against_penalty = sd.scoring.slam_against_penalty,
+            -- Phase 3.6 scoring house-rule outputs surfaced for the
+            -- table view-model: contract-check value (raw vs. rounded
+            -- under declarer_rounding_before_contract_check),
+            -- success_payout (actual_points_on_success override),
+            -- defender_pool_total (defender_contributions = pooled),
+            -- and per-seat failed-contract distribution extras.
+            contract_check_value = sd.scoring.contract_check_value,
+            success_payout = sd.scoring.success_payout,
+            effective_bid = sd.scoring.effective_bid,
+            defender_pool_total = sd.scoring.defender_pool_total,
+            failed_contract_distribution_extras = sd.scoring.failed_contract_distribution_extras,
         }
     end
 end
