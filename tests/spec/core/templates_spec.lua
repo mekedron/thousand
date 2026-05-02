@@ -110,9 +110,9 @@ describe("core.templates", function()
 
         it("bubbles up a deferred-field change as invalid_rule_config", function()
             local blob = valid_wrapper()
-            -- half_marriage_capture_bonus is deferred while the Phase 3.6
-            -- marriage-house-rules task is still pending.
-            blob.ruleConfig.marriages.half_marriage_capture_bonus = "on"
+            -- tricks.must_overtake_strictness is deferred while the
+            -- Phase 3.6 trick-play house-rules task is still pending.
+            blob.ruleConfig.tricks.must_overtake_strictness = "polish_strict"
             local r = templates.try_new(blob)
             assert.is_false(r.ok)
             assert.are.equal("invalid_rule_config", r.error.code)

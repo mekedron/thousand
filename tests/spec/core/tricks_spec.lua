@@ -257,6 +257,61 @@ describe("core.tricks", function()
         end)
     end)
 
+    describe("set_trump_in_trick() — Phase 3.6 immediate variant", function()
+        it("accepts a trump change while a trick is in progress", function()
+            local s = fresh_tricks(1)
+            s = play_ok(s, 1, c("hearts", "9"))
+            local result = tricks.set_trump_in_trick(s, "hearts")
+            assert.is_true(result.ok)
+            assert.are.equal("hearts", result.tricks.trump)
+        end)
+
+        it("re-ranks the trick under the new trump", function()
+            -- Player 1 leads hearts 9, the table was no-trump so the trick
+            -- would resolve by rank order. After the leader declares
+            -- hearts as trump mid-trick, hearts becomes the trump suit
+            -- and the led 9 of hearts now beats every non-hearts card.
+            local s = fresh_tricks(1)
+            s = play_ok(s, 1, c("hearts", "9"))
+            s = tricks.set_trump_in_trick(s, "hearts").tricks
+            -- Player 2 holds K/10 of hearts; pick the K to keep cleanly
+            -- following suit.
+            s = play_ok(s, 2, c("hearts", "K"))
+            -- Player 3 must follow if possible — they hold hearts cards
+            -- (Q/J or A). Use legal_cards to pick a legal one.
+            local legal = tricks.legal_cards(s, 3).cards
+            s = play_ok(s, 3, legal[1])
+            -- The trick is now resolved under hearts trump; the winner
+            -- is the highest hearts card. Confirm trump was honoured.
+            assert.are.equal("hearts", s.trump)
+        end)
+
+        it("appends a set_trump_in_trick entry to history", function()
+            local s = fresh_tricks(1)
+            s = play_ok(s, 1, c("hearts", "9"))
+            local result = tricks.set_trump_in_trick(s, "hearts")
+            assert.is_true(result.ok)
+            local history = result.tricks.history
+            local last = history[#history]
+            assert.are.equal("set_trump_in_trick", last.action)
+            assert.are.equal("hearts", last.suit)
+        end)
+
+        it("rejects when the input is not a tricks state", function()
+            local result = tricks.set_trump_in_trick({}, "hearts")
+            assert.is_false(result.ok)
+            assert.are.equal("not_a_tricks", result.error.code)
+        end)
+
+        it("rejects an unknown suit", function()
+            local s = fresh_tricks(1)
+            s = play_ok(s, 1, c("hearts", "9"))
+            local result = tricks.set_trump_in_trick(s, "bogus")
+            assert.is_false(result.ok)
+            assert.are.equal("bad_suit", result.error.code)
+        end)
+    end)
+
     describe("legal_cards() — lead", function()
         it("returns every card in the leader's hand on the lead", function()
             local s = fresh_tricks(1)

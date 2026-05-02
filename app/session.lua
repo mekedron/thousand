@@ -340,6 +340,26 @@ function M.new(opts)
         _contra_declarer = nil,
         _forced_concession_offer = nil,
         _first_trick_played = false,
+        -- Phase 3.6 marriage-house-rules per-deal state.
+        --   _pre_first_trick_marriage_queue: nil unless
+        --       `marriage_announcement_timing = "pre_first_trick"` is
+        --       active and at least one seat holds a marriage at the
+        --       start of the tricks phase. Shape: { seats = { ... },
+        --       current_index = 1 }; the head of seats is the seat
+        --       to act next.
+        --   _half_marriage_captures: per-seat per-suit map tracking
+        --       captured K/Q halves in tricks. Awarded once per suit
+        --       per non-declarer when both K and Q have been
+        --       captured by the same seat under
+        --       `half_marriage_capture_bonus = "on"`.
+        --   _half_marriage_capture_bonuses: per-seat awarded total
+        --       for the deal, fed to scoring.score_deal.
+        --   _drowned_marriage_log: per-deal record of cancellations
+        --       under `drowned_marriage = "retroactive_cancel"`.
+        _pre_first_trick_marriage_queue = nil,
+        _half_marriage_captures = {},
+        _half_marriage_capture_bonuses = {},
+        _drowned_marriage_log = {},
     }, Session)
     evaluate_entitlement_with_forced_loop(self)
     return self
@@ -398,7 +418,22 @@ function M.from_state(state)
         _contra_declarer = state.contra_declarer,
         _forced_concession_offer = state.forced_concession_offer,
         _first_trick_played = state.first_trick_played or false,
+        _pre_first_trick_marriage_queue = state.pre_first_trick_marriage_queue,
+        _half_marriage_captures = state.half_marriage_captures or {},
+        _half_marriage_capture_bonuses = state.half_marriage_capture_bonuses or {},
+        _drowned_marriage_log = state.drowned_marriage_log or {},
     }, Session)
+    -- Phase 3.6: when from_state restores a tricks-phase session and
+    -- the active variant is pre_first_trick, re-open the queue from
+    -- the held hands. Tests and saved-game restoration both rely on
+    -- this hook.
+    if
+        self._tricks
+        and self._tricks.status == "in_progress"
+        and not self._pre_first_trick_marriage_queue
+    then
+        self:_open_pre_first_trick_window(self._tricks.hands)
+    end
     return self
 end
 
@@ -524,6 +559,9 @@ function Session:current_phase()
         if self._raspassy_active then
             return "raspassy_play"
         end
+        if self._pre_first_trick_marriage_queue then
+            return "awaiting_pre_first_trick_marriages"
+        end
         return "tricks"
     end
     if self._talon then
@@ -555,6 +593,9 @@ function Session:current_turn()
         return self._talon and self._talon.declarer or nil
     elseif phase == "awaiting_rebuy_decision" then -- i18n-ok: phase enum
         return self._rebuy_pending and self._rebuy_pending.seats[1] or nil
+    elseif phase == "awaiting_pre_first_trick_marriages" then -- i18n-ok: phase enum
+        local q = self._pre_first_trick_marriage_queue
+        return q and q.seats[q.current_index] or nil
     elseif phase == "tricks" or phase == "raspassy_play" then -- i18n-ok: phase enums
         return self._tricks and self._tricks.next_to_play or nil
     end
@@ -802,6 +843,49 @@ local function start_tricks(self, hands, declarer, opts)
         error(msg, 2)
     end
     self._tricks = tricks_result.tricks
+
+    self:_open_pre_first_trick_window(hands)
+end
+
+-- Phase 3.6 marriage_announcement_timing = "pre_first_trick": open the
+-- announcement window in dealer-clockwise order starting at the
+-- leader. Only seats currently holding a K-Q marriage (or four aces
+-- under ace_marriage ~= "off") queue up; everyone else is skipped
+-- silently. Exposed as a method so `Session.from_state` can reproduce
+-- the same window for tests + saved-game restoration.
+function Session:_open_pre_first_trick_window(hands)
+    if self._config.marriages.marriage_announcement_timing ~= "pre_first_trick" then
+        return
+    end
+    if not self._tricks or self._tricks.status ~= "in_progress" then
+        return
+    end
+    local pc = self._config.players.count
+    local leader = self._tricks.next_to_play
+    local seats = {}
+    for offset = 0, pc - 1 do
+        local seat = ((leader - 1 + offset) % pc) + 1
+        local has_kq = #marriages_module.detect(hands[seat]) > 0
+        local has_aces = false
+        if self._config.marriages.ace_marriage ~= "off" then
+            local seen = {}
+            for _, c in ipairs(hands[seat]) do
+                if c.rank == "A" then
+                    seen[c.suit] = true
+                end
+            end
+            has_aces = seen.hearts and seen.diamonds and seen.clubs and seen.spades
+        end
+        if has_kq or has_aces then
+            seats[#seats + 1] = seat
+        end
+    end
+    if #seats > 0 then
+        self._pre_first_trick_marriage_queue = {
+            seats = seats,
+            current_index = 1,
+        }
+    end
 end
 
 -- Auction → talon (or auction → tricks for layouts with no traditional
@@ -1074,11 +1158,37 @@ local function on_tricks_end(self)
     local declarer = self._talon.declarer
     local bid = self._talon.final_bid
 
+    local player_count = self._config.players.count
+    local half_capture_bonuses = {}
+    local ace_marriage_bonuses = {}
+    for i = 1, player_count do
+        half_capture_bonuses[i] = self._half_marriage_capture_bonuses[i] or 0
+        ace_marriage_bonuses[i] = 0
+    end
+    for _, decl in ipairs(self._marriages.declarations) do
+        if decl.kind == "ace_marriage" and not decl.cancelled then
+            ace_marriage_bonuses[decl.player] = (ace_marriage_bonuses[decl.player] or 0)
+                + decl.value
+        end
+    end
+    -- The marriages module already credits ace-marriage values into
+    -- `bonuses` on declaration. To avoid double counting, build the
+    -- K-Q-only marriage_bonuses array by subtracting the ace-marriage
+    -- contributions; the deal scoreboard surfaces them separately.
+    local kq_bonuses = {}
+    for i = 1, player_count do
+        kq_bonuses[i] = self._marriages.bonuses[i] - (ace_marriage_bonuses[i] or 0)
+        if kq_bonuses[i] < 0 then
+            kq_bonuses[i] = 0
+        end
+    end
     local sd = scoring.score_deal(self._config, {
         declarer = declarer,
         bid = bid,
         captured_points = t.captured_points,
-        marriage_bonuses = self._marriages.bonuses,
+        marriage_bonuses = kq_bonuses,
+        half_marriage_capture_bonuses = half_capture_bonuses,
+        ace_marriage_bonuses = ace_marriage_bonuses,
         running_totals = self._running_totals,
     })
     if not sd.ok then
@@ -1557,11 +1667,49 @@ end
 
 -- Marriage + trick mutators --------------------------------------------
 
+-- Apply the marriage trump rule after a successful K-Q declaration:
+--   * If `_marriages.trump` did not advance to `suit`, the
+--     `one_trump_per_deal` rule suppressed the flip — do nothing.
+--   * Otherwise: under `trump_activation_timing = "immediate"` flip
+--     trump now via `tricks_module.set_trump_in_trick`; under the
+--     standard `next_trick` schedule the flip for the next trick
+--     boundary via `_pending_trump_apply`.
+local function apply_marriage_trump_rule(self, suit)
+    if self._marriages.trump ~= suit then
+        -- one_trump_per_deal kept the trump suit unchanged.
+        self._pending_trump_apply = nil
+        return
+    end
+    if self._config.marriages.trump_activation_timing == "immediate" then
+        if self._tricks and self._tricks.status == "in_progress" then
+            local r = tricks_module.set_trump_in_trick(self._tricks, suit)
+            if not r.ok then
+                error(
+                    "session: set_trump_in_trick failed: " -- i18n-ok
+                        .. tostring(r.error.message),
+                    2
+                )
+            end
+            self._tricks = r.tricks
+        end
+        self._pending_trump_apply = nil
+    else
+        self._pending_trump_apply = suit
+    end
+end
+
 function Session:declare_marriage(player, suit)
     if self._raspassy_active then
         return failure("marriages_disabled_in_raspassy", "raspassy plays without marriages", {
             phase = self:current_phase(),
         })
+    end
+    if self._config.marriages.marriage_announcement_timing == "pre_first_trick" then
+        return failure(
+            "marriage_announcement_phase_closed",
+            "declare_marriage_blocked",
+            { mode = "pre_first_trick" }
+        )
     end
     if not self._tricks or self._tricks.status ~= "in_progress" then
         return failure("wrong_phase", "declare_marriage requires the tricks phase", {
@@ -1585,11 +1733,291 @@ function Session:declare_marriage(player, suit)
         return result
     end
     self._marriages = result.marriages
-    -- Schedule the trump flip for the next trick boundary; the engine
-    -- enforces "set_trump only between tricks" so the application of
-    -- the new trump waits for the trick to resolve.
-    self._pending_trump_apply = suit
+    apply_marriage_trump_rule(self, suit)
     return { ok = true }
+end
+
+-- Phase 3.6: declare a marriage under
+-- `marriage_announcement_timing in {"hand_announcement","pre_first_trick"}`.
+-- The seat keeps the K and Q in hand and need not lead either; the
+-- bonus posts and trump flips per the active timing.
+function Session:announce_marriage(player, suit)
+    if self._raspassy_active then
+        return failure("marriages_disabled_in_raspassy", "raspassy plays without marriages", {
+            phase = self:current_phase(),
+        })
+    end
+    local mode = self._config.marriages.marriage_announcement_timing
+    if mode == "on_lead" then
+        return failure("wrong_announcement_mode", "announce_marriage_disabled", { mode = mode })
+    end
+
+    local hand
+    if mode == "pre_first_trick" then
+        if not self._pre_first_trick_marriage_queue then
+            return failure("marriage_announcement_phase_closed", "window_closed", { mode = mode })
+        end
+        local q = self._pre_first_trick_marriage_queue
+        local current = q.seats[q.current_index]
+        if current ~= player then
+            return failure("not_your_turn", "wrong_seat", {
+                player = player,
+                turn = current,
+            })
+        end
+        hand = self._tricks and self._tricks.hands[player] or self._hands[player]
+    else
+        -- hand_announcement: leader on an empty trick.
+        if not self._tricks or self._tricks.status ~= "in_progress" then
+            return failure("wrong_phase", "announce_marriage requires the tricks phase", {
+                phase = self:current_phase(),
+            })
+        end
+        if self._tricks.next_to_play ~= player then
+            return failure("not_your_turn", "announce_marriage requires the seat on lead", {
+                player = player,
+                turn = self._tricks.next_to_play,
+            })
+        end
+        if #self._tricks.current_trick.plays ~= 0 then
+            return failure("not_on_lead", "announce_marriage requires an empty trick", {
+                plays = #self._tricks.current_trick.plays,
+            })
+        end
+        hand = self._tricks.hands[player]
+    end
+
+    local result = marriages_module.announce_from_hand(self._marriages, player, suit, hand)
+    if not result.ok then
+        return result
+    end
+    self._marriages = result.marriages
+    apply_marriage_trump_rule(self, suit)
+
+    if mode == "pre_first_trick" then
+        local q = self._pre_first_trick_marriage_queue
+        q.current_index = q.current_index + 1
+        if q.current_index > #q.seats then
+            self._pre_first_trick_marriage_queue = nil
+        end
+    end
+    return { ok = true }
+end
+
+-- Phase 3.6: pass a seat's pre-first-trick announcement window. Only
+-- valid under `marriage_announcement_timing = "pre_first_trick"` and
+-- only for the seat the queue is currently asking.
+function Session:skip_pre_first_trick_marriage(player)
+    if self._config.marriages.marriage_announcement_timing ~= "pre_first_trick" then
+        return failure("wrong_announcement_mode", "skip_disabled", {
+            mode = self._config.marriages.marriage_announcement_timing,
+        })
+    end
+    if not self._pre_first_trick_marriage_queue then
+        return failure("marriage_announcement_phase_closed", "window_closed", {})
+    end
+    local q = self._pre_first_trick_marriage_queue
+    local current = q.seats[q.current_index]
+    if current ~= player then
+        return failure("not_your_turn", "wrong_seat", {
+            player = player,
+            turn = current,
+        })
+    end
+    q.current_index = q.current_index + 1
+    if q.current_index > #q.seats then
+        self._pre_first_trick_marriage_queue = nil
+    end
+    return { ok = true }
+end
+
+-- Phase 3.6: declare the four-Aces (тузовый марьяж) bonus. Valid only
+-- under `marriages.ace_marriage in {"on","sets_trump"}` for the seat
+-- on lead at an empty trick. Under `sets_trump` the engine records a
+-- pending ace-trump activation; the orchestrator flips trump when the
+-- declaring seat next leads an Ace.
+function Session:declare_ace_marriage(player)
+    if self._raspassy_active then
+        return failure("marriages_disabled_in_raspassy", "raspassy plays without marriages", {
+            phase = self:current_phase(),
+        })
+    end
+    if self._config.marriages.ace_marriage == "off" then
+        return failure("ace_marriage_disabled", "ace_marriage_off", { mode = "off" })
+    end
+    -- Allow during the pre-first-trick window or on lead at an empty
+    -- trick.
+    local hand
+    if self._pre_first_trick_marriage_queue then
+        local q = self._pre_first_trick_marriage_queue
+        local current = q.seats[q.current_index]
+        if current ~= player then
+            return failure("not_your_turn", "wrong_seat", {
+                player = player,
+                turn = current,
+            })
+        end
+        hand = self._tricks and self._tricks.hands[player] or self._hands[player]
+    else
+        if not self._tricks or self._tricks.status ~= "in_progress" then
+            return failure("wrong_phase", "declare_ace_marriage requires the tricks phase", {
+                phase = self:current_phase(),
+            })
+        end
+        if self._tricks.next_to_play ~= player then
+            return failure("not_your_turn", "declare_ace_marriage requires the seat on lead", {
+                player = player,
+                turn = self._tricks.next_to_play,
+            })
+        end
+        if #self._tricks.current_trick.plays ~= 0 then
+            return failure("not_on_lead", "declare_ace_marriage requires an empty trick", {
+                plays = #self._tricks.current_trick.plays,
+            })
+        end
+        hand = self._tricks.hands[player]
+    end
+
+    local result = marriages_module.declare_ace_marriage(self._marriages, player, hand)
+    if not result.ok then
+        return result
+    end
+    self._marriages = result.marriages
+    return { ok = true }
+end
+
+-- Read-only accessor for the pre-first-trick announcement window.
+-- Returns nil when the window is closed; otherwise `{ seat,
+-- pending_seats, eligible_suits }` where `seat` is the seat to act
+-- next, `pending_seats` is the remaining queue (including `seat`),
+-- and `eligible_suits` is the list of suits the active seat may
+-- declare.
+function Session:pre_first_trick_announcement_state()
+    local q = self._pre_first_trick_marriage_queue
+    if not q then
+        return nil
+    end
+    local seat = q.seats[q.current_index]
+    local pending = {}
+    for i = q.current_index, #q.seats do
+        pending[#pending + 1] = q.seats[i]
+    end
+    local hand = self._tricks and self._tricks.hands[seat] or self._hands[seat]
+    local suits = marriages_module.detect(hand)
+    return { seat = seat, pending_seats = pending, eligible_suits = suits }
+end
+
+-- Read-only accessor for the drowned-marriage banner. Returns the
+-- full per-deal log; the most recent entry feeds the table-scene
+-- banner.
+function Session:drowned_marriage_log()
+    return self._drowned_marriage_log or {}
+end
+
+-- Read-only accessor for the pending ace-trump activation under
+-- `ace_marriage = "sets_trump"`. Returns the seat that must next
+-- lead an Ace, or nil.
+function Session:pending_ace_trump_seat()
+    return self._marriages and self._marriages.pending_ace_trump or nil
+end
+
+-- Test-only accessor for the marriages engine state. Production
+-- code reads marriage outcomes through the higher-level helpers
+-- (`trump`, `available_marriages`, `drowned_marriage_log`,
+-- `pending_ace_trump_seat`). Tests sometimes need the raw bonuses
+-- and declarations to assert specific values.
+function Session:_marriages_state_for_test()
+    return self._marriages
+end
+
+-- Test-only accessor for the per-seat half-marriage capture bonus
+-- accumulator. The same array is fed into scoring.score_deal at
+-- end-of-deal; tests can observe it before that to validate the
+-- per-trick award path.
+function Session:_half_marriage_capture_bonuses_for_test()
+    return self._half_marriage_capture_bonuses
+end
+
+-- Phase 3.6 marriage trick-side effects:
+--   * `half_marriage_capture_bonus = "on"` — if a non-declarer captures
+--     both the K and Q of the same suit in tricks, award the bonus
+--     once.
+--   * `drowned_marriage = "retroactive_cancel"` — if a previously
+--     declared K-Q marriage's K or Q is captured by a seat other
+--     than the declarer, reverse the bonus.
+local function record_trick_marriage_effects(self, _resolved_trick, _trick_plays_before)
+    local completed = self._tricks and self._tricks.completed_tricks
+    if not completed then
+        return
+    end
+    local last = completed[#completed]
+    if not last then
+        return
+    end
+    local declarer = self._talon and self._talon.declarer
+    local config = self._config
+
+    -- Half-marriage capture bonus.
+    if config.marriages.half_marriage_capture_bonus == "on" then
+        local bonus_value = config.marriages.half_marriage_capture_bonus_value
+        for _, play in ipairs(last.plays) do
+            local c = play.card
+            local r = c.rank
+            if (r == "K" or r == "Q") and last.winner ~= declarer then -- i18n-ok: rank enums
+                local seat_caps = self._half_marriage_captures[last.winner]
+                if not seat_caps then
+                    seat_caps = {}
+                    self._half_marriage_captures[last.winner] = seat_caps
+                end
+                local suit_caps = seat_caps[c.suit]
+                if not suit_caps then
+                    suit_caps = { K = false, Q = false, awarded = false }
+                    seat_caps[c.suit] = suit_caps
+                end
+                suit_caps[c.rank] = true
+                if suit_caps.K and suit_caps.Q and not suit_caps.awarded then
+                    suit_caps.awarded = true
+                    self._half_marriage_capture_bonuses[last.winner] = (
+                        self._half_marriage_capture_bonuses[last.winner] or 0
+                    ) + bonus_value
+                end
+            end
+        end
+    end
+
+    -- Drowned marriage cancellation.
+    if config.marriages.drowned_marriage == "retroactive_cancel" then
+        for _, play in ipairs(last.plays) do
+            local c = play.card
+            local rk = c.rank
+            if rk == "K" or rk == "Q" then -- i18n-ok: rank enums
+                local declarations = self._marriages.declarations
+                for _, decl in ipairs(declarations) do
+                    if
+                        (decl.kind == nil or decl.kind == "kq")
+                        and not decl.cancelled
+                        and decl.suit == c.suit
+                        and decl.player ~= last.winner
+                        and last.winner ~= decl.player
+                    then
+                        local cancel_result =
+                            marriages_module.cancel_drowned(self._marriages, c.suit)
+                        if cancel_result.ok then
+                            self._marriages = cancel_result.marriages
+                            self._drowned_marriage_log = self._drowned_marriage_log or {}
+                            self._drowned_marriage_log[#self._drowned_marriage_log + 1] = {
+                                suit = c.suit,
+                                declarer = decl.player,
+                                value = decl.value,
+                                trick_index = #completed,
+                            }
+                        end
+                        break
+                    end
+                end
+            end
+        end
+    end
 end
 
 function Session:play(player, card)
@@ -1598,7 +2026,42 @@ function Session:play(player, card)
             phase = self:current_phase(),
         })
     end
+    if self._pre_first_trick_marriage_queue then
+        return failure(
+            "awaiting_pre_first_trick_marriages",
+            "play_blocked_pre_first_trick",
+            { phase = self:current_phase() }
+        )
+    end
+
+    -- Phase 3.6 ace_marriage = "sets_trump": if the declaring seat is
+    -- about to lead an Ace, flip trump immediately on this lead.
+    -- Ranking is read at the resolver per play, so set_trump_in_trick
+    -- before the play is recorded is sufficient.
+    local pending_ace_seat = self._marriages and self._marriages.pending_ace_trump
+    if
+        pending_ace_seat == player
+        and #self._tricks.current_trick.plays == 0
+        and type(card) == "table"
+        and card.rank == "A"
+    then
+        local r = marriages_module.activate_ace_trump(self._marriages, card.suit)
+        if r.ok then
+            self._marriages = r.marriages
+            local sr = tricks_module.set_trump_in_trick(self._tricks, card.suit)
+            if not sr.ok then
+                error(
+                    "session: set_trump_in_trick failed (ace marriage): " -- i18n-ok
+                        .. tostring(sr.error.message),
+                    2
+                )
+            end
+            self._tricks = sr.tricks
+        end
+    end
+
     local before_played = self._tricks.tricks_played
+    local trick_plays_before = self._tricks.current_trick.plays
     local result = tricks_module.play(self._tricks, player, card)
     if not result.ok then
         return result
@@ -1609,6 +2072,8 @@ function Session:play(player, card)
     -- end-of-deal. set_trump is only legal between tricks, which is
     -- exactly the window we land in when tricks_played increments.
     if self._tricks.tricks_played > before_played then
+        local resolved_trick = self._tricks.history[#self._tricks.history]
+        record_trick_marriage_effects(self, resolved_trick, trick_plays_before)
         if self._pending_trump_apply and self._tricks.status == "in_progress" then
             local set_result = tricks_module.set_trump(self._tricks, self._pending_trump_apply)
             if not set_result.ok then

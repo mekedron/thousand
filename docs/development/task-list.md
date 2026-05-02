@@ -529,7 +529,7 @@ ships scripted engine tests covering every value.
     the auction.
   - All nine fields flip to selectable.
   - Auction state-machine tests cover every variant value.
-- [ ] Implement marriage house rules.
+- [x] Implement marriage house rules.
   - `half_marriage_capture_bonus` `on` credits the defender who
     captures both K and Q of the same suit; the bonus value lives in a
     new sibling field.

@@ -153,6 +153,33 @@ describe("core.scoring", function()
             assert.are.equal(2, result.error.player)
         end)
 
+        it("rejects negative half_marriage_capture_bonuses", function()
+            local result = scoring.score_deal(
+                config,
+                default_opts({ half_marriage_capture_bonuses = { 0, -1, 0 } })
+            )
+            assert.is_false(result.ok)
+            assert.are.equal("bad_half_marriage_capture_bonuses", result.error.code)
+            assert.are.equal(2, result.error.player)
+        end)
+
+        it("rejects half_marriage_capture_bonuses of the wrong length", function()
+            local result = scoring.score_deal(
+                config,
+                default_opts({ half_marriage_capture_bonuses = { 0, 0 } })
+            )
+            assert.is_false(result.ok)
+            assert.are.equal("bad_half_marriage_capture_bonuses", result.error.code)
+        end)
+
+        it("rejects negative ace_marriage_bonuses", function()
+            local result =
+                scoring.score_deal(config, default_opts({ ace_marriage_bonuses = { 0, -200, 0 } }))
+            assert.is_false(result.ok)
+            assert.are.equal("bad_ace_marriage_bonuses", result.error.code)
+            assert.are.equal(2, result.error.player)
+        end)
+
         it("rejects captured_points whose sum exceeds 120", function()
             local result =
                 scoring.score_deal(config, default_opts({ captured_points = { 80, 30, 30 } }))
@@ -257,10 +284,12 @@ describe("core.scoring", function()
                 marriages = {
                     values = { hearts = 100, diamonds = 80, clubs = 60, spades = 40 },
                     half_marriage_capture_bonus = "off",
+                    half_marriage_capture_bonus_value = 20,
                     trump_activation_timing = "next_trick",
                     marriage_announcement_timing = "on_lead",
                     drowned_marriage = "off",
                     ace_marriage = "off",
+                    ace_marriage_value = 200,
                     one_trump_per_deal = "off",
                 },
                 tricks = {
@@ -535,6 +564,37 @@ describe("core.scoring", function()
             assert.are.equal(75 + 100, s.deal_scores[1])
             assert.are.equal(20, s.deal_scores[2])
             assert.are.equal(25 + 60, s.deal_scores[3])
+        end)
+
+        it("adds half_marriage_capture_bonuses to deal_scores", function()
+            local s = score_ok(default_opts({
+                captured_points = { 75, 25, 20 },
+                half_marriage_capture_bonuses = { 0, 20, 0 },
+            }))
+            assert.are.equal(0, s.half_marriage_capture_bonuses[1])
+            assert.are.equal(20, s.half_marriage_capture_bonuses[2])
+            assert.are.equal(0, s.half_marriage_capture_bonuses[3])
+            assert.are.equal(25 + 20, s.deal_scores[2])
+            assert.are.equal(20, s.deal_scores[3])
+        end)
+
+        it("adds ace_marriage_bonuses to deal_scores", function()
+            local s = score_ok(default_opts({
+                captured_points = { 75, 25, 20 },
+                marriage_bonuses = { 0, 0, 0 },
+                ace_marriage_bonuses = { 200, 0, 0 },
+            }))
+            assert.are.equal(200, s.ace_marriage_bonuses[1])
+            assert.are.equal(75 + 200, s.deal_scores[1])
+        end)
+
+        it("defaults the new bonus arrays to zero when absent", function()
+            local s = score_ok(default_opts({
+                captured_points = { 75, 25, 20 },
+                marriage_bonuses = { 0, 0, 0 },
+            }))
+            assert.are.same({ 0, 0, 0 }, s.half_marriage_capture_bonuses)
+            assert.are.same({ 0, 0, 0 }, s.ace_marriage_bonuses)
         end)
     end)
 

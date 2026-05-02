@@ -562,6 +562,14 @@ local function build_marriage_offer_block(session)
     if session:current_phase() ~= "tricks" then
         return nil
     end
+    -- Phase 3.6 marriage_announcement_timing: the on_lead default is
+    -- the only path that reaches the K/Q-tap modal. Hand-announcement
+    -- and pre-first-trick variants surface their own affordances
+    -- (see `hand_announcement_marriage_offer` and
+    -- `pre_first_trick_marriage_offer`).
+    if session:config().marriages.marriage_announcement_timing ~= "on_lead" then
+        return nil
+    end
     local turn = session:current_turn()
     if not turn then
         return nil
@@ -571,6 +579,99 @@ local function build_marriage_offer_block(session)
         return nil
     end
     return { suits = copy_list(suits) }
+end
+
+-- Phase 3.6: surfaced when the active seat is on lead, the trick is
+-- empty, the variant is `hand_announcement`, and the seat holds at
+-- least one undeclared marriage.
+local function build_hand_announcement_marriage_offer_block(session)
+    if session:current_phase() ~= "tricks" then
+        return nil
+    end
+    if session:config().marriages.marriage_announcement_timing ~= "hand_announcement" then
+        return nil
+    end
+    local turn = session:current_turn()
+    if not turn then
+        return nil
+    end
+    local suits = session:available_marriages(turn)
+    if #suits == 0 then
+        return nil
+    end
+    return { seat = turn, suits = copy_list(suits) }
+end
+
+-- Phase 3.6: surfaced while the session is in
+-- `awaiting_pre_first_trick_marriages` for the active seat.
+local function build_pre_first_trick_marriage_offer_block(session)
+    local state = session:pre_first_trick_announcement_state()
+    if not state then
+        return nil
+    end
+    return {
+        seat = state.seat,
+        pending_seats = copy_list(state.pending_seats),
+        eligible_suits = copy_list(state.eligible_suits),
+    }
+end
+
+-- Phase 3.6: surfaced when `ace_marriage` is enabled and the active
+-- seat holds all four Aces.
+local function build_ace_marriage_offer_block(session)
+    if session:config().marriages.ace_marriage == "off" then
+        return nil
+    end
+    local phase = session:current_phase()
+    local pre_phase = "awaiting_pre_first_trick_marriages" -- i18n-ok: phase enum
+    if phase ~= "tricks" and phase ~= pre_phase then
+        return nil
+    end
+    local turn = session:current_turn()
+    if not turn then
+        return nil
+    end
+    local hands = session:hands()
+    local hand = hands and hands[turn]
+    if not hand then
+        return nil
+    end
+    local seen = {}
+    for _, c in ipairs(hand) do
+        if c.rank == "A" then
+            seen[c.suit] = true
+        end
+    end
+    if not (seen.hearts and seen.diamonds and seen.clubs and seen.spades) then
+        return nil
+    end
+    -- Suppress when an ace marriage has already been declared this
+    -- deal.
+    local marriages_state = session._marriages
+    if marriages_state then
+        for _, decl in ipairs(marriages_state.declarations) do
+            if decl.kind == "ace_marriage" and not decl.cancelled then
+                return nil
+            end
+        end
+    end
+    return { seat = turn }
+end
+
+-- Phase 3.6: latest drowned-marriage cancellation, surfaced as a
+-- banner. nil when the log is empty.
+local function build_drowned_marriage_banner_block(session)
+    local log = session:drowned_marriage_log()
+    if not log or #log == 0 then
+        return nil
+    end
+    local entry = log[#log]
+    return {
+        suit = entry.suit,
+        declarer = entry.declarer,
+        value = entry.value,
+        trick_index = entry.trick_index,
+    }
 end
 
 -- Phase 3.6: dealing-and-redeal banner blocks. Each block is nil when
@@ -806,6 +907,11 @@ function M.from_session(session)
         talon_phase = build_talon_phase_block(session),
         current_trick = build_current_trick_block(session),
         marriage_offer = build_marriage_offer_block(session),
+        hand_announcement_marriage_offer = build_hand_announcement_marriage_offer_block(session),
+        pre_first_trick_marriage_offer = build_pre_first_trick_marriage_offer_block(session),
+        ace_marriage_offer = build_ace_marriage_offer_block(session),
+        pending_ace_trump_seat = session:pending_ace_trump_seat(),
+        drowned_marriage_banner = build_drowned_marriage_banner_block(session),
         deal_done = build_deal_done_block(session),
         redeal_prompt = build_redeal_prompt_block(session),
         misdeal_banner = build_misdeal_banner_block(session),

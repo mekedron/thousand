@@ -775,10 +775,12 @@ local SCHEMA = {
         field_order = {
             "values",
             "half_marriage_capture_bonus",
+            "half_marriage_capture_bonus_value",
             "trump_activation_timing",
             "marriage_announcement_timing",
             "drowned_marriage",
             "ace_marriage",
+            "ace_marriage_value",
             "one_trump_per_deal",
         },
         fields = {
@@ -800,7 +802,21 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
+            },
+            -- Bonus credited per suit when a non-declarer captures
+            -- both the K and Q of that suit. Inert under
+            -- `half_marriage_capture_bonus = "off"`; carried in the
+            -- schema so saved templates round-trip cleanly. Bounded
+            -- in [0, 100] — a single capture bonus cannot exceed the
+            -- canonical hearts marriage value.
+            half_marriage_capture_bonus_value = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 0,
+                max = 100,
+                default = 20,
+                status = "selectable",
             },
             -- House-rule: when does the declared suit become trump?
             -- Standard `next_trick` defers the switch by one trick;
@@ -814,7 +830,7 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "next_trick", "immediate" },
                 default = "next_trick",
-                status = "deferred",
+                status = "selectable",
             },
             -- House-rule: how may a marriage be declared? Standard
             -- `on_lead` requires leading the K or Q while on lead.
@@ -829,7 +845,7 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "on_lead", "hand_announcement", "pre_first_trick" },
                 default = "on_lead",
-                status = "deferred",
+                status = "selectable",
             },
             -- House-rule: a marriage is *drowned* when an opponent
             -- captures the other half before declaration. The
@@ -843,7 +859,7 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "retroactive_cancel" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
             -- House-rule: a player holding all four Aces declares an
             -- *ace marriage* (тузовый марьяж) for ~200 points. The
@@ -857,7 +873,20 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "on", "sets_trump" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
+            },
+            -- Bonus credited when a player declares all four Aces.
+            -- Inert under `ace_marriage = "off"`; carried in the
+            -- schema so saved templates round-trip cleanly. Bounded
+            -- in [0, 400] — at most twice the documented "+200"
+            -- typical so unusual house rules can lift the cap.
+            ace_marriage_value = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 0,
+                max = 400,
+                default = 200,
+                status = "selectable",
             },
             -- House-rule: only the first declared marriage in a deal
             -- sets trump; later marriages still score their bonus
@@ -869,7 +898,7 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
         },
     },
@@ -2317,10 +2346,12 @@ local function canonical_russian_blob()
         marriages = {
             values = { hearts = 100, diamonds = 80, clubs = 60, spades = 40 },
             half_marriage_capture_bonus = "off",
+            half_marriage_capture_bonus_value = 20,
             trump_activation_timing = "next_trick",
             marriage_announcement_timing = "on_lead",
             drowned_marriage = "off",
             ace_marriage = "off",
+            ace_marriage_value = 200,
             one_trump_per_deal = "off",
         },
         tricks = {

@@ -791,6 +791,46 @@ function M:_close_marriage_modal()
     self._modal_focus = nil
 end
 
+-- Phase 3.6 marriage_announcement_timing = "hand_announcement"
+-- handler: announce a marriage without leading the K or Q.
+function M:_do_announce_hand_marriage(player, suit)
+    local session = self:_session()
+    if not session then
+        return
+    end
+    self:_invoke(session:announce_marriage(player, suit))
+    self:_refresh_view_model()
+end
+
+-- Phase 3.6 marriage_announcement_timing = "pre_first_trick" handlers.
+function M:_do_announce_pre_first_trick(player, suit)
+    local session = self:_session()
+    if not session then
+        return
+    end
+    self:_invoke(session:announce_marriage(player, suit))
+    self:_refresh_view_model()
+end
+
+function M:_do_skip_pre_first_trick(player)
+    local session = self:_session()
+    if not session then
+        return
+    end
+    self:_invoke(session:skip_pre_first_trick_marriage(player))
+    self:_refresh_view_model()
+end
+
+-- Phase 3.6 ace_marriage handler: declare the four-Aces bonus.
+function M:_do_declare_ace_marriage(player)
+    local session = self:_session()
+    if not session then
+        return
+    end
+    self:_invoke(session:declare_ace_marriage(player))
+    self:_refresh_view_model()
+end
+
 -- Redeal prompt modal -------------------------------------------------
 
 local function redeal_signature(prompt)

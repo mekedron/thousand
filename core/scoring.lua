@@ -159,6 +159,39 @@ function M.score_deal(config, opts)
     if bonuses_err then
         return bonuses_err
     end
+
+    -- Phase 3.6 marriage house-rule bonus inputs. Both default to a
+    -- per-player zero list when absent so existing callers keep
+    -- their original contract.
+    local half_marriage_capture_bonuses = opts.half_marriage_capture_bonuses
+    if half_marriage_capture_bonuses == nil then
+        half_marriage_capture_bonuses = {}
+        for i = 1, player_count do
+            half_marriage_capture_bonuses[i] = 0
+        end
+    else
+        local err = validate_player_list(
+            "half_marriage_capture_bonuses",
+            half_marriage_capture_bonuses,
+            player_count
+        )
+        if err then
+            return err
+        end
+    end
+    local ace_marriage_bonuses = opts.ace_marriage_bonuses
+    if ace_marriage_bonuses == nil then
+        ace_marriage_bonuses = {}
+        for i = 1, player_count do
+            ace_marriage_bonuses[i] = 0
+        end
+    else
+        local err = validate_player_list("ace_marriage_bonuses", ace_marriage_bonuses, player_count)
+        if err then
+            return err
+        end
+    end
+
     local totals_err = validate_player_list("running_totals", opts.running_totals, player_count)
     if totals_err then
         return totals_err
@@ -201,13 +234,30 @@ function M.score_deal(config, opts)
                 { player = i, actual = opts.marriage_bonuses[i] }
             )
         end
+        if half_marriage_capture_bonuses[i] < 0 then
+            return failure(
+                "bad_half_marriage_capture_bonuses",
+                "half_marriage_capture_bonuses entries must be non-negative",
+                { player = i, actual = half_marriage_capture_bonuses[i] }
+            )
+        end
+        if ace_marriage_bonuses[i] < 0 then
+            return failure(
+                "bad_ace_marriage_bonuses",
+                "ace_marriage_bonuses entries must be non-negative",
+                { player = i, actual = ace_marriage_bonuses[i] }
+            )
+        end
     end
 
     local card_points_rounded = {}
     local deal_scores = {}
     for i = 1, player_count do
         card_points_rounded[i] = round_to_nearest(opts.captured_points[i], nearest)
-        deal_scores[i] = card_points_rounded[i] + opts.marriage_bonuses[i]
+        deal_scores[i] = card_points_rounded[i]
+            + opts.marriage_bonuses[i]
+            + half_marriage_capture_bonuses[i]
+            + ace_marriage_bonuses[i]
     end
 
     local partnership_mode = config.players.partnership_mode
@@ -283,6 +333,8 @@ function M.score_deal(config, opts)
         captured_points = copy_int_list(opts.captured_points, player_count),
         card_points_rounded = card_points_rounded,
         marriage_bonuses = copy_int_list(opts.marriage_bonuses, player_count),
+        half_marriage_capture_bonuses = copy_int_list(half_marriage_capture_bonuses, player_count),
+        ace_marriage_bonuses = copy_int_list(ace_marriage_bonuses, player_count),
         deal_scores = deal_scores,
         made_contract = made_contract,
         deltas = deltas,
@@ -371,11 +423,15 @@ function M.score_raspassy(config, opts)
 
     local card_points_rounded = {}
     local marriage_bonuses = {}
+    local half_marriage_capture_bonuses = {}
+    local ace_marriage_bonuses = {}
     local deal_scores = {}
     local deltas = {}
     for i = 1, player_count do
         card_points_rounded[i] = round_to_nearest(opts.captured_points[i], nearest)
         marriage_bonuses[i] = 0
+        half_marriage_capture_bonuses[i] = 0
+        ace_marriage_bonuses[i] = 0
         deal_scores[i] = card_points_rounded[i]
         deltas[i] = -card_points_rounded[i]
     end
@@ -416,6 +472,8 @@ function M.score_raspassy(config, opts)
         captured_points = copy_int_list(opts.captured_points, player_count),
         card_points_rounded = card_points_rounded,
         marriage_bonuses = marriage_bonuses,
+        half_marriage_capture_bonuses = half_marriage_capture_bonuses,
+        ace_marriage_bonuses = ace_marriage_bonuses,
         deal_scores = deal_scores,
         made_contract = nil,
         deltas = deltas,

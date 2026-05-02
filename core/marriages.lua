@@ -27,10 +27,32 @@
 --     config = <RuleConfig>,
 --     trump = nil | "hearts" | "diamonds" | "clubs" | "spades",
 --     bonuses = { [1]=0, [2]=0, ..., [N]=0 },
---     declarations = { { player=, suit=, value= }, ... },
+--     declarations = {
+--       { player=, suit=, value=, kind="kq"|"ace_marriage", cancelled=bool? },
+--       ...
+--     },
+--     pending_ace_trump = nil | <player>,
 --   }
 --
 -- Each transition returns a fresh state; the input is never mutated.
+--
+-- Phase 3.6 marriage house-rule additions:
+--   * `M.declare` honours `marriages.one_trump_per_deal`. When `"on"` and a
+--     prior K-Q declaration exists, the new trump is NOT applied to
+--     `state.trump` — the bonus posts but the trump suit stands.
+--   * `M.announce_from_hand` mirrors `declare`'s validation but is the
+--     entry point for `marriage_announcement_timing = "hand_announcement"`
+--     and `"pre_first_trick"`. Lead-position checking belongs to the
+--     session/trick layer.
+--   * `M.declare_ace_marriage` admits the тузовый марьяж under
+--     `marriages.ace_marriage in {"on","sets_trump"}`. Under
+--     `"sets_trump"`, the state records `pending_ace_trump` so the
+--     orchestrator can flip trump when that seat next leads an Ace.
+--     Under `"on"`, only the bonus posts.
+--   * `M.cancel_drowned` is the reversal entry for
+--     `drowned_marriage = "retroactive_cancel"`: reverses the bonus and
+--     marks the declaration `cancelled = true`. The orchestrator owns
+--     the detection; the engine just applies the reversal.
 
 local rule_config = require("core.rule_config")
 
@@ -91,6 +113,8 @@ local function copy_declarations(declarations)
             player = entry.player,
             suit = entry.suit,
             value = entry.value,
+            kind = entry.kind,
+            cancelled = entry.cancelled,
         }
     end
     return copy
@@ -103,6 +127,7 @@ local function clone_state(state)
         trump = state.trump,
         bonuses = copy_bonuses(state.bonuses),
         declarations = copy_declarations(state.declarations),
+        pending_ace_trump = state.pending_ace_trump,
     }
 end
 
@@ -135,6 +160,7 @@ function M.new(config)
         trump = nil,
         bonuses = bonuses,
         declarations = {},
+        pending_ace_trump = nil,
     })
     return { ok = true, marriages = state }
 end
@@ -179,14 +205,26 @@ end
 
 local function already_declared(state, suit)
     for i = 1, #state.declarations do
-        if state.declarations[i].suit == suit then
+        local entry = state.declarations[i]
+        if entry.suit == suit and not entry.cancelled then
             return true
         end
     end
     return false
 end
 
-function M.declare(state, player, suit, hand)
+local function count_kq_declarations(state)
+    local n = 0
+    for i = 1, #state.declarations do
+        local entry = state.declarations[i]
+        if (entry.kind == nil or entry.kind == "kq") and not entry.cancelled then
+            n = n + 1
+        end
+    end
+    return n
+end
+
+local function validate_kq_declaration(state, player, suit, hand)
     local state_err = ensure_marriages(state)
     if state_err then
         return state_err
@@ -247,15 +285,228 @@ function M.declare(state, player, suit, hand)
             suit = suit,
         })
     end
+    return { ok = true, value = value }
+end
 
+local function apply_kq_declaration(state, player, suit, value)
+    local one_trump = state.config.marriages.one_trump_per_deal == "on"
     local next_state = clone_state(state)
-    next_state.trump = suit
+    if not one_trump or count_kq_declarations(state) == 0 then
+        next_state.trump = suit
+    end
     next_state.bonuses[player] = next_state.bonuses[player] + value
     next_state.declarations[#next_state.declarations + 1] = {
         player = player,
         suit = suit,
         value = value,
+        kind = "kq",
     }
+    return tag_as_marriages(next_state)
+end
+
+function M.declare(state, player, suit, hand)
+    local validated = validate_kq_declaration(state, player, suit, hand)
+    if not validated.ok then
+        return validated
+    end
+    return {
+        ok = true,
+        marriages = apply_kq_declaration(state, player, suit, validated.value),
+    }
+end
+
+-- Records a K-Q marriage announcement that does not flow through an
+-- on-lead K/Q play. Used by `marriage_announcement_timing` variants
+-- `hand_announcement` (announce while on lead, then play any card)
+-- and `pre_first_trick` (announce before the first lead). The lead /
+-- phase precondition is the orchestrator's responsibility — this
+-- module only checks the structural rule (hand holds K+Q, suit not
+-- already declared) and applies the bonus + trump under the
+-- `one_trump_per_deal` rule.
+function M.announce_from_hand(state, player, suit, hand)
+    local validated = validate_kq_declaration(state, player, suit, hand)
+    if not validated.ok then
+        return validated
+    end
+    return {
+        ok = true,
+        marriages = apply_kq_declaration(state, player, suit, validated.value),
+    }
+end
+
+local function hand_has_all_aces(hand)
+    local seen = {}
+    for i = 1, #hand do
+        local c = hand[i]
+        if c.rank == "A" and SUIT_SET[c.suit] then
+            seen[c.suit] = true
+        end
+    end
+    for _, suit in ipairs(M.SUITS) do
+        if not seen[suit] then
+            return false
+        end
+    end
+    return true
+end
+
+local function ace_marriage_already_declared(state)
+    for i = 1, #state.declarations do
+        local entry = state.declarations[i]
+        if entry.kind == "ace_marriage" and not entry.cancelled then
+            return true
+        end
+    end
+    return false
+end
+
+-- Records a four-Aces declaration (тузовый марьяж) under
+-- `marriages.ace_marriage in {"on","sets_trump"}`. Returns
+-- `ace_marriage_disabled` when the toggle is `"off"`. Under
+-- `"sets_trump"` the orchestrator should watch for the next Ace led
+-- by the declaring seat and call `tricks.set_trump` (or the
+-- in-trick equivalent) with that suit; the marriage state records
+-- `pending_ace_trump = player` until cleared.
+function M.declare_ace_marriage(state, player, hand)
+    local state_err = ensure_marriages(state)
+    if state_err then
+        return state_err
+    end
+
+    local mode = state.config.marriages.ace_marriage
+    if mode == "off" then
+        return failure(
+            "ace_marriage_disabled",
+            "ace_marriage is off in this RuleConfig",
+            { mode = mode }
+        )
+    end
+
+    local player_count = state.config.players.count
+    if not (is_integer(player) and player >= 1 and player <= player_count) then
+        return failure(
+            "bad_player",
+            "player must be an integer in 1.." .. player_count,
+            { actual = player, player_count = player_count }
+        )
+    end
+
+    if type(hand) ~= "table" then
+        return failure("card_not_in_hand", "hand must be a list of cards", {
+            actual = type(hand),
+        })
+    end
+    for i = 1, #hand do
+        if not is_card_like(hand[i]) then
+            return failure("card_not_in_hand", "hand contains a non-card entry", {
+                index = i,
+            })
+        end
+    end
+
+    if not hand_has_all_aces(hand) then
+        return failure(
+            "ace_marriage_requires_four_aces",
+            "ace marriage requires the four Aces in hand",
+            {}
+        )
+    end
+
+    if ace_marriage_already_declared(state) then
+        return failure(
+            "ace_marriage_already_declared",
+            "an ace marriage has already been declared this deal",
+            {}
+        )
+    end
+
+    local value = state.config.marriages.ace_marriage_value
+    if type(value) ~= "number" then
+        return failure(
+            "bad_ace_marriage_value",
+            "config has no ace_marriage_value",
+            { actual = type(value) }
+        )
+    end
+
+    local next_state = clone_state(state)
+    next_state.bonuses[player] = next_state.bonuses[player] + value
+    next_state.declarations[#next_state.declarations + 1] = {
+        player = player,
+        suit = "aces",
+        value = value,
+        kind = "ace_marriage",
+    }
+    if mode == "sets_trump" then
+        next_state.pending_ace_trump = player
+    end
+    return { ok = true, marriages = tag_as_marriages(next_state) }
+end
+
+-- Resolves a pending ace-trump activation: marks the trump suit as
+-- the led Ace's suit and clears `pending_ace_trump`. Caller (the
+-- session) is responsible for checking that the active variant is
+-- `ace_marriage = "sets_trump"` and that the led card is the Ace of
+-- the named suit.
+function M.activate_ace_trump(state, suit)
+    local state_err = ensure_marriages(state)
+    if state_err then
+        return state_err
+    end
+    if state.pending_ace_trump == nil then
+        return failure("no_pending_ace_trump", "no pending ace-trump activation is recorded", {})
+    end
+    if type(suit) ~= "string" or not SUIT_SET[suit] then
+        return failure("bad_suit", "suit is not a recognised marriage suit", {
+            actual = suit,
+        })
+    end
+    local next_state = clone_state(state)
+    next_state.trump = suit
+    next_state.pending_ace_trump = nil
+    return { ok = true, marriages = tag_as_marriages(next_state) }
+end
+
+-- Reverses the bonus on a previously-declared K-Q marriage. Used by
+-- the orchestrator under `drowned_marriage = "retroactive_cancel"`
+-- when an opponent later captures the K or Q of the declared suit.
+-- The trump suit is intentionally NOT reverted: the existing
+-- declarations still bind play, and reverting trump mid-deal is not
+-- documented in docs/variations/house-rules.md "Drowned marriage".
+function M.cancel_drowned(state, suit)
+    local state_err = ensure_marriages(state)
+    if state_err then
+        return state_err
+    end
+    if type(suit) ~= "string" or not SUIT_SET[suit] then
+        return failure("bad_suit", "suit is not a recognised marriage suit", {
+            actual = suit,
+        })
+    end
+    local index = nil
+    for i = 1, #state.declarations do
+        local entry = state.declarations[i]
+        if
+            entry.suit == suit
+            and (entry.kind == nil or entry.kind == "kq")
+            and not entry.cancelled
+        then
+            index = i
+            break
+        end
+    end
+    if not index then
+        return failure(
+            "no_active_marriage",
+            "no active K-Q marriage in " .. suit .. " to cancel",
+            { suit = suit }
+        )
+    end
+
+    local target = state.declarations[index]
+    local next_state = clone_state(state)
+    next_state.bonuses[target.player] = next_state.bonuses[target.player] - target.value
+    next_state.declarations[index].cancelled = true
     return { ok = true, marriages = tag_as_marriages(next_state) }
 end
 

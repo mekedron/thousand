@@ -428,4 +428,203 @@ describe("core.marriages", function()
             assert.are.equal(160, m.bonuses[1])
         end)
     end)
+
+    -- Phase 3.6 marriage house rules ---------------------------------------
+
+    local json = require("app.json")
+
+    local function config_with_marriage_overrides(overrides)
+        local blob = json.decode(rule_config.to_json(rule_config.canonical_russian))
+        for key, value in pairs(overrides) do
+            blob.marriages[key] = value
+        end
+        return rule_config.new(blob)
+    end
+
+    describe("declare() honours marriages.one_trump_per_deal", function()
+        it("leaves trump unchanged on the second K-Q declaration when 'on'", function()
+            local cfg = config_with_marriage_overrides({ one_trump_per_deal = "on" })
+            local result = marriages.new(cfg)
+            assert.is_true(result.ok)
+            local m = result.marriages
+            m = declare(m, 1, "hearts", hand_with_marriage("hearts"))
+            assert.are.equal("hearts", m.trump)
+            m = declare(m, 2, "spades", hand_with_marriage("spades"))
+            assert.are.equal("hearts", m.trump, "second declaration must not flip trump")
+            assert.are.equal(40, m.bonuses[2], "bonus still posts under one_trump_per_deal")
+        end)
+
+        it("flips trump on every K-Q declaration when 'off' (default)", function()
+            local m = fresh_marriages()
+            m = declare(m, 1, "hearts", hand_with_marriage("hearts"))
+            m = declare(m, 2, "spades", hand_with_marriage("spades"))
+            assert.are.equal("spades", m.trump)
+        end)
+    end)
+
+    describe("announce_from_hand()", function()
+        it("records a K-Q marriage and sets trump", function()
+            local m = fresh_marriages()
+            local result =
+                marriages.announce_from_hand(m, 1, "hearts", hand_with_marriage("hearts"))
+            assert.is_true(result.ok)
+            assert.are.equal("hearts", result.marriages.trump)
+            assert.are.equal(100, result.marriages.bonuses[1])
+            assert.are.equal(1, #result.marriages.declarations)
+            assert.are.equal("kq", result.marriages.declarations[1].kind)
+        end)
+
+        it("rejects when the hand is missing K or Q", function()
+            local m = fresh_marriages()
+            local result = marriages.announce_from_hand(m, 1, "hearts", { king_of("hearts") })
+            assert.is_false(result.ok)
+            assert.are.equal("card_not_in_hand", result.error.code)
+        end)
+
+        it("respects one_trump_per_deal", function()
+            local cfg = config_with_marriage_overrides({ one_trump_per_deal = "on" })
+            local m = marriages.new(cfg).marriages
+            m = marriages.announce_from_hand(m, 1, "hearts", hand_with_marriage("hearts")).marriages
+            local r = marriages.announce_from_hand(m, 2, "spades", hand_with_marriage("spades"))
+            assert.is_true(r.ok)
+            assert.are.equal("hearts", r.marriages.trump)
+        end)
+    end)
+
+    describe("declare_ace_marriage()", function()
+        local function four_aces_hand(extras)
+            local hand = {
+                card.new("hearts", "A"),
+                card.new("diamonds", "A"),
+                card.new("clubs", "A"),
+                card.new("spades", "A"),
+            }
+            if extras then
+                for i = 1, #extras do
+                    hand[#hand + 1] = extras[i]
+                end
+            end
+            return hand
+        end
+
+        it("rejects when ace_marriage = 'off'", function()
+            local m = fresh_marriages()
+            local r = marriages.declare_ace_marriage(m, 1, four_aces_hand())
+            assert.is_false(r.ok)
+            assert.are.equal("ace_marriage_disabled", r.error.code)
+        end)
+
+        it("awards ace_marriage_value under 'on' without setting trump", function()
+            local cfg = config_with_marriage_overrides({ ace_marriage = "on" })
+            local m = marriages.new(cfg).marriages
+            local r = marriages.declare_ace_marriage(m, 1, four_aces_hand())
+            assert.is_true(r.ok)
+            assert.are.equal(200, r.marriages.bonuses[1])
+            assert.is_nil(r.marriages.trump)
+            assert.is_nil(r.marriages.pending_ace_trump)
+            assert.are.equal("ace_marriage", r.marriages.declarations[1].kind)
+        end)
+
+        it("marks pending_ace_trump under 'sets_trump'", function()
+            local cfg = config_with_marriage_overrides({ ace_marriage = "sets_trump" })
+            local m = marriages.new(cfg).marriages
+            local r = marriages.declare_ace_marriage(m, 2, four_aces_hand())
+            assert.is_true(r.ok)
+            assert.are.equal(2, r.marriages.pending_ace_trump)
+        end)
+
+        it("rejects without four aces in hand", function()
+            local cfg = config_with_marriage_overrides({ ace_marriage = "on" })
+            local m = marriages.new(cfg).marriages
+            local hand = {
+                card.new("hearts", "A"),
+                card.new("diamonds", "A"),
+                card.new("clubs", "A"),
+                card.new("spades", "K"),
+            }
+            local r = marriages.declare_ace_marriage(m, 1, hand)
+            assert.is_false(r.ok)
+            assert.are.equal("ace_marriage_requires_four_aces", r.error.code)
+        end)
+
+        it("rejects re-declaring the ace marriage", function()
+            local cfg = config_with_marriage_overrides({ ace_marriage = "on" })
+            local m = marriages.new(cfg).marriages
+            m = marriages.declare_ace_marriage(m, 1, four_aces_hand()).marriages
+            local r = marriages.declare_ace_marriage(m, 1, four_aces_hand())
+            assert.is_false(r.ok)
+            assert.are.equal("ace_marriage_already_declared", r.error.code)
+        end)
+
+        it("uses the configured ace_marriage_value", function()
+            local cfg = config_with_marriage_overrides({
+                ace_marriage = "on",
+                ace_marriage_value = 250,
+            })
+            local m = marriages.new(cfg).marriages
+            local r = marriages.declare_ace_marriage(m, 1, four_aces_hand())
+            assert.is_true(r.ok)
+            assert.are.equal(250, r.marriages.bonuses[1])
+        end)
+    end)
+
+    describe("activate_ace_trump()", function()
+        it("sets trump and clears pending_ace_trump", function()
+            local cfg = config_with_marriage_overrides({ ace_marriage = "sets_trump" })
+            local m = marriages.new(cfg).marriages
+            m = marriages.declare_ace_marriage(m, 1, {
+                card.new("hearts", "A"),
+                card.new("diamonds", "A"),
+                card.new("clubs", "A"),
+                card.new("spades", "A"),
+            }).marriages
+            local r = marriages.activate_ace_trump(m, "diamonds")
+            assert.is_true(r.ok)
+            assert.are.equal("diamonds", r.marriages.trump)
+            assert.is_nil(r.marriages.pending_ace_trump)
+        end)
+
+        it("rejects when no pending ace-trump activation is recorded", function()
+            local m = fresh_marriages()
+            local r = marriages.activate_ace_trump(m, "hearts")
+            assert.is_false(r.ok)
+            assert.are.equal("no_pending_ace_trump", r.error.code)
+        end)
+    end)
+
+    describe("cancel_drowned()", function()
+        it("reverses the bonus and marks the declaration cancelled", function()
+            local m = fresh_marriages()
+            m = declare(m, 1, "hearts", hand_with_marriage("hearts"))
+            assert.are.equal(100, m.bonuses[1])
+            local r = marriages.cancel_drowned(m, "hearts")
+            assert.is_true(r.ok)
+            assert.are.equal(0, r.marriages.bonuses[1])
+            assert.is_true(r.marriages.declarations[1].cancelled)
+        end)
+
+        it("does NOT revert the trump suit", function()
+            local m = fresh_marriages()
+            m = declare(m, 1, "hearts", hand_with_marriage("hearts"))
+            local r = marriages.cancel_drowned(m, "hearts")
+            assert.is_true(r.ok)
+            assert.are.equal("hearts", r.marriages.trump)
+        end)
+
+        it("rejects when no active marriage in the suit exists", function()
+            local m = fresh_marriages()
+            local r = marriages.cancel_drowned(m, "hearts")
+            assert.is_false(r.ok)
+            assert.are.equal("no_active_marriage", r.error.code)
+        end)
+
+        it("allows a re-declaration of the cancelled suit", function()
+            local m = fresh_marriages()
+            m = declare(m, 1, "hearts", hand_with_marriage("hearts"))
+            m = marriages.cancel_drowned(m, "hearts").marriages
+            local r = marriages.declare(m, 2, "hearts", hand_with_marriage("hearts"))
+            assert.is_true(r.ok)
+            assert.are.equal(100, r.marriages.bonuses[2])
+        end)
+    end)
 end)

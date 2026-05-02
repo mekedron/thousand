@@ -72,10 +72,12 @@ local function valid_table()
         marriages = {
             values = { hearts = 100, diamonds = 80, clubs = 60, spades = 40 },
             half_marriage_capture_bonus = "off",
+            half_marriage_capture_bonus_value = 20,
             trump_activation_timing = "next_trick",
             marriage_announcement_timing = "on_lead",
             drowned_marriage = "off",
             ace_marriage = "off",
+            ace_marriage_value = 200,
             one_trump_per_deal = "off",
         },
         tricks = {
@@ -345,10 +347,12 @@ describe("core.rule_config", function()
 
         it("encodes the canonical marriage toggles at their defaults", function()
             assert.are.equal("off", config.marriages.half_marriage_capture_bonus)
+            assert.are.equal(20, config.marriages.half_marriage_capture_bonus_value)
             assert.are.equal("next_trick", config.marriages.trump_activation_timing)
             assert.are.equal("on_lead", config.marriages.marriage_announcement_timing)
             assert.are.equal("off", config.marriages.drowned_marriage)
             assert.are.equal("off", config.marriages.ace_marriage)
+            assert.are.equal(200, config.marriages.ace_marriage_value)
             assert.are.equal("off", config.marriages.one_trump_per_deal)
         end)
 
@@ -797,10 +801,12 @@ describe("core.rule_config", function()
                     {
                         "values",
                         "half_marriage_capture_bonus",
+                        "half_marriage_capture_bonus_value",
                         "trump_activation_timing",
                         "marriage_announcement_timing",
                         "drowned_marriage",
                         "ace_marriage",
+                        "ace_marriage_value",
                         "one_trump_per_deal",
                     },
                 },
@@ -2964,200 +2970,300 @@ describe("core.rule_config", function()
     end)
 
     describe("marriages.half_marriage_capture_bonus", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("marriages.half_marriage_capture_bonus")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
-            local allowed = {}
-            for _, v in ipairs(d.allowed) do
-                allowed[v] = true
-            end
-            assert.is_true(allowed["off"])
-            assert.is_true(allowed["on"])
+            assert.are.equal("selectable", d.status)
+            assert.are.same({ "off", "on" }, d.allowed)
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts every allowed value", function()
+            for _, value in ipairs({ "off", "on" }) do
+                local t = valid_table()
+                t.marriages.half_marriage_capture_bonus = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " must be accepted")
+            end
+        end)
+
+        it("rejects an unknown value with value_not_allowed", function()
             local t = valid_table()
-            t.marriages.half_marriage_capture_bonus = "on"
+            t.marriages.half_marriage_capture_bonus = "bogus"
             local res = rule_config.try_new(t)
             assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("marriages.half_marriage_capture_bonus", res.error.path)
+            assert.are.equal("value_not_allowed", res.error.code)
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
-            local res = rule_config.from_json(s)
+        it("survives a JSON round trip with a non-default value", function()
+            local t = valid_table()
+            t.marriages.half_marriage_capture_bonus = "on"
+            local config = rule_config.new(t)
+            local res = rule_config.from_json(rule_config.to_json(config))
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.marriages.half_marriage_capture_bonus)
+            assert.are.equal("on", res.config.marriages.half_marriage_capture_bonus)
+        end)
+    end)
+
+    describe("marriages.half_marriage_capture_bonus_value", function()
+        it("exposes a selectable bounded number-leaf descriptor", function()
+            local d = rule_config.schema_for("marriages.half_marriage_capture_bonus_value")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(20, d.default)
+            assert.are.equal(0, d.min)
+            assert.are.equal(100, d.max)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("accepts numeric values inside the bound", function()
+            local t = valid_table()
+            t.marriages.half_marriage_capture_bonus_value = 30
+            local res = rule_config.try_new(t)
+            assert.is_true(res.ok)
+            assert.are.equal(30, res.config.marriages.half_marriage_capture_bonus_value)
+        end)
+
+        it("rejects out-of-bound values", function()
+            for _, bad in ipairs({ -1, 200 }) do
+                local t = valid_table()
+                t.marriages.half_marriage_capture_bonus_value = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. tostring(bad) .. " must be rejected")
+            end
+        end)
+
+        it("survives a JSON round trip with a non-default value", function()
+            local t = valid_table()
+            t.marriages.half_marriage_capture_bonus_value = 25
+            local config = rule_config.new(t)
+            local res = rule_config.from_json(rule_config.to_json(config))
+            assert.is_true(res.ok)
+            assert.are.equal(25, res.config.marriages.half_marriage_capture_bonus_value)
         end)
     end)
 
     describe("marriages.trump_activation_timing", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("marriages.trump_activation_timing")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("next_trick", d.default)
-            assert.are.equal("deferred", d.status)
-            local allowed = {}
-            for _, v in ipairs(d.allowed) do
-                allowed[v] = true
-            end
-            assert.is_true(allowed["next_trick"])
-            assert.is_true(allowed["immediate"])
+            assert.are.equal("selectable", d.status)
+            assert.are.same({ "next_trick", "immediate" }, d.allowed)
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts every allowed value", function()
+            for _, value in ipairs({ "next_trick", "immediate" }) do
+                local t = valid_table()
+                t.marriages.trump_activation_timing = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " must be accepted")
+            end
+        end)
+
+        it("rejects an unknown value with value_not_allowed", function()
             local t = valid_table()
-            t.marriages.trump_activation_timing = "immediate"
+            t.marriages.trump_activation_timing = "bogus"
             local res = rule_config.try_new(t)
             assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("marriages.trump_activation_timing", res.error.path)
+            assert.are.equal("value_not_allowed", res.error.code)
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
-            local res = rule_config.from_json(s)
+        it("survives a JSON round trip with a non-default value", function()
+            local t = valid_table()
+            t.marriages.trump_activation_timing = "immediate"
+            local config = rule_config.new(t)
+            local res = rule_config.from_json(rule_config.to_json(config))
             assert.is_true(res.ok)
-            assert.are.equal("next_trick", res.config.marriages.trump_activation_timing)
+            assert.are.equal("immediate", res.config.marriages.trump_activation_timing)
         end)
     end)
 
     describe("marriages.marriage_announcement_timing", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("marriages.marriage_announcement_timing")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("on_lead", d.default)
-            assert.are.equal("deferred", d.status)
-            local allowed = {}
-            for _, v in ipairs(d.allowed) do
-                allowed[v] = true
-            end
-            assert.is_true(allowed["on_lead"])
-            assert.is_true(allowed["hand_announcement"])
-            assert.is_true(allowed["pre_first_trick"])
+            assert.are.equal("selectable", d.status)
+            assert.are.same({ "on_lead", "hand_announcement", "pre_first_trick" }, d.allowed)
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
-            for _, bad in ipairs({ "hand_announcement", "pre_first_trick" }) do
+        it("accepts every allowed value", function()
+            for _, value in ipairs({ "on_lead", "hand_announcement", "pre_first_trick" }) do
                 local t = valid_table()
-                t.marriages.marriage_announcement_timing = bad
+                t.marriages.marriage_announcement_timing = value
                 local res = rule_config.try_new(t)
-                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
-                assert.are.equal("deferred_field_changed", res.error.code)
-                assert.are.equal("marriages.marriage_announcement_timing", res.error.path)
+                assert.is_true(res.ok, "value " .. value .. " must be accepted")
             end
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
-            local res = rule_config.from_json(s)
+        it("rejects an unknown value with value_not_allowed", function()
+            local t = valid_table()
+            t.marriages.marriage_announcement_timing = "bogus"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("value_not_allowed", res.error.code)
+        end)
+
+        it("survives a JSON round trip with a non-default value", function()
+            local t = valid_table()
+            t.marriages.marriage_announcement_timing = "hand_announcement"
+            local config = rule_config.new(t)
+            local res = rule_config.from_json(rule_config.to_json(config))
             assert.is_true(res.ok)
-            assert.are.equal("on_lead", res.config.marriages.marriage_announcement_timing)
+            assert.are.equal("hand_announcement", res.config.marriages.marriage_announcement_timing)
         end)
     end)
 
     describe("marriages.drowned_marriage", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("marriages.drowned_marriage")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
-            local allowed = {}
-            for _, v in ipairs(d.allowed) do
-                allowed[v] = true
-            end
-            assert.is_true(allowed["off"])
-            assert.is_true(allowed["retroactive_cancel"])
+            assert.are.equal("selectable", d.status)
+            assert.are.same({ "off", "retroactive_cancel" }, d.allowed)
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts every allowed value", function()
+            for _, value in ipairs({ "off", "retroactive_cancel" }) do
+                local t = valid_table()
+                t.marriages.drowned_marriage = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " must be accepted")
+            end
+        end)
+
+        it("rejects an unknown value with value_not_allowed", function()
             local t = valid_table()
-            t.marriages.drowned_marriage = "retroactive_cancel"
+            t.marriages.drowned_marriage = "bogus"
             local res = rule_config.try_new(t)
             assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("marriages.drowned_marriage", res.error.path)
+            assert.are.equal("value_not_allowed", res.error.code)
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
-            local res = rule_config.from_json(s)
+        it("survives a JSON round trip with a non-default value", function()
+            local t = valid_table()
+            t.marriages.drowned_marriage = "retroactive_cancel"
+            local config = rule_config.new(t)
+            local res = rule_config.from_json(rule_config.to_json(config))
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.marriages.drowned_marriage)
+            assert.are.equal("retroactive_cancel", res.config.marriages.drowned_marriage)
         end)
     end)
 
     describe("marriages.ace_marriage", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("marriages.ace_marriage")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
-            local allowed = {}
-            for _, v in ipairs(d.allowed) do
-                allowed[v] = true
-            end
-            assert.is_true(allowed["off"])
-            assert.is_true(allowed["on"])
-            assert.is_true(allowed["sets_trump"])
+            assert.are.equal("selectable", d.status)
+            assert.are.same({ "off", "on", "sets_trump" }, d.allowed)
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
-            for _, bad in ipairs({ "on", "sets_trump" }) do
+        it("accepts every allowed value", function()
+            for _, value in ipairs({ "off", "on", "sets_trump" }) do
                 local t = valid_table()
-                t.marriages.ace_marriage = bad
+                t.marriages.ace_marriage = value
                 local res = rule_config.try_new(t)
-                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
-                assert.are.equal("deferred_field_changed", res.error.code)
-                assert.are.equal("marriages.ace_marriage", res.error.path)
+                assert.is_true(res.ok, "value " .. value .. " must be accepted")
             end
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
-            local res = rule_config.from_json(s)
+        it("rejects an unknown value with value_not_allowed", function()
+            local t = valid_table()
+            t.marriages.ace_marriage = "bogus"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("value_not_allowed", res.error.code)
+        end)
+
+        it("survives a JSON round trip with a non-default value", function()
+            local t = valid_table()
+            t.marriages.ace_marriage = "sets_trump"
+            local config = rule_config.new(t)
+            local res = rule_config.from_json(rule_config.to_json(config))
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.marriages.ace_marriage)
+            assert.are.equal("sets_trump", res.config.marriages.ace_marriage)
+        end)
+    end)
+
+    describe("marriages.ace_marriage_value", function()
+        it("exposes a selectable bounded number-leaf descriptor", function()
+            local d = rule_config.schema_for("marriages.ace_marriage_value")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(200, d.default)
+            assert.are.equal(0, d.min)
+            assert.are.equal(400, d.max)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("accepts numeric values inside the bound", function()
+            local t = valid_table()
+            t.marriages.ace_marriage_value = 150
+            local res = rule_config.try_new(t)
+            assert.is_true(res.ok)
+            assert.are.equal(150, res.config.marriages.ace_marriage_value)
+        end)
+
+        it("rejects out-of-bound values", function()
+            for _, bad in ipairs({ -1, 500 }) do
+                local t = valid_table()
+                t.marriages.ace_marriage_value = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. tostring(bad) .. " must be rejected")
+            end
+        end)
+
+        it("survives a JSON round trip with a non-default value", function()
+            local t = valid_table()
+            t.marriages.ace_marriage_value = 250
+            local config = rule_config.new(t)
+            local res = rule_config.from_json(rule_config.to_json(config))
+            assert.is_true(res.ok)
+            assert.are.equal(250, res.config.marriages.ace_marriage_value)
         end)
     end)
 
     describe("marriages.one_trump_per_deal", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("marriages.one_trump_per_deal")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
-            local allowed = {}
-            for _, v in ipairs(d.allowed) do
-                allowed[v] = true
-            end
-            assert.is_true(allowed["off"])
-            assert.is_true(allowed["on"])
+            assert.are.equal("selectable", d.status)
+            assert.are.same({ "off", "on" }, d.allowed)
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts every allowed value", function()
+            for _, value in ipairs({ "off", "on" }) do
+                local t = valid_table()
+                t.marriages.one_trump_per_deal = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " must be accepted")
+            end
+        end)
+
+        it("rejects an unknown value with value_not_allowed", function()
             local t = valid_table()
-            t.marriages.one_trump_per_deal = "on"
+            t.marriages.one_trump_per_deal = "bogus"
             local res = rule_config.try_new(t)
             assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("marriages.one_trump_per_deal", res.error.path)
+            assert.are.equal("value_not_allowed", res.error.code)
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
-            local res = rule_config.from_json(s)
+        it("survives a JSON round trip with a non-default value", function()
+            local t = valid_table()
+            t.marriages.one_trump_per_deal = "on"
+            local config = rule_config.new(t)
+            local res = rule_config.from_json(rule_config.to_json(config))
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.marriages.one_trump_per_deal)
+            assert.are.equal("on", res.config.marriages.one_trump_per_deal)
         end)
     end)
 

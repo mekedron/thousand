@@ -151,9 +151,9 @@ describe("app.templates", function()
             local created = templates.create({ fromBuiltin = "russian", name = "Mine" }).template
             local snapshot = store["templates.json"]
             local bad = builtin_blob("russian")
-            -- half_marriage_capture_bonus is deferred while the Phase 3.6
-            -- marriage-house-rules task is still pending.
-            bad.marriages.half_marriage_capture_bonus = "on"
+            -- tricks.must_overtake_strictness is deferred while the
+            -- Phase 3.6 trick-play house-rules task is still pending.
+            bad.tricks.must_overtake_strictness = "polish_strict"
             local r = templates.update(created.id, bad)
             assert.is_false(r.ok)
             assert.are.equal("invalid_rule_config", r.error.code)

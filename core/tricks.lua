@@ -595,6 +595,40 @@ function M.set_trump(state, suit)
     return { ok = true, tricks = tag_as_tricks(next_state) }
 end
 
+-- Phase 3.6 trump_activation_timing = "immediate" path. Where the
+-- standard `set_trump` requires an empty trick (i.e. trump only
+-- changes between tricks), this variant lets a marriage flip trump
+-- on the very trick the K or Q led. The resolver re-reads
+-- `state.trump` per play, so re-ranking is automatic — this entry
+-- point only swaps the suit and records the action.
+function M.set_trump_in_trick(state, suit)
+    local err = ensure_tricks(state)
+    if err then
+        return err
+    end
+    local phase_err = ensure_status(state, "in_progress", "set_trump_in_trick")
+    if phase_err then
+        return phase_err
+    end
+    if suit ~= nil then
+        if type(suit) ~= "string" or not SUIT_SET[suit] then
+            return failure(
+                "bad_suit",
+                "suit must be nil or one of the four standard suits",
+                { actual = suit }
+            )
+        end
+    end
+
+    local next_state = clone_state(state)
+    next_state.trump = suit
+    next_state.history = append_history(state.history, {
+        action = "set_trump_in_trick",
+        suit = suit,
+    })
+    return { ok = true, tricks = tag_as_tricks(next_state) }
+end
+
 local function find_card_index(hand, target)
     for i = 1, #hand do
         local c = hand[i]
