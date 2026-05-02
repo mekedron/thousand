@@ -105,15 +105,24 @@ local function valid_table()
             failed_contract_distribution = "lost",
             declarer_rounding_before_contract_check = "on",
         },
-        opening_game = { golden_deal = "off" },
+        opening_game = {
+            golden_deal = "off",
+            golden_deal_count = 3,
+            golden_deal_marriages_doubled = "off",
+            golden_deal_blind_allowed = "off",
+            golden_deal_penalty_doubled = "off",
+            golden_deal_failure_handling = "continue",
+        },
         barrel = {
             threshold = 880,
             deal_count = 3,
             fall_off_penalty = -120,
             pit_lock_in = "off",
+            pit_score = 700,
             collision_rule = "last_mounter",
             overshoot_penalty = "off",
             reverse_barrel = "off",
+            reverse_barrel_fallback = -760,
         },
         endgame = {
             target_score = 1000,
@@ -3929,12 +3938,12 @@ describe("core.rule_config", function()
     end)
 
     describe("opening_game.golden_deal", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("opening_game.golden_deal")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -3943,62 +3952,239 @@ describe("core.rule_config", function()
             assert.is_true(allowed["on"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts on as a non-default value", function()
             local t = valid_table()
             t.opening_game.golden_deal = "on"
             local res = rule_config.try_new(t)
-            assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("opening_game.golden_deal", res.error.path)
+            assert.is_true(res.ok)
+            assert.are.equal("on", res.config.opening_game.golden_deal)
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
+        it("rejects an unknown value with value_not_allowed", function()
+            local t = valid_table()
+            t.opening_game.golden_deal = "bogus"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("value_not_allowed", res.error.code)
+        end)
+
+        it("survives a JSON round trip with on", function()
+            local t = valid_table()
+            t.opening_game.golden_deal = "on"
+            local cfg = rule_config.new(t)
+            local s = rule_config.to_json(cfg)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.opening_game.golden_deal)
+            assert.are.equal("on", res.config.opening_game.golden_deal)
+        end)
+    end)
+
+    describe("opening_game.golden_deal_count", function()
+        it("exposes a selectable bounded number-leaf descriptor", function()
+            local d = rule_config.schema_for("opening_game.golden_deal_count")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(1, d.min)
+            assert.are.equal(8, d.max)
+            assert.are.equal(3, d.default)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("accepts in-range values", function()
+            for _, ok_value in ipairs({ 1, 2, 4, 8 }) do
+                local t = valid_table()
+                t.opening_game.golden_deal_count = ok_value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "count=" .. ok_value .. " should be accepted")
+                assert.are.equal(ok_value, res.config.opening_game.golden_deal_count)
+            end
+        end)
+
+        it("rejects out-of-range values with value_out_of_range", function()
+            for _, bad in ipairs({ 0, -1, 9, 100 }) do
+                local t = valid_table()
+                t.opening_game.golden_deal_count = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "count=" .. bad .. " should be rejected")
+                assert.are.equal("value_out_of_range", res.error.code)
+            end
+        end)
+
+        it("survives a JSON round trip with count = 4", function()
+            local t = valid_table()
+            t.opening_game.golden_deal_count = 4
+            local cfg = rule_config.new(t)
+            local s = rule_config.to_json(cfg)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal(4, res.config.opening_game.golden_deal_count)
+        end)
+    end)
+
+    describe("opening_game.golden_deal_marriages_doubled", function()
+        it("exposes a selectable string-leaf descriptor", function()
+            local d = rule_config.schema_for("opening_game.golden_deal_marriages_doubled")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("accepts on and survives a JSON round trip", function()
+            local t = valid_table()
+            t.opening_game.golden_deal_marriages_doubled = "on"
+            local cfg = rule_config.new(t)
+            local s = rule_config.to_json(cfg)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("on", res.config.opening_game.golden_deal_marriages_doubled)
+        end)
+    end)
+
+    describe("opening_game.golden_deal_blind_allowed", function()
+        it("exposes a selectable string-leaf descriptor", function()
+            local d = rule_config.schema_for("opening_game.golden_deal_blind_allowed")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("accepts on and survives a JSON round trip", function()
+            local t = valid_table()
+            t.opening_game.golden_deal_blind_allowed = "on"
+            local cfg = rule_config.new(t)
+            local s = rule_config.to_json(cfg)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("on", res.config.opening_game.golden_deal_blind_allowed)
+        end)
+    end)
+
+    describe("opening_game.golden_deal_penalty_doubled", function()
+        it("exposes a selectable string-leaf descriptor", function()
+            local d = rule_config.schema_for("opening_game.golden_deal_penalty_doubled")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("accepts on and survives a JSON round trip", function()
+            local t = valid_table()
+            t.opening_game.golden_deal_penalty_doubled = "on"
+            local cfg = rule_config.new(t)
+            local s = rule_config.to_json(cfg)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("on", res.config.opening_game.golden_deal_penalty_doubled)
+        end)
+    end)
+
+    describe("opening_game.golden_deal_failure_handling", function()
+        it("exposes a selectable string-leaf descriptor", function()
+            local d = rule_config.schema_for("opening_game.golden_deal_failure_handling")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("continue", d.default)
+            assert.are.equal("selectable", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["continue"])
+            assert.is_true(allowed["replay_round"])
+            assert.is_true(allowed["reset"])
+        end)
+
+        it("accepts each non-default value", function()
+            for _, value in ipairs({ "replay_round", "reset" }) do
+                local t = valid_table()
+                t.opening_game.golden_deal_failure_handling = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " should be accepted")
+                assert.are.equal(value, res.config.opening_game.golden_deal_failure_handling)
+            end
+        end)
+
+        it("survives a JSON round trip with replay_round", function()
+            local t = valid_table()
+            t.opening_game.golden_deal_failure_handling = "replay_round"
+            local cfg = rule_config.new(t)
+            local s = rule_config.to_json(cfg)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("replay_round", res.config.opening_game.golden_deal_failure_handling)
         end)
     end)
 
     describe("barrel.pit_lock_in", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("barrel.pit_lock_in")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
-            local allowed = {}
-            for _, v in ipairs(d.allowed) do
-                allowed[v] = true
-            end
-            assert.is_true(allowed["off"])
-            assert.is_true(allowed["on"])
+            assert.are.equal("selectable", d.status)
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts on as a non-default value", function()
             local t = valid_table()
             t.barrel.pit_lock_in = "on"
             local res = rule_config.try_new(t)
-            assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("barrel.pit_lock_in", res.error.path)
+            assert.is_true(res.ok)
+            assert.are.equal("on", res.config.barrel.pit_lock_in)
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
+        it("survives a JSON round trip with on", function()
+            local t = valid_table()
+            t.barrel.pit_lock_in = "on"
+            local cfg = rule_config.new(t)
+            local s = rule_config.to_json(cfg)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.barrel.pit_lock_in)
+            assert.are.equal("on", res.config.barrel.pit_lock_in)
+        end)
+    end)
+
+    describe("barrel.pit_score", function()
+        it("exposes a selectable bounded number-leaf descriptor", function()
+            local d = rule_config.schema_for("barrel.pit_score")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(100, d.min)
+            assert.are.equal(879, d.max)
+            assert.are.equal(700, d.default)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("accepts in-range values", function()
+            for _, ok_value in ipairs({ 100, 500, 700, 800, 879 }) do
+                local t = valid_table()
+                t.barrel.pit_score = ok_value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "pit_score=" .. ok_value .. " should be accepted")
+                assert.are.equal(ok_value, res.config.barrel.pit_score)
+            end
+        end)
+
+        it("rejects out-of-range values with value_out_of_range", function()
+            for _, bad in ipairs({ 0, 99, 880, 1000 }) do
+                local t = valid_table()
+                t.barrel.pit_score = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "pit_score=" .. bad .. " should be rejected")
+                assert.are.equal("value_out_of_range", res.error.code)
+            end
         end)
     end)
 
     describe("barrel.collision_rule", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("barrel.collision_rule")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("last_mounter", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -4008,96 +4194,110 @@ describe("core.rule_config", function()
             assert.is_true(allowed["all_collide_fall_off"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
-            for _, bad in ipairs({ "first_mounter", "all_collide_fall_off" }) do
+        it("accepts each non-default value", function()
+            for _, value in ipairs({ "first_mounter", "all_collide_fall_off" }) do
                 local t = valid_table()
-                t.barrel.collision_rule = bad
+                t.barrel.collision_rule = value
                 local res = rule_config.try_new(t)
-                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
-                assert.are.equal("deferred_field_changed", res.error.code)
-                assert.are.equal("barrel.collision_rule", res.error.path)
+                assert.is_true(res.ok, "value " .. value .. " should be accepted")
+                assert.are.equal(value, res.config.barrel.collision_rule)
             end
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
+        it("survives a JSON round trip with first_mounter", function()
+            local t = valid_table()
+            t.barrel.collision_rule = "first_mounter"
+            local cfg = rule_config.new(t)
+            local s = rule_config.to_json(cfg)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("last_mounter", res.config.barrel.collision_rule)
+            assert.are.equal("first_mounter", res.config.barrel.collision_rule)
         end)
     end)
 
     describe("barrel.overshoot_penalty", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("barrel.overshoot_penalty")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
-            local allowed = {}
-            for _, v in ipairs(d.allowed) do
-                allowed[v] = true
-            end
-            assert.is_true(allowed["off"])
-            assert.is_true(allowed["on"])
+            assert.are.equal("selectable", d.status)
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts on as a non-default value", function()
             local t = valid_table()
             t.barrel.overshoot_penalty = "on"
             local res = rule_config.try_new(t)
-            assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("barrel.overshoot_penalty", res.error.path)
+            assert.is_true(res.ok)
+            assert.are.equal("on", res.config.barrel.overshoot_penalty)
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
+        it("survives a JSON round trip with on", function()
+            local t = valid_table()
+            t.barrel.overshoot_penalty = "on"
+            local cfg = rule_config.new(t)
+            local s = rule_config.to_json(cfg)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.barrel.overshoot_penalty)
+            assert.are.equal("on", res.config.barrel.overshoot_penalty)
         end)
     end)
 
     describe("barrel.reverse_barrel", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("barrel.reverse_barrel")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
-            local allowed = {}
-            for _, v in ipairs(d.allowed) do
-                allowed[v] = true
-            end
-            assert.is_true(allowed["off"])
-            assert.is_true(allowed["on"])
+            assert.are.equal("selectable", d.status)
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts on as a non-default value", function()
             local t = valid_table()
             t.barrel.reverse_barrel = "on"
             local res = rule_config.try_new(t)
-            assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("barrel.reverse_barrel", res.error.path)
+            assert.is_true(res.ok)
+            assert.are.equal("on", res.config.barrel.reverse_barrel)
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
+        it("survives a JSON round trip with on", function()
+            local t = valid_table()
+            t.barrel.reverse_barrel = "on"
+            local cfg = rule_config.new(t)
+            local s = rule_config.to_json(cfg)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.barrel.reverse_barrel)
+            assert.are.equal("on", res.config.barrel.reverse_barrel)
+        end)
+    end)
+
+    describe("barrel.reverse_barrel_fallback", function()
+        it("exposes a selectable number-leaf descriptor", function()
+            local d = rule_config.schema_for("barrel.reverse_barrel_fallback")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(-760, d.default)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("accepts negative customisations", function()
+            for _, ok_value in ipairs({ -500, -760, -880 }) do
+                local t = valid_table()
+                t.barrel.reverse_barrel_fallback = ok_value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "fallback=" .. ok_value .. " should be accepted")
+                assert.are.equal(ok_value, res.config.barrel.reverse_barrel_fallback)
+            end
         end)
     end)
 
     describe("endgame.going_over_target", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("endgame.going_over_target")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("win_immediately", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -4106,30 +4306,32 @@ describe("core.rule_config", function()
             assert.is_true(allowed["exact_only"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts exact_only as a non-default value", function()
             local t = valid_table()
             t.endgame.going_over_target = "exact_only"
             local res = rule_config.try_new(t)
-            assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("endgame.going_over_target", res.error.path)
+            assert.is_true(res.ok)
+            assert.are.equal("exact_only", res.config.endgame.going_over_target)
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
+        it("survives a JSON round trip with exact_only", function()
+            local t = valid_table()
+            t.endgame.going_over_target = "exact_only"
+            local cfg = rule_config.new(t)
+            local s = rule_config.to_json(cfg)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("win_immediately", res.config.endgame.going_over_target)
+            assert.are.equal("exact_only", res.config.endgame.going_over_target)
         end)
     end)
 
     describe("endgame.tiebreaker", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("endgame.tiebreaker")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("declarer_wins", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -4139,32 +4341,34 @@ describe("core.rule_config", function()
             assert.is_true(allowed["continuation"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
-            for _, bad in ipairs({ "high_score", "continuation" }) do
+        it("accepts each non-default value", function()
+            for _, value in ipairs({ "high_score", "continuation" }) do
                 local t = valid_table()
-                t.endgame.tiebreaker = bad
+                t.endgame.tiebreaker = value
                 local res = rule_config.try_new(t)
-                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
-                assert.are.equal("deferred_field_changed", res.error.code)
-                assert.are.equal("endgame.tiebreaker", res.error.path)
+                assert.is_true(res.ok, "value " .. value .. " should be accepted")
+                assert.are.equal(value, res.config.endgame.tiebreaker)
             end
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
+        it("survives a JSON round trip with continuation", function()
+            local t = valid_table()
+            t.endgame.tiebreaker = "continuation"
+            local cfg = rule_config.new(t)
+            local s = rule_config.to_json(cfg)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("declarer_wins", res.config.endgame.tiebreaker)
+            assert.are.equal("continuation", res.config.endgame.tiebreaker)
         end)
     end)
 
     describe("endgame.dump_truck", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("endgame.dump_truck")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -4174,22 +4378,24 @@ describe("core.rule_config", function()
             assert.is_true(allowed["both_signs"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
-            for _, bad in ipairs({ "positive_only", "both_signs" }) do
+        it("accepts each non-default value", function()
+            for _, value in ipairs({ "positive_only", "both_signs" }) do
                 local t = valid_table()
-                t.endgame.dump_truck = bad
+                t.endgame.dump_truck = value
                 local res = rule_config.try_new(t)
-                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
-                assert.are.equal("deferred_field_changed", res.error.code)
-                assert.are.equal("endgame.dump_truck", res.error.path)
+                assert.is_true(res.ok, "value " .. value .. " should be accepted")
+                assert.are.equal(value, res.config.endgame.dump_truck)
             end
         end)
 
-        it("survives a JSON round trip at its default", function()
-            local s = rule_config.to_json(rule_config.canonical_russian)
+        it("survives a JSON round trip with both_signs", function()
+            local t = valid_table()
+            t.endgame.dump_truck = "both_signs"
+            local cfg = rule_config.new(t)
+            local s = rule_config.to_json(cfg)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.endgame.dump_truck)
+            assert.are.equal("both_signs", res.config.endgame.dump_truck)
         end)
     end)
 

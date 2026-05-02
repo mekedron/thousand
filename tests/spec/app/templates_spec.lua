@@ -151,9 +151,9 @@ describe("app.templates", function()
             local created = templates.create({ fromBuiltin = "russian", name = "Mine" }).template
             local snapshot = store["templates.json"]
             local bad = builtin_blob("russian")
-            -- barrel.pit_lock_in stays deferred until Phase 3.6's
-            -- opening-game / barrel / endgame task lands.
-            bad.barrel.pit_lock_in = "on"
+            -- penalties.zero_tricks stays deferred until Phase 3.6's
+            -- penalties task lands.
+            bad.penalties.zero_tricks = "consecutive_three"
             local r = templates.update(created.id, bad)
             assert.is_false(r.ok)
             assert.are.equal("invalid_rule_config", r.error.code)

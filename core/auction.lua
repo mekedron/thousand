@@ -1003,4 +1003,111 @@ function M.skip_contra(auction, player)
     return { ok = true, auction = tag_as_auction(next_state) }
 end
 
+-- Phase 3.6 opening-game / golden-deal helpers.
+--
+-- Under `opening_game.golden_deal = "on"`, the auction is bypassed for
+-- the first `opening_game.golden_deal_count` deals. Every player in
+-- turn — starting at seat 1, advancing through the players — is
+-- assigned a forced 120-point contract. The session calls
+-- `is_golden_deal_active` at deal start; if true, it skips the auction
+-- entirely and routes straight to talon reveal.
+--
+-- The forced-contract value is `endgame.target_score - barrel.threshold`
+-- so non-canonical templates with shifted targets still produce the
+-- consistent "close out the barrel in one deal" amount.
+
+-- Returns `(active, declarer_seat)`. When `active` is true, the caller
+-- should bypass the auction and assign `declarer_seat` the forced
+-- contract via `golden_deal_contract(config)`.
+function M.is_golden_deal_active(config, deal_index)
+    if not rule_config.is_rule_config(config) then
+        error("auction.is_golden_deal_active requires a RuleConfig", 2)
+    end
+    if not is_integer(deal_index) or deal_index < 1 then
+        error("auction.is_golden_deal_active requires a positive integer deal_index", 2)
+    end
+    if config.opening_game.golden_deal ~= "on" then
+        return false, nil
+    end
+    local count = config.opening_game.golden_deal_count
+    if deal_index > count then
+        return false, nil
+    end
+    local pc = config.players.count
+    local seat = ((deal_index - 1) % pc) + 1
+    return true, seat
+end
+
+-- Returns the forced-contract value for a golden deal under `config`.
+-- Reads from `endgame.target_score - barrel.threshold` so non-canonical
+-- templates produce a consistent value (canonical Russian: 1000 - 880
+-- = 120).
+function M.golden_deal_contract(config)
+    if not rule_config.is_rule_config(config) then
+        error("auction.golden_deal_contract requires a RuleConfig", 2)
+    end
+    return config.endgame.target_score - config.barrel.threshold
+end
+
+-- Synthesises a `done` auction state for a golden deal so the session
+-- can route directly to the talon without driving the auction state
+-- machine. Mirrors the field shape of `M.new(...).auction` post-
+-- `finalize_with_winner`: status = "done", declarer = forced seat,
+-- final_bid = 120 (or the template's `target − threshold` equivalent),
+-- and a one-entry history that records the bypass so view-models and
+-- tests can detect it.
+function M.golden_deal_state(config, dealer, declarer)
+    if not rule_config.is_rule_config(config) then
+        error("auction.golden_deal_state requires a RuleConfig", 2)
+    end
+    local player_count = config.players.count
+    if not is_valid_player(dealer, player_count) then
+        error("auction.golden_deal_state: dealer must be in 1.." .. player_count, 2)
+    end
+    if not is_valid_player(declarer, player_count) then
+        error("auction.golden_deal_state: declarer must be in 1.." .. player_count, 2)
+    end
+    local final_bid = M.golden_deal_contract(config)
+    local forehand = (dealer % player_count) + 1
+    local sits_out = compute_sits_out(config, dealer)
+    local passed = {}
+    local locked = {}
+    local re_entered = {}
+    local blind = {}
+    for i = 1, player_count do
+        passed[i] = false
+        locked[i] = false
+        re_entered[i] = false
+        blind[i] = false
+    end
+    return tag_as_auction({
+        schema_version = M.SCHEMA_VERSION,
+        config = config,
+        dealer = dealer,
+        forehand = forehand,
+        player_count = player_count,
+        sits_out = sits_out,
+        turn = nil,
+        current_bid = final_bid,
+        current_leader = declarer,
+        passed = passed,
+        pass_count = 0,
+        re_entered = re_entered,
+        blind = blind,
+        locked = locked,
+        holdings = nil,
+        running_totals = nil,
+        doubling = nil,
+        dealer_forced = false,
+        blind_at_win = false,
+        status = "done",
+        declarer = declarer,
+        final_bid = final_bid,
+        golden_deal = true,
+        history = {
+            { player = declarer, action = "golden_deal_forced", amount = final_bid },
+        },
+    })
+end
+
 return M

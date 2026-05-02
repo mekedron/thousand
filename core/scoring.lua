@@ -689,15 +689,32 @@ function M.is_scoring(value)
     return getmetatable(value) == SCORING_TYPE
 end
 
+-- Phase 3.6 opening-game / barrel / endgame house-rules carry extra
+-- per-unit state on the same `barrel_state` array advance_game already
+-- threads through the session: a unit may be `pit_locked` (off the
+-- barrel but capped at `barrel.pit_score` until cleared by a
+-- successful contract), or `on_reverse_barrel` (mirror of the
+-- standard barrel at -threshold). Every helper below copies *all*
+-- shape-relevant fields so the input is never aliased and saved games
+-- round-trip cleanly.
 local function copy_barrel_entry(entry)
+    local copy = { on_barrel = entry.on_barrel and true or false }
     if entry.on_barrel then
-        return {
-            on_barrel = true,
-            mounted_on_deal = entry.mounted_on_deal,
-            deals_remaining = entry.deals_remaining,
-        }
+        copy.mounted_on_deal = entry.mounted_on_deal
+        copy.deals_remaining = entry.deals_remaining
     end
-    return { on_barrel = false }
+    if entry.pit_locked then
+        copy.pit_locked = true
+    end
+    if entry.on_reverse_barrel then
+        copy.on_reverse_barrel = true
+        copy.reverse_mounted_on_deal = entry.reverse_mounted_on_deal
+        copy.reverse_deals_remaining = entry.reverse_deals_remaining
+    end
+    if entry.eliminated then
+        copy.eliminated = true
+    end
+    return copy
 end
 
 local function off_barrel_entry()
@@ -755,6 +772,41 @@ local function validate_barrel_state_before(list, count, deal_count)
                 )
             end
         end
+        -- Phase 3.6 reverse-barrel: a unit cannot be on both barrels at
+        -- once. The forward barrel ranges 880..1000; the reverse barrel
+        -- ranges -1000..-880. Accept the on_reverse_barrel + counters
+        -- shape symmetrically with the forward barrel above.
+        if entry.on_reverse_barrel then
+            if entry.on_barrel then
+                return failure(
+                    "bad_barrel_state_before",
+                    "a unit cannot sit on the forward and reverse barrel at once",
+                    { player = i }
+                )
+            end
+            if
+                not is_integer(entry.reverse_mounted_on_deal)
+                or entry.reverse_mounted_on_deal < 1
+            then
+                return failure(
+                    "bad_barrel_state_before",
+                    "reverse-barrel entries must record a positive-integer reverse_mounted_on_deal",
+                    { player = i, actual = entry.reverse_mounted_on_deal }
+                )
+            end
+            if
+                not is_integer(entry.reverse_deals_remaining)
+                or entry.reverse_deals_remaining < 1
+                or entry.reverse_deals_remaining > deal_count
+            then
+                return failure(
+                    "bad_barrel_state_before",
+                    "reverse-barrel entries must record reverse_deals_remaining in 1.."
+                        .. deal_count,
+                    { player = i, actual = entry.reverse_deals_remaining, max = deal_count }
+                )
+            end
+        end
     end
     return nil
 end
@@ -781,6 +833,42 @@ end
 -- Apply one deal's per-player deltas against the running game-level
 -- state, honouring the barrel rules. The output is a fresh, type-tagged
 -- state; the input is never mutated.
+--
+-- Phase 3.6 opening-game / barrel / endgame house-rules wire eight
+-- toggles into this dispatch:
+--
+--   * `dump_truck`        — running-total reset on landing on ±555.
+--   * `pit_lock_in`       — intermediate cap at `barrel.pit_score`
+--                            cleared only by a successful declarer
+--                            contract.
+--   * `overshoot_penalty` — replace the fall-off penalty with the
+--                            declarer's bid amount when `bid >
+--                            target − threshold` and the contract
+--                            failed.
+--   * `reverse_barrel`    — symmetric −threshold barrel; reaching
+--                            −target eliminates the unit; failing to
+--                            climb out falls back to
+--                            `reverse_barrel_fallback`.
+--   * `collision_rule`    — `last_mounter` (canonical),
+--                            `first_mounter`, `all_collide_fall_off`.
+--   * `going_over_target` — `win_immediately` (canonical) or
+--                            `exact_only`: cap at
+--                            `effective_target − 1` until a unit
+--                            lands exactly on the target.
+--   * `tiebreaker`        — `declarer_wins` (canonical), `high_score`
+--                            (lowest seat tiebreaks), `continuation`
+--                            (no winner; `effective_target_after`
+--                            jumps +500).
+--
+-- Callers may pass:
+--   * `opts.bid`                       — declarer's effective bid for
+--                                         overshoot_penalty.
+--   * `opts.declarer_made_contract`    — boolean used by pit-lock
+--                                         clearing.
+--   * `opts.effective_target_before`   — carry the elevated-target
+--                                         state across deals when
+--                                         `tiebreaker == "continuation"`
+--                                         has fired.
 function M.advance_game(config, opts)
     if not rule_config.is_rule_config(config) then
         return failure("not_a_rule_config", "scoring.advance_game requires a RuleConfig", {
@@ -794,11 +882,33 @@ function M.advance_game(config, opts)
     end
 
     local player_count = config.players.count
-    local target = config.endgame.target_score
-    local threshold = config.barrel.threshold
+    local target_default = config.endgame.target_score
+    local threshold_default = config.barrel.threshold
     local barrel_deal_count = config.barrel.deal_count
-    local fall_off_total = threshold + config.barrel.fall_off_penalty
-    local barrel_make = target - threshold
+    local barrel_make_default = target_default - threshold_default
+    local fall_off_total_default = threshold_default + config.barrel.fall_off_penalty
+
+    -- `effective_target_before` carries the elevated target produced by
+    -- prior `tiebreaker == "continuation"` events. When it is missing
+    -- (legacy callers, fresh game), fall back to the canonical target.
+    -- The barrel threshold and barrel-make gap shift symmetrically so
+    -- the closing-gap stays at `target − threshold` (canonically 120).
+    local effective_target_before = opts.effective_target_before
+    if effective_target_before == nil then
+        effective_target_before = target_default
+    end
+    if not is_integer(effective_target_before) then
+        return failure(
+            "bad_effective_target_before",
+            "effective_target_before must be a positive integer when supplied",
+            { actual = effective_target_before }
+        )
+    end
+    local target = effective_target_before
+    local target_offset = target - target_default
+    local threshold = threshold_default + target_offset
+    local fall_off_total = fall_off_total_default + target_offset
+    local barrel_make = barrel_make_default
 
     local declarer = opts.declarer
     if not (is_integer(declarer) and declarer >= 1 and declarer <= player_count) then
@@ -832,6 +942,20 @@ function M.advance_game(config, opts)
     if barrel_err then
         return barrel_err
     end
+
+    local pit_lock_active = config.barrel.pit_lock_in == "on"
+    local pit_score = config.barrel.pit_score
+    local overshoot_active = config.barrel.overshoot_penalty == "on"
+    local reverse_active = config.barrel.reverse_barrel == "on"
+    local reverse_fallback = config.barrel.reverse_barrel_fallback
+    local reverse_threshold = -threshold
+    local reverse_target = -target
+    local collision_rule = config.barrel.collision_rule
+    local going_over_target = config.endgame.going_over_target
+    local tiebreaker = config.endgame.tiebreaker
+    local dump_truck_mode = config.endgame.dump_truck
+    local declarer_made_contract = opts.declarer_made_contract and true or false
+    local declarer_bid = opts.bid
 
     local sides = partnership_sides(config)
 
@@ -890,25 +1014,92 @@ function M.advance_game(config, opts)
         return opts.barrel_state_before[idx]
     end
 
+    local declarer_unit = sides and sides[declarer] or declarer
+
     local unit_running = {}
     local unit_barrel = {}
+    -- Phase 3.6 per-unit event arrays surfaced in the returned state so
+    -- the session / view-model can render the matching scoreboard rows.
+    local unit_dump_truck = {}
+    local unit_pit_state = {}
+    local unit_overshoot = {}
+    local unit_eliminated = {}
+    for u = 1, unit_count do
+        unit_dump_truck[u] = false
+        unit_pit_state[u] = "not_locked"
+        unit_overshoot[u] = false
+        unit_eliminated[u] = false
+    end
+
     for u = 1, unit_count do
         local before_total = unit_total_before(u)
         local before_entry = unit_barrel_before(u)
         local delta = unit_delta(u)
+        local is_declarer_unit = (u == declarer_unit)
 
-        if before_entry.on_barrel then
+        local new_total
+        local new_entry
+        local pit_state = "not_locked"
+
+        if before_entry.on_reverse_barrel then
+            -- Reverse-barrel state machine. Mirrors the forward barrel
+            -- at -threshold/-target. Climbing above -threshold escapes;
+            -- falling to or past -target eliminates the unit; failing
+            -- to do either within `reverse_deals_remaining` deals
+            -- falls back to `reverse_barrel_fallback`.
+            local raw = before_total + delta
+            if raw >= -threshold + 1 then
+                -- Escaped above the reverse barrel ceiling. The unit
+                -- resumes normal accumulation with the raw new total.
+                new_total = raw
+                new_entry = off_barrel_entry()
+            elseif raw <= -target then
+                new_total = -target
+                new_entry = off_barrel_entry()
+                unit_eliminated[u] = true
+            else
+                local deals_remaining = before_entry.reverse_deals_remaining - 1
+                if deals_remaining <= 0 then
+                    new_total = reverse_fallback
+                    new_entry = off_barrel_entry()
+                else
+                    new_total = -threshold
+                    new_entry = {
+                        on_barrel = false,
+                        on_reverse_barrel = true,
+                        reverse_mounted_on_deal = before_entry.reverse_mounted_on_deal,
+                        reverse_deals_remaining = deals_remaining,
+                    }
+                end
+            end
+        elseif before_entry.on_barrel then
             if delta >= barrel_make then
-                unit_running[u] = target
-                unit_barrel[u] = off_barrel_entry()
+                new_total = target
+                new_entry = off_barrel_entry()
             else
                 local deals_remaining = before_entry.deals_remaining - 1
                 if deals_remaining <= 0 then
-                    unit_running[u] = fall_off_total
-                    unit_barrel[u] = off_barrel_entry()
+                    -- Fall off. Overshoot penalty replaces the standard
+                    -- `fall_off_penalty` with the declarer's bid amount
+                    -- when (a) the toggle is on, (b) the bid strictly
+                    -- exceeds the closing-gap (`barrel_make`), and (c)
+                    -- this is the declarer's unit. Defender units fall
+                    -- off at the standard rate even under a hero bid.
+                    if
+                        overshoot_active
+                        and is_declarer_unit
+                        and is_integer(declarer_bid)
+                        and declarer_bid > barrel_make
+                    then
+                        new_total = threshold - declarer_bid
+                        unit_overshoot[u] = true
+                    else
+                        new_total = fall_off_total
+                    end
+                    new_entry = off_barrel_entry()
                 else
-                    unit_running[u] = threshold
-                    unit_barrel[u] = {
+                    new_total = threshold
+                    new_entry = {
                         on_barrel = true,
                         mounted_on_deal = before_entry.mounted_on_deal,
                         deals_remaining = deals_remaining,
@@ -916,29 +1107,112 @@ function M.advance_game(config, opts)
                 end
             end
         else
-            local new_total = before_total + delta
+            -- Off both barrels. Apply pit-lock-in semantics, then check
+            -- for forward / reverse barrel mounts.
+            local was_pit_locked = pit_lock_active and (before_entry.pit_locked == true)
+            local raw = before_total + delta
+
+            if was_pit_locked then
+                if is_declarer_unit and declarer_made_contract then
+                    -- Successful declarer contract clears the pit lock.
+                    -- Full delta applies; raw new_total resumes normal
+                    -- accumulation paths.
+                    new_total = raw
+                    pit_state = "cleared_this_deal"
+                elseif delta < 0 then
+                    -- Negative deltas (failed contract penalties) drop
+                    -- the unit back below the pit; the lock clears
+                    -- naturally.
+                    new_total = raw
+                    pit_state = "cleared_this_deal"
+                else
+                    -- Stay capped at pit_score; positive defender
+                    -- contributions cannot push past the pit.
+                    new_total = pit_score
+                    pit_state = "pit_locked"
+                end
+            else
+                new_total = raw
+                if pit_lock_active and before_total < pit_score and raw >= pit_score then
+                    -- Cross from below: cap at the pit; flag locked.
+                    new_total = pit_score
+                    pit_state = "pit_locked"
+                end
+            end
+
+            -- Check forward / reverse barrel mounts against the
+            -- (possibly pit-capped) total.
             if new_total >= target then
-                unit_running[u] = new_total
-                unit_barrel[u] = off_barrel_entry()
+                new_entry = off_barrel_entry()
             elseif new_total >= threshold then
-                unit_running[u] = threshold
-                unit_barrel[u] = {
+                new_entry = {
                     on_barrel = true,
                     mounted_on_deal = deal_index,
                     deals_remaining = barrel_deal_count,
                 }
+                new_total = threshold
+            elseif reverse_active and new_total <= reverse_threshold then
+                if new_total <= reverse_target then
+                    new_total = reverse_target
+                    new_entry = off_barrel_entry()
+                    unit_eliminated[u] = true
+                else
+                    new_entry = {
+                        on_barrel = false,
+                        on_reverse_barrel = true,
+                        reverse_mounted_on_deal = deal_index,
+                        reverse_deals_remaining = barrel_deal_count,
+                    }
+                    new_total = reverse_threshold
+                end
             else
-                unit_running[u] = new_total
-                unit_barrel[u] = off_barrel_entry()
+                new_entry = off_barrel_entry()
             end
         end
+
+        -- Dump truck reset fires last on the settled unit total. Lands
+        -- on +555 always (under positive_only / both_signs); lands on
+        -- -555 only under both_signs. Resets the running total to 0
+        -- and clears any forward / reverse barrel state.
+        if dump_truck_mode == "positive_only" or dump_truck_mode == "both_signs" then
+            if new_total == 555 then
+                new_total = 0
+                new_entry = off_barrel_entry()
+                unit_dump_truck[u] = true
+                pit_state = "not_locked"
+            end
+        end
+        if dump_truck_mode == "both_signs" then
+            if new_total == -555 then
+                new_total = 0
+                new_entry = off_barrel_entry()
+                unit_dump_truck[u] = true
+                pit_state = "not_locked"
+            end
+        end
+
+        -- Persist the pit-lock flag onto the new entry. `pit_locked`
+        -- only sticks while the unit is off both barrels at exactly
+        -- pit_score; mounting either barrel or clearing the lock
+        -- removes it.
+        if
+            pit_state == "pit_locked"
+            and not new_entry.on_barrel
+            and not new_entry.on_reverse_barrel
+        then
+            new_entry.pit_locked = true
+        end
+        unit_pit_state[u] = pit_state
+
+        unit_running[u] = new_total
+        unit_barrel[u] = new_entry
     end
 
-    local declarer_unit = sides and sides[declarer] or declarer
-
-    -- Collision rule at the unit level: if more than one unit ends the
-    -- deal on the barrel, only the latest-to-mount stays. Same-deal
-    -- mounts are broken by declarer-wins-ties, then lowest unit index.
+    -- Collision rule at the unit level. `last_mounter` is canonical:
+    -- only the latest-mounted unit stays. `first_mounter` keeps the
+    -- earliest mount. `all_collide_fall_off` knocks every colliding
+    -- unit off. Same-deal mount ties break by declarer-wins, then
+    -- lowest unit index (preserved for backward compat).
     local on_barrel_units = {}
     for u = 1, unit_count do
         if unit_barrel[u].on_barrel then
@@ -946,40 +1220,72 @@ function M.advance_game(config, opts)
         end
     end
     if #on_barrel_units > 1 then
-        local latest = -1
-        for _, u in ipairs(on_barrel_units) do
-            if unit_barrel[u].mounted_on_deal > latest then
-                latest = unit_barrel[u].mounted_on_deal
-            end
-        end
-        local at_latest = {}
-        for _, u in ipairs(on_barrel_units) do
-            if unit_barrel[u].mounted_on_deal == latest then
-                at_latest[#at_latest + 1] = u
-            end
-        end
-        local survivor
-        for _, u in ipairs(at_latest) do
-            if u == declarer_unit then
-                survivor = u
-                break
-            end
-        end
-        if not survivor then
-            survivor = at_latest[1]
-        end
-        for _, u in ipairs(on_barrel_units) do
-            if u ~= survivor then
+        if collision_rule == "all_collide_fall_off" then
+            for _, u in ipairs(on_barrel_units) do
                 unit_running[u] = fall_off_total
                 unit_barrel[u] = off_barrel_entry()
+            end
+        else
+            local pick = -1
+            if collision_rule == "first_mounter" then
+                pick = math.huge
+            end
+            for _, u in ipairs(on_barrel_units) do
+                local mod = unit_barrel[u].mounted_on_deal
+                if collision_rule == "first_mounter" then
+                    if mod < pick then
+                        pick = mod
+                    end
+                else
+                    if mod > pick then
+                        pick = mod
+                    end
+                end
+            end
+            local at_pick = {}
+            for _, u in ipairs(on_barrel_units) do
+                if unit_barrel[u].mounted_on_deal == pick then
+                    at_pick[#at_pick + 1] = u
+                end
+            end
+            local survivor
+            for _, u in ipairs(at_pick) do
+                if u == declarer_unit then
+                    survivor = u
+                    break
+                end
+            end
+            if not survivor then
+                survivor = at_pick[1]
+            end
+            for _, u in ipairs(on_barrel_units) do
+                if u ~= survivor then
+                    unit_running[u] = fall_off_total
+                    unit_barrel[u] = off_barrel_entry()
+                end
             end
         end
     end
 
-    -- Winner at unit level. Per-seat winner is the lowest-numbered seat
-    -- in the winning unit so legacy callers reading a single integer
-    -- keep working.
+    -- Going-over-target. Under `exact_only`, cap totals strictly above
+    -- the effective target at `target − 1` before winner detection so
+    -- only an exact landing wins. Caps barrel-resolved totals (which
+    -- never exceed `target`) too: target itself stays the canonical
+    -- "make the barrel" output and remains a winner.
+    local going_over_caps = {}
+    if going_over_target == "exact_only" then
+        for u = 1, unit_count do
+            if unit_running[u] > target then
+                going_over_caps[u] = true
+                unit_running[u] = target - 1
+            end
+        end
+    end
+
+    -- Winner at unit level. `tiebreaker` selects the resolution rule
+    -- when more than one unit reaches the target this deal.
     local winning_unit
+    local tiebreaker_continuation_event = false
     local at_or_above = {}
     for u = 1, unit_count do
         if unit_running[u] >= target then
@@ -989,31 +1295,65 @@ function M.advance_game(config, opts)
     if #at_or_above == 1 then
         winning_unit = at_or_above[1]
     elseif #at_or_above > 1 then
-        local max_total = -math.huge
-        for _, u in ipairs(at_or_above) do
-            if unit_running[u] > max_total then
-                max_total = unit_running[u]
+        if tiebreaker == "continuation" then
+            -- No winner this deal; cap each at-or-above unit at
+            -- `target − 1` so they re-enter the off-barrel state below
+            -- the new effective target.
+            for _, u in ipairs(at_or_above) do
+                unit_running[u] = target - 1
+                unit_barrel[u] = off_barrel_entry()
             end
-        end
-        local at_max = {}
-        for _, u in ipairs(at_or_above) do
-            if unit_running[u] == max_total then
-                at_max[#at_max + 1] = u
-            end
-        end
-        if #at_max == 1 then
-            winning_unit = at_max[1]
-        else
-            for _, u in ipairs(at_max) do
-                if u == declarer_unit then
-                    winning_unit = u
-                    break
+            tiebreaker_continuation_event = true
+        elseif tiebreaker == "high_score" then
+            -- Highest total wins; ties broken by lowest unit index
+            -- (no declarer favouritism).
+            local max_total = -math.huge
+            for _, u in ipairs(at_or_above) do
+                if unit_running[u] > max_total then
+                    max_total = unit_running[u]
                 end
             end
-            if not winning_unit then
+            local at_max = {}
+            for _, u in ipairs(at_or_above) do
+                if unit_running[u] == max_total then
+                    at_max[#at_max + 1] = u
+                end
+            end
+            winning_unit = at_max[1]
+        else
+            -- declarer_wins (canonical): highest total wins; ties at
+            -- the top break for the declarer's unit.
+            local max_total = -math.huge
+            for _, u in ipairs(at_or_above) do
+                if unit_running[u] > max_total then
+                    max_total = unit_running[u]
+                end
+            end
+            local at_max = {}
+            for _, u in ipairs(at_or_above) do
+                if unit_running[u] == max_total then
+                    at_max[#at_max + 1] = u
+                end
+            end
+            if #at_max == 1 then
                 winning_unit = at_max[1]
+            else
+                for _, u in ipairs(at_max) do
+                    if u == declarer_unit then
+                        winning_unit = u
+                        break
+                    end
+                end
+                if not winning_unit then
+                    winning_unit = at_max[1]
+                end
             end
         end
+    end
+
+    local effective_target_after = target
+    if tiebreaker_continuation_event then
+        effective_target_after = target + 500
     end
 
     -- Fan unit-level state out to per-seat lists. Partner seats end the
@@ -1043,6 +1383,21 @@ function M.advance_game(config, opts)
         barrel_state_copy[i] = copy_barrel_entry(barrel_state[i])
     end
 
+    -- Per-seat event arrays surfaced to the session.
+    local dump_truck_events = {}
+    local pit_lock_in_state_seat = {}
+    local overshoot_penalty_applied = {}
+    local eliminated_seat = {}
+    local going_over_target_capped = {}
+    for i = 1, player_count do
+        local u = sides and sides[i] or i
+        dump_truck_events[i] = unit_dump_truck[u] and true or false
+        pit_lock_in_state_seat[i] = unit_pit_state[u]
+        overshoot_penalty_applied[i] = unit_overshoot[u] and true or false
+        eliminated_seat[i] = unit_eliminated[u] and true or false
+        going_over_target_capped[i] = going_over_caps[u] and true or false
+    end
+
     -- Per-side aggregates for the UI's pooled-side scoreboard row.
     local side_running_totals
     local side_barrel_state
@@ -1065,6 +1420,15 @@ function M.advance_game(config, opts)
         barrel_state = barrel_state_copy,
         winner = winner,
         sides = sides,
+        -- Phase 3.6 echo arrays.
+        dump_truck_events = dump_truck_events,
+        pit_lock_in_state = pit_lock_in_state_seat,
+        overshoot_penalty_applied = overshoot_penalty_applied,
+        eliminated = eliminated_seat,
+        going_over_target_capped = going_over_target_capped,
+        effective_target_before = target,
+        effective_target_after = effective_target_after,
+        tiebreaker_continuation_event = tiebreaker_continuation_event,
         side_running_totals = side_running_totals,
         side_barrel_state = side_barrel_state,
         winning_side = winning_side,

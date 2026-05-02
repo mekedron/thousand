@@ -1930,6 +1930,32 @@ local function draw_scoreboard(view, region)
                     n = entry.barrel.deals_remaining or 0,
                 })
                 love.graphics.print(hint, region.x + 12, row_y + 14)
+            elseif entry.reverse_barrel and entry.reverse_barrel.on then
+                -- Phase 3.6 reverse-barrel marker. Distinct red tint
+                -- so the symmetric state machine reads instantly
+                -- against the gold forward-barrel marker.
+                love.graphics.setColor(0.85, 0.30, 0.30, 1)
+                local hint = t("scene.table.scoreboard.reverse_barrel", {
+                    n = entry.reverse_barrel.deals_remaining or 0,
+                })
+                love.graphics.print(hint, region.x + 12, row_y + 14)
+            elseif entry.pit_locked then
+                -- Phase 3.6 pit-lock-in marker. Distinct teal tint to
+                -- separate it from the barrel and reverse-barrel
+                -- markers.
+                love.graphics.setColor(0.30, 0.75, 0.75, 1)
+                love.graphics.print(
+                    t("scene.table.scoreboard.pit_locked"),
+                    region.x + 12,
+                    row_y + 14
+                )
+            elseif entry.eliminated then
+                love.graphics.setColor(0.55, 0.30, 0.30, 1)
+                love.graphics.print(
+                    t("scene.table.scoreboard.eliminated"),
+                    region.x + 12,
+                    row_y + 14
+                )
             end
         end
 
@@ -1942,6 +1968,33 @@ local function draw_scoreboard(view, region)
             draw_partner_badge(badge_x, row_y - 4, entry.side)
         end
 
+        row_y = row_y + row_h
+    end
+
+    -- Phase 3.6 endgame house-rules. Show the active target line at the
+    -- bottom of the scoreboard. Under
+    -- `endgame.going_over_target == "exact_only"` an extra "must land
+    -- exactly" line sits above the target.
+    if view.effective_target then
+        row_y = row_y + 4
+        love.graphics.setColor(SCOREBOARD_BORDER)
+        love.graphics.line(region.x + 12, row_y, region.x + region.w - 12, row_y)
+        row_y = row_y + 6
+        if view.exact_only_indicator then
+            love.graphics.setColor(0.95, 0.75, 0.30, 1)
+            love.graphics.print(
+                t("scene.table.scoreboard.exact_only", { target = view.effective_target }),
+                region.x + 12,
+                row_y
+            )
+            row_y = row_y + 18
+        end
+        love.graphics.setColor(LABEL_COLOR)
+        love.graphics.print(
+            t("scene.table.scoreboard.effective_target", { target = view.effective_target }),
+            region.x + 12,
+            row_y
+        )
         row_y = row_y + row_h
     end
 
@@ -2120,18 +2173,21 @@ local function draw_deal_done_banner(view, regions)
     -- Phase 3.6 score-breakdown rows. One row per non-zero bonus /
     -- penalty contributor (marriage, half-marriage capture, ace
     -- marriage, last-trick, slam, slam-against, failed-contract
-    -- distribution, actual-points override, pooled-defender).
-    -- Future-Phase-5.1 will replace the static text with an enter
-    -- animation per row.
+    -- distribution, actual-points override, pooled-defender,
+    -- dump-truck reset, pit-lock-in cap, overshoot penalty,
+    -- tiebreaker-continuation banner). Future-Phase-5.1 will replace
+    -- the static text with an enter animation per row.
     local breakdown = view.deal_done.score_breakdown
     if breakdown and #breakdown > 0 then
         cursor_y = cursor_y + 12
         for _, row in ipairs(breakdown) do
-            love.graphics.print(
-                t(row.label_key) .. " " .. tostring(row.total),
-                centre.x + 24,
-                cursor_y
-            )
+            local text
+            if row.kind == "tiebreaker_continuation" then
+                text = t(row.label_key, { new = row.new_target })
+            else
+                text = t(row.label_key) .. " " .. tostring(row.total)
+            end
+            love.graphics.print(text, centre.x + 24, cursor_y)
             cursor_y = cursor_y + 18
         end
     end
@@ -2192,6 +2248,36 @@ local function draw_dealer_forced_banner(view, regions)
         centre.x + 12,
         y + 4
     )
+end
+
+-- Phase 3.6 opening-game / golden-deal banner. Sits in the same lane
+-- as draw_dealer_forced_banner: informational, no input gate. Renders
+-- only during the opening N forced-120 deals.
+local function draw_golden_deal_banner(view, regions)
+    if not view or not view.golden_deal_banner then
+        return
+    end
+    local b = view.golden_deal_banner
+    local centre = regions.centre
+    local y = centre.y - 50
+    love.graphics.setColor(0.85, 0.65, 0.10, 0.85)
+    love.graphics.rectangle("fill", centre.x, y, centre.w, 44)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.print(
+        t("scene.table.golden_deal.banner", { seat = b.seat, amount = b.amount }),
+        centre.x + 12,
+        y + 4
+    )
+    if b.deal_index and b.opening_count then
+        love.graphics.print(
+            t("scene.table.golden_deal.subtitle", {
+                deal = b.deal_index,
+                count = b.opening_count,
+            }),
+            centre.x + 12,
+            y + 22
+        )
+    end
 end
 
 -- Phase 3.6 contract-multiplier badge. Surfaces ×2 / ×4 / ×8 next to
@@ -2508,6 +2594,7 @@ function M:draw(w, h)
     draw_misdeal_banner(self._view_model, regions)
     draw_raspassy_status_banner(self._view_model, regions)
     draw_dealer_forced_banner(self._view_model, regions)
+    draw_golden_deal_banner(self._view_model, regions)
     draw_contract_multiplier_badge(self, self._view_model, regions)
     draw_bidding_status_hints(self._view_model, regions)
     draw_deal_done_banner(self._view_model, regions)

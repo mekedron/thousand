@@ -613,7 +613,7 @@ ships scripted engine tests covering every value.
   - All four fields flip to selectable.
   - Scoring tests cover every variant value against scripted deal
     outcomes.
-- [ ] Implement opening-game, barrel, and endgame house rules.
+- [x] Implement opening-game, barrel, and endgame house rules.
   - `golden_deal` `on` forces every player in turn through a mandatory
     120 contract for the opening N deals; the marriages-doubled,
     blind-allowed, and penalty-doubling sub-flags live in new sibling

@@ -541,15 +541,24 @@ describe("core.auction", function()
                     failed_contract_distribution = "lost",
                     declarer_rounding_before_contract_check = "off",
                 },
-                opening_game = { golden_deal = "off" },
+                opening_game = {
+                    golden_deal = "off",
+                    golden_deal_count = 3,
+                    golden_deal_marriages_doubled = "off",
+                    golden_deal_blind_allowed = "off",
+                    golden_deal_penalty_doubled = "off",
+                    golden_deal_failure_handling = "continue",
+                },
                 barrel = {
                     threshold = 880,
                     deal_count = 3,
                     fall_off_penalty = -120,
                     pit_lock_in = "off",
+                    pit_score = 700,
                     collision_rule = "last_mounter",
                     overshoot_penalty = "off",
                     reverse_barrel = "off",
+                    reverse_barrel_fallback = -760,
                 },
                 endgame = {
                     target_score = 1000,
@@ -683,15 +692,24 @@ describe("core.auction", function()
                     failed_contract_distribution = "lost",
                     declarer_rounding_before_contract_check = "off",
                 },
-                opening_game = { golden_deal = "off" },
+                opening_game = {
+                    golden_deal = "off",
+                    golden_deal_count = 3,
+                    golden_deal_marriages_doubled = "off",
+                    golden_deal_blind_allowed = "off",
+                    golden_deal_penalty_doubled = "off",
+                    golden_deal_failure_handling = "continue",
+                },
                 barrel = {
                     threshold = 880,
                     deal_count = 3,
                     fall_off_penalty = -120,
                     pit_lock_in = "off",
+                    pit_score = 700,
                     collision_rule = "last_mounter",
                     overshoot_penalty = "off",
                     reverse_barrel = "off",
+                    reverse_barrel_fallback = -760,
                 },
                 endgame = {
                     target_score = 1000,
@@ -919,15 +937,24 @@ describe("core.auction", function()
                 failed_contract_distribution = "lost",
                 declarer_rounding_before_contract_check = "off",
             },
-            opening_game = { golden_deal = "off" },
+            opening_game = {
+                golden_deal = "off",
+                golden_deal_count = 3,
+                golden_deal_marriages_doubled = "off",
+                golden_deal_blind_allowed = "off",
+                golden_deal_penalty_doubled = "off",
+                golden_deal_failure_handling = "continue",
+            },
             barrel = {
                 threshold = 880,
                 deal_count = 3,
                 fall_off_penalty = -120,
                 pit_lock_in = "off",
+                pit_score = 700,
                 collision_rule = "last_mounter",
                 overshoot_penalty = "off",
                 reverse_barrel = "off",
+                reverse_barrel_fallback = -760,
             },
             endgame = {
                 target_score = 1000,
@@ -1649,6 +1676,61 @@ describe("core.auction", function()
             assert.are.equal("done", a.status)
             assert.are.equal("named", a.final_bid.kind)
             assert.are.equal("mizere", a.final_bid.contract)
+        end)
+    end)
+
+    -- Phase 3.6 opening-game / golden-deal helpers.
+    describe("is_golden_deal_active and golden_deal_state", function()
+        local function cfg_with_golden(opts)
+            opts = opts or {}
+            local json = require("app.json")
+            local rc = require("core.rule_config")
+            local blob = json.decode(rc.to_json(rc.canonical_russian))
+            blob.opening_game.golden_deal = opts.golden_deal or "on"
+            blob.opening_game.golden_deal_count = opts.count or 3
+            return rc.new(blob)
+        end
+
+        it("returns false when the toggle is off", function()
+            local cfg = cfg_with_golden({ golden_deal = "off" })
+            local active, seat = auction.is_golden_deal_active(cfg, 1)
+            assert.is_false(active)
+            assert.is_nil(seat)
+        end)
+
+        it("returns true and rotates seats during the opening N deals", function()
+            local cfg = cfg_with_golden({ count = 3 })
+            local active1, seat1 = auction.is_golden_deal_active(cfg, 1)
+            local active2, seat2 = auction.is_golden_deal_active(cfg, 2)
+            local active3, seat3 = auction.is_golden_deal_active(cfg, 3)
+            assert.is_true(active1)
+            assert.is_true(active2)
+            assert.is_true(active3)
+            assert.are.equal(1, seat1)
+            assert.are.equal(2, seat2)
+            assert.are.equal(3, seat3)
+        end)
+
+        it("returns false from deal N+1 onward", function()
+            local cfg = cfg_with_golden({ count = 3 })
+            local active, seat = auction.is_golden_deal_active(cfg, 4)
+            assert.is_false(active)
+            assert.is_nil(seat)
+        end)
+
+        it("golden_deal_contract reads target - threshold (canonical 120)", function()
+            local cfg = cfg_with_golden({})
+            assert.are.equal(120, auction.golden_deal_contract(cfg))
+        end)
+
+        it("golden_deal_state synthesises a done auction with the forced contract", function()
+            local cfg = cfg_with_golden({})
+            local state = auction.golden_deal_state(cfg, 3, 1)
+            assert.is_true(auction.is_auction(state))
+            assert.are.equal("done", state.status)
+            assert.are.equal(1, state.declarer)
+            assert.are.equal(120, state.final_bid)
+            assert.is_true(state.golden_deal == true)
         end)
     end)
 end)

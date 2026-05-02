@@ -317,15 +317,24 @@ describe("core.scoring", function()
                     failed_contract_distribution = "lost",
                     declarer_rounding_before_contract_check = "on",
                 },
-                opening_game = { golden_deal = "off" },
+                opening_game = {
+                    golden_deal = "off",
+                    golden_deal_count = 3,
+                    golden_deal_marriages_doubled = "off",
+                    golden_deal_blind_allowed = "off",
+                    golden_deal_penalty_doubled = "off",
+                    golden_deal_failure_handling = "continue",
+                },
                 barrel = {
                     threshold = 880,
                     deal_count = 3,
                     fall_off_penalty = -120,
                     pit_lock_in = "off",
+                    pit_score = 700,
                     collision_rule = "last_mounter",
                     overshoot_penalty = "off",
                     reverse_barrel = "off",
+                    reverse_barrel_fallback = -760,
                 },
                 endgame = {
                     target_score = 1000,
@@ -1382,6 +1391,339 @@ describe("core.scoring", function()
         end)
     end)
 
+    -- Phase 3.6 opening-game / barrel / endgame house-rule pins for
+    -- advance_game. Each describe overrides one toggle on the canonical
+    -- Russian config and pins the engine math against the documented
+    -- rule from docs/variations/house-rules.md. The session-level
+    -- integration spec (tests/spec/app/session_endgame_variants_spec)
+    -- exercises the same toggles end-to-end through a full deal.
+    local json = require("app.json")
+    local function with_endgame_overrides(overrides)
+        local blob = json.decode(rule_config.to_json(rule_config.canonical_russian))
+        overrides = overrides or {}
+        for section, fields in pairs(overrides) do
+            blob[section] = blob[section] or {}
+            for k, v in pairs(fields) do
+                blob[section][k] = v
+            end
+        end
+        return rule_config.new(blob)
+    end
+
+    local function advance_with(cfg, opts)
+        opts = opts or {}
+        local final = {
+            declarer = opts.declarer or 1,
+            deal_index = opts.deal_index or 1,
+            deltas = opts.deltas or { 0, 0, 0 },
+            running_totals_before = opts.running_totals_before or { 0, 0, 0 },
+            barrel_state_before = opts.barrel_state_before or scoring.initial_barrel_state(cfg),
+            bid = opts.bid,
+            declarer_made_contract = opts.declarer_made_contract,
+            effective_target_before = opts.effective_target_before,
+        }
+        local r = scoring.advance_game(cfg, final)
+        assert.is_true(
+            r.ok,
+            "advance_game must succeed (got " .. (r.error and r.error.code or "?") .. ")"
+        )
+        return r.game
+    end
+
+    describe("advance_game() dump_truck", function()
+        it("resets a unit landing exactly on +555 to 0 under positive_only", function()
+            local cfg = with_endgame_overrides({ endgame = { dump_truck = "positive_only" } })
+            local g = advance_with(cfg, {
+                deltas = { 25, 0, 0 },
+                running_totals_before = { 530, 0, 0 },
+            })
+            assert.are.equal(0, g.running_totals[1])
+            assert.is_true(g.dump_truck_events[1])
+            assert.is_false(g.dump_truck_events[2])
+        end)
+
+        it("does not fire when total ends near but not on 555", function()
+            local cfg = with_endgame_overrides({ endgame = { dump_truck = "positive_only" } })
+            local g = advance_with(cfg, {
+                deltas = { 24, 0, 0 },
+                running_totals_before = { 530, 0, 0 },
+            })
+            assert.are.equal(554, g.running_totals[1])
+            assert.is_false(g.dump_truck_events[1])
+        end)
+
+        it("ignores -555 under positive_only", function()
+            local cfg = with_endgame_overrides({ endgame = { dump_truck = "positive_only" } })
+            local g = advance_with(cfg, {
+                deltas = { -25, 0, 0 },
+                running_totals_before = { -530, 0, 0 },
+            })
+            assert.are.equal(-555, g.running_totals[1])
+            assert.is_false(g.dump_truck_events[1])
+        end)
+
+        it("resets -555 to 0 under both_signs", function()
+            local cfg = with_endgame_overrides({ endgame = { dump_truck = "both_signs" } })
+            local g = advance_with(cfg, {
+                deltas = { -25, 0, 0 },
+                running_totals_before = { -530, 0, 0 },
+            })
+            assert.are.equal(0, g.running_totals[1])
+            assert.is_true(g.dump_truck_events[1])
+        end)
+    end)
+
+    describe("advance_game() pit_lock_in", function()
+        it("caps the running total at pit_score on first crossing", function()
+            local cfg = with_endgame_overrides({
+                barrel = { pit_lock_in = "on", pit_score = 700 },
+            })
+            local g = advance_with(cfg, {
+                deltas = { 200, 0, 0 },
+                running_totals_before = { 600, 0, 0 },
+            })
+            assert.are.equal(700, g.running_totals[1])
+            assert.is_true(g.barrel_state[1].pit_locked == true)
+            assert.are.equal("pit_locked", g.pit_lock_in_state[1])
+        end)
+
+        it("clears the lock when the declarer makes their contract", function()
+            local cfg = with_endgame_overrides({
+                barrel = { pit_lock_in = "on", pit_score = 700 },
+            })
+            local g = advance_with(cfg, {
+                deltas = { 100, 0, 0 },
+                running_totals_before = { 700, 0, 0 },
+                barrel_state_before = {
+                    { on_barrel = false, pit_locked = true },
+                    { on_barrel = false },
+                    { on_barrel = false },
+                },
+                declarer = 1,
+                declarer_made_contract = true,
+            })
+            assert.are.equal(800, g.running_totals[1])
+            assert.is_nil(g.barrel_state[1].pit_locked)
+            assert.are.equal("cleared_this_deal", g.pit_lock_in_state[1])
+        end)
+
+        it("stays capped at pit_score under a defender's positive delta", function()
+            local cfg = with_endgame_overrides({
+                barrel = { pit_lock_in = "on", pit_score = 700 },
+            })
+            local g = advance_with(cfg, {
+                deltas = { 0, 60, 0 },
+                running_totals_before = { 0, 700, 0 },
+                barrel_state_before = {
+                    { on_barrel = false },
+                    { on_barrel = false, pit_locked = true },
+                    { on_barrel = false },
+                },
+                declarer = 1,
+                declarer_made_contract = true,
+            })
+            assert.are.equal(700, g.running_totals[2])
+            assert.is_true(g.barrel_state[2].pit_locked == true)
+        end)
+    end)
+
+    describe("advance_game() overshoot_penalty", function()
+        it("replaces fall_off with -bid when bid > closing-gap and the contract failed", function()
+            local cfg = with_endgame_overrides({ barrel = { overshoot_penalty = "on" } })
+            local g = advance_with(cfg, {
+                deltas = { -200, 0, 0 },
+                running_totals_before = { 880, 0, 0 },
+                barrel_state_before = {
+                    { on_barrel = true, mounted_on_deal = 1, deals_remaining = 1 },
+                    { on_barrel = false },
+                    { on_barrel = false },
+                },
+                bid = 200,
+                declarer_made_contract = false,
+                deal_index = 4,
+            })
+            -- threshold (880) - bid (200) = 680.
+            assert.are.equal(680, g.running_totals[1])
+            assert.is_true(g.overshoot_penalty_applied[1])
+        end)
+
+        it("falls off at the standard rate when bid equals 120", function()
+            local cfg = with_endgame_overrides({ barrel = { overshoot_penalty = "on" } })
+            local g = advance_with(cfg, {
+                deltas = { -120, 0, 0 },
+                running_totals_before = { 880, 0, 0 },
+                barrel_state_before = {
+                    { on_barrel = true, mounted_on_deal = 1, deals_remaining = 1 },
+                    { on_barrel = false },
+                    { on_barrel = false },
+                },
+                bid = 120,
+                declarer_made_contract = false,
+                deal_index = 4,
+            })
+            assert.are.equal(760, g.running_totals[1])
+            assert.is_false(g.overshoot_penalty_applied[1])
+        end)
+    end)
+
+    describe("advance_game() collision_rule", function()
+        it("first_mounter keeps the earliest mount and falls the rest off", function()
+            local cfg = with_endgame_overrides({ barrel = { collision_rule = "first_mounter" } })
+            local g = advance_with(cfg, {
+                deltas = { 0, 0, 80 },
+                running_totals_before = { 880, 880, 800 },
+                barrel_state_before = {
+                    { on_barrel = true, mounted_on_deal = 1, deals_remaining = 2 },
+                    { on_barrel = true, mounted_on_deal = 2, deals_remaining = 1 },
+                    { on_barrel = false },
+                },
+                deal_index = 3,
+                declarer = 3,
+            })
+            -- Seat 1 mounted first → survives. Seat 2 falls off (760).
+            -- Seat 3 mounts now → falls off too (only first mounter
+            -- survives).
+            assert.is_true(g.barrel_state[1].on_barrel)
+            assert.are.equal(880, g.running_totals[1])
+            assert.is_false(g.barrel_state[2].on_barrel)
+            assert.are.equal(760, g.running_totals[2])
+            assert.is_false(g.barrel_state[3].on_barrel)
+            assert.are.equal(760, g.running_totals[3])
+        end)
+
+        it("all_collide_fall_off knocks every colliding unit off", function()
+            local cfg = with_endgame_overrides({
+                barrel = { collision_rule = "all_collide_fall_off" },
+            })
+            local g = advance_with(cfg, {
+                deltas = { 0, 80, 0 },
+                running_totals_before = { 880, 800, 0 },
+                barrel_state_before = {
+                    { on_barrel = true, mounted_on_deal = 1, deals_remaining = 2 },
+                    { on_barrel = false },
+                    { on_barrel = false },
+                },
+                deal_index = 2,
+                declarer = 2,
+            })
+            assert.is_false(g.barrel_state[1].on_barrel)
+            assert.are.equal(760, g.running_totals[1])
+            assert.is_false(g.barrel_state[2].on_barrel)
+            assert.are.equal(760, g.running_totals[2])
+        end)
+    end)
+
+    describe("advance_game() going_over_target", function()
+        it("exact_only caps a unit that overshoots target at target - 1", function()
+            local cfg = with_endgame_overrides({ endgame = { going_over_target = "exact_only" } })
+            local g = advance_with(cfg, {
+                deltas = { 30, 0, 0 },
+                running_totals_before = { 990, 0, 0 },
+            })
+            assert.are.equal(999, g.running_totals[1])
+            assert.is_nil(g.winner)
+            assert.is_true(g.going_over_target_capped[1])
+        end)
+
+        it("exact_only declares a winner on an exact landing", function()
+            local cfg = with_endgame_overrides({ endgame = { going_over_target = "exact_only" } })
+            local g = advance_with(cfg, {
+                deltas = { 10, 0, 0 },
+                running_totals_before = { 990, 0, 0 },
+            })
+            assert.are.equal(1000, g.running_totals[1])
+            assert.are.equal(1, g.winner)
+        end)
+    end)
+
+    describe("advance_game() tiebreaker", function()
+        it("high_score breaks a tie by lowest seat (no declarer favouritism)", function()
+            local cfg = with_endgame_overrides({ endgame = { tiebreaker = "high_score" } })
+            local g = advance_with(cfg, {
+                declarer = 3,
+                deltas = { 60, 60, 60 },
+                running_totals_before = { 950, 950, 940 },
+            })
+            -- Seats 1 and 2 both end at 1010, declarer (3) ends at
+            -- 1000. Highest is 1010 (seats 1 and 2 tied); under
+            -- high_score the lowest seat (1) wins, NOT the declarer.
+            assert.are.equal(1, g.winner)
+        end)
+
+        it("continuation suppresses the winner and bumps the target by +500", function()
+            local cfg = with_endgame_overrides({ endgame = { tiebreaker = "continuation" } })
+            local g = advance_with(cfg, {
+                declarer = 1,
+                deltas = { 60, 60, 0 },
+                running_totals_before = { 950, 950, 0 },
+            })
+            assert.is_nil(g.winner)
+            assert.is_true(g.tiebreaker_continuation_event)
+            assert.are.equal(1000, g.effective_target_before)
+            assert.are.equal(1500, g.effective_target_after)
+            -- Tied units capped at target - 1 = 999.
+            assert.are.equal(999, g.running_totals[1])
+            assert.are.equal(999, g.running_totals[2])
+        end)
+    end)
+
+    describe("advance_game() reverse_barrel", function()
+        it("mounts a unit dropping to -threshold or below", function()
+            local cfg = with_endgame_overrides({ barrel = { reverse_barrel = "on" } })
+            local g = advance_with(cfg, {
+                deltas = { -80, 0, 0 },
+                running_totals_before = { -800, 0, 0 },
+            })
+            assert.are.equal(-880, g.running_totals[1])
+            assert.is_true(g.barrel_state[1].on_reverse_barrel == true)
+            assert.are.equal(3, g.barrel_state[1].reverse_deals_remaining)
+        end)
+
+        it("falls back to reverse_barrel_fallback after deals_remaining hits 0", function()
+            local cfg = with_endgame_overrides({
+                barrel = { reverse_barrel = "on", reverse_barrel_fallback = -760 },
+            })
+            local g = advance_with(cfg, {
+                deltas = { 0, 0, 0 },
+                running_totals_before = { -880, 0, 0 },
+                barrel_state_before = {
+                    {
+                        on_barrel = false,
+                        on_reverse_barrel = true,
+                        reverse_mounted_on_deal = 1,
+                        reverse_deals_remaining = 1,
+                    },
+                    { on_barrel = false },
+                    { on_barrel = false },
+                },
+                deal_index = 4,
+            })
+            assert.are.equal(-760, g.running_totals[1])
+            assert.is_nil(g.barrel_state[1].on_reverse_barrel)
+        end)
+
+        it("eliminates a unit that drops to -target", function()
+            local cfg = with_endgame_overrides({ barrel = { reverse_barrel = "on" } })
+            local g = advance_with(cfg, {
+                deltas = { -120, 0, 0 },
+                running_totals_before = { -880, 0, 0 },
+                barrel_state_before = {
+                    {
+                        on_barrel = false,
+                        on_reverse_barrel = true,
+                        reverse_mounted_on_deal = 1,
+                        reverse_deals_remaining = 2,
+                    },
+                    { on_barrel = false },
+                    { on_barrel = false },
+                },
+                deal_index = 3,
+            })
+            assert.are.equal(-1000, g.running_totals[1])
+            assert.is_true(g.eliminated[1])
+        end)
+    end)
+
     describe("advance_game() result shape", function()
         it("tags the state so is_game recognises it", function()
             local g = advance_ok(default_advance_opts())
@@ -1637,10 +1979,8 @@ describe("core.scoring", function()
     -- Phase 3.6 scoring house-rule coverage. Each describe drives the
     -- engine through a non-default value of one toggle and pins the
     -- per-seat deltas + the new echoed fields on the result state.
-    -- The helper uses the same json-round-trip idiom as the trick-play
-    -- variants spec (tests/spec/app/session_trick_play_variants_spec.lua)
-    -- so the blob is a plain Lua table without metatables.
-    local json = require("app.json")
+    -- Reuses the json-round-trip helper imported at the top of the
+    -- advance_game endgame variants block.
     local function with_scoring_overrides(overrides)
         local blob = json.decode(rule_config.to_json(rule_config.canonical_russian))
         overrides = overrides or {}

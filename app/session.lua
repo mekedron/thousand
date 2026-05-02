@@ -94,11 +94,32 @@ local function compute_holdings(hands, config)
     return holdings
 end
 
-local function build_initial_state(config, dealer, seed, running_totals)
+-- Forward-declare on_auction_end so reset_deal_state can fire it
+-- immediately when the deal opens with a synthetic golden-deal auction
+-- already in `done` status. The full body lives a few hundred lines
+-- down, after the various deal-time helpers.
+local on_auction_end
+
+local function build_initial_state(config, dealer, seed, running_totals, deal_index)
     local deck = deck_module.shuffle(deck_module.build(), seed)
     local deal_result = dealing.deal(deck, config, { dealer = dealer })
     if not deal_result.ok then
         error("session: deal failed: " .. tostring(deal_result.error.message), 2)
+    end
+
+    local marriages_result = marriages_module.new(config)
+    if not marriages_result.ok then
+        error("session: marriages.new failed: " .. tostring(marriages_result.error.message), 2)
+    end
+
+    -- Phase 3.6 opening-game: bypass the auction during the opening N
+    -- golden deals. Each player in turn becomes the forced-120
+    -- declarer; the talon (or no-talon) flow runs as if a normal
+    -- auction had ended at that bid.
+    local golden_active, golden_seat = auction_module.is_golden_deal_active(config, deal_index or 1)
+    if golden_active then
+        local auction = auction_module.golden_deal_state(config, dealer, golden_seat)
+        return deal_result, auction, marriages_result.marriages, true
     end
 
     local holdings = compute_holdings(deal_result.hands, config)
@@ -110,12 +131,7 @@ local function build_initial_state(config, dealer, seed, running_totals)
         error("session: auction.new failed: " .. tostring(auction_result.error.message), 2)
     end
 
-    local marriages_result = marriages_module.new(config)
-    if not marriages_result.ok then
-        error("session: marriages.new failed: " .. tostring(marriages_result.error.message), 2)
-    end
-
-    return deal_result, auction_result.auction, marriages_result.marriages
+    return deal_result, auction_result.auction, marriages_result.marriages, false
 end
 
 -- Replace the session's deal-time state with a fresh shuffle/deal/auction
@@ -126,8 +142,13 @@ end
 local function reset_deal_state(self, dealer, seed_bump)
     self._dealer = dealer or self._dealer
     self._seed = (self._seed or os.time()) + (seed_bump or 0)
-    local deal_result, auction, marriages =
-        build_initial_state(self._config, self._dealer, self._seed, self._running_totals)
+    local deal_result, auction, marriages, golden_active = build_initial_state(
+        self._config,
+        self._dealer,
+        self._seed,
+        self._running_totals,
+        self._deal_index
+    )
     self._hands = deal_result.hands
     self._talon_cards = deal_result.talon
     self._stock = deal_result.stock
@@ -152,6 +173,16 @@ local function reset_deal_state(self, dealer, seed_bump)
     self._forced_concession_offer = nil
     self._forced_concession_resolved = false
     self._first_trick_played = false
+    -- Phase 3.6 opening-game: track whether this deal is a forced
+    -- golden deal so on_tricks_end can attribute failures and the
+    -- view-model can render the banner.
+    self._in_golden_deal = golden_active and true or false
+    if golden_active then
+        -- Drive the auction-end transition immediately so the talon
+        -- (or no-talon trick start, under templates with `talon.size =
+        -- 0`) is in place from the first frame.
+        on_auction_end(self)
+    end
 end
 
 -- Compute the clockwise queue of non-declarer seats eligible to claim
@@ -247,8 +278,8 @@ function M.new(opts)
     local seed = opts.seed or os.time()
 
     local initial_running_totals = zero_totals(config.players.count)
-    local deal_result, auction, marriages =
-        build_initial_state(config, dealer, seed, initial_running_totals)
+    local deal_result, auction, marriages, golden_active =
+        build_initial_state(config, dealer, seed, initial_running_totals, 1)
 
     local self = setmetatable({
         _config = config,
@@ -270,6 +301,21 @@ function M.new(opts)
         _winner = nil,
         _deal_done = nil,
         _deal_index = 1,
+        -- Phase 3.6 endgame house-rules. `_effective_target` carries
+        -- the elevated target produced by `tiebreaker = "continuation"`
+        -- across deals: it starts at the canonical target_score and
+        -- jumps +500 each time the continuation event fires. Saved
+        -- games round-trip this so a continuation that happened in deal
+        -- 5 still applies to deal 6.
+        _effective_target = config.endgame.target_score,
+        -- `_in_golden_deal` and `_golden_deal_failures` track the
+        -- opening-game forced-contract sequence. The flag is true while
+        -- the current deal is one of the opening N golden deals;
+        -- failures accumulates across the round so
+        -- `golden_deal_failure_handling` can decide what to do at the
+        -- end of the sequence.
+        _in_golden_deal = golden_active and true or false,
+        _golden_deal_failures = 0,
         -- Set when declare_marriage runs and cleared once the
         -- consequent trick resolves. Drives the "trump engages from
         -- the next trick" timing rule from core/marriages.lua.
@@ -368,6 +414,12 @@ function M.new(opts)
         _drowned_marriage_log = {},
     }, Session)
     evaluate_entitlement_with_forced_loop(self)
+    -- Phase 3.6 opening-game: drive the auction-end transition so the
+    -- talon (or no-talon trick start) is in place from the first frame
+    -- when the deal opens with a synthetic golden-deal auction.
+    if self._in_golden_deal and self._auction and self._auction.status == "done" then
+        on_auction_end(self)
+    end
     return self
 end
 
@@ -406,6 +458,9 @@ function M.from_state(state)
         _winner = state.winner,
         _deal_done = state.deal_done,
         _deal_index = state.deal_index or 1,
+        _effective_target = state.effective_target or config.endgame.target_score,
+        _in_golden_deal = state.in_golden_deal or false,
+        _golden_deal_failures = state.golden_deal_failures or 0,
         _pending_trump_apply = nil,
         _pending_lead_trump_after_marriage = nil,
         _redeal_offer = state.redeal_offer,
@@ -732,6 +787,33 @@ function Session:final_scores()
     return self._running_totals
 end
 
+-- Phase 3.6 endgame house-rules accessors.
+--
+-- `effective_target` carries the active winning total for the game,
+-- which equals `config.endgame.target_score` until a
+-- `tiebreaker == "continuation"` event fires; each event lifts it by
+-- +500. Saved games round-trip this value so the next deal continues
+-- against the elevated target.
+function Session:effective_target()
+    return self._effective_target
+end
+
+-- `in_golden_deal` is true while the current deal is one of the
+-- forced-120 opening deals under `opening_game.golden_deal = "on"`.
+-- The view-model renders the banner; AI seats also key off this flag
+-- when the matching Phase 4.5 task lands.
+function Session:in_golden_deal()
+    return self._in_golden_deal == true
+end
+
+-- `golden_deal_failures` accumulates declarer-failed contracts across
+-- the opening sequence. `start_next_deal` reads it to apply
+-- `golden_deal_failure_handling` (`continue` is the canonical default;
+-- `replay_round` and `reset` re-run the sequence).
+function Session:golden_deal_failures()
+    return self._golden_deal_failures or 0
+end
+
 -- The plays in the current trick (player + card pairs in order), or nil
 -- when no trick is in progress. Surfaces engine state to the table-scene
 -- centre band so the renderer can show what's been played without
@@ -907,7 +989,7 @@ end
 --   * "pass_out": stop the deal; start_next_deal rotates the dealer.
 --   * "raspassy": play out the deal under reverse-scoring with no
 --                 trump and no marriages.
-local function on_auction_end(self)
+function on_auction_end(self)
     local a = self._auction
     if not a or a.status == "in_progress" then
         return
@@ -1137,12 +1219,19 @@ local function on_raspassy_end(self)
         deltas = sr.scoring.deltas,
         running_totals_before = self._running_totals,
         barrel_state_before = self._barrel_state,
+        bid = nil,
+        declarer_made_contract = false,
+        effective_target_before = self._effective_target,
     })
     if not g.ok then
         error("session: advance_game failed (raspassy): " .. tostring(g.error.message), 2)
     end
     self._running_totals = g.game.running_totals
     self._barrel_state = g.game.barrel_state
+    self._effective_target = g.game.effective_target_after
+    if g.game.tiebreaker_continuation_event then
+        self._winner = nil
+    end
     if g.game.winner then
         self._winner = g.game.winner
     else
@@ -1220,6 +1309,28 @@ local function on_tricks_end(self)
         slam_against_penalty[declarer] = -trick_rules.slam_against_penalty_value
     end
 
+    -- Phase 3.6 opening-game / golden_deal sub-flag effects on
+    -- scoring. `_in_golden_deal` is true only during the opening N
+    -- forced-120 deals. Marriage doubling multiplies the K/Q +
+    -- half-capture + ace-marriage arrays before they are passed to
+    -- score_deal; penalty doubling stacks onto the existing
+    -- `bid_multiplier` so a failed forced contract loses 2× the bid.
+    -- Non-canonical templates inherit the same behaviour by reading
+    -- the sub-flags from `opening_game`.
+    if self._in_golden_deal then
+        local opening = self._config.opening_game
+        if opening.golden_deal_marriages_doubled == "on" then
+            for i = 1, player_count do
+                kq_bonuses[i] = kq_bonuses[i] * 2
+                half_capture_bonuses[i] = half_capture_bonuses[i] * 2
+                ace_marriage_bonuses[i] = ace_marriage_bonuses[i] * 2
+            end
+        end
+        if opening.golden_deal_penalty_doubled == "on" then
+            bid_multiplier = bid_multiplier * 2
+        end
+    end
+
     local sd = scoring.score_deal(self._config, {
         declarer = declarer,
         bid = bid,
@@ -1244,12 +1355,25 @@ local function on_tricks_end(self)
         deltas = sd.scoring.deltas,
         running_totals_before = self._running_totals,
         barrel_state_before = self._barrel_state,
+        bid = type(bid) == "number" and bid or nil,
+        declarer_made_contract = sd.scoring.made_contract and true or false,
+        effective_target_before = self._effective_target,
     })
     if not g.ok then
         error("session: advance_game failed: " .. tostring(g.error.message), 2)
     end
     self._running_totals = g.game.running_totals
     self._barrel_state = g.game.barrel_state
+    self._effective_target = g.game.effective_target_after
+    if g.game.tiebreaker_continuation_event then
+        -- The deal ended with a tiebreaker_continuation event:
+        -- effective_target jumped +500. Carry the elevated target into
+        -- the next deal but never seal a winner this deal.
+        self._winner = nil
+    end
+    if self._in_golden_deal and not sd.scoring.made_contract then
+        self._golden_deal_failures = self._golden_deal_failures + 1
+    end
     if g.game.winner then
         self._winner = g.game.winner
     else
@@ -1278,6 +1402,19 @@ local function on_tricks_end(self)
             effective_bid = sd.scoring.effective_bid,
             defender_pool_total = sd.scoring.defender_pool_total,
             failed_contract_distribution_extras = sd.scoring.failed_contract_distribution_extras,
+            -- Phase 3.6 opening-game / barrel / endgame house-rule
+            -- outputs. Per-seat arrays surface the matching scoreboard
+            -- rows; effective_target_after captures continuation bumps;
+            -- tiebreaker_continuation_event drives the banner row.
+            dump_truck_events = g.game.dump_truck_events,
+            pit_lock_in_state = g.game.pit_lock_in_state,
+            overshoot_penalty_applied = g.game.overshoot_penalty_applied,
+            eliminated = g.game.eliminated,
+            going_over_target_capped = g.game.going_over_target_capped,
+            effective_target_before = g.game.effective_target_before,
+            effective_target_after = g.game.effective_target_after,
+            tiebreaker_continuation_event = g.game.tiebreaker_continuation_event,
+            in_golden_deal = self._in_golden_deal,
         }
     end
 end
@@ -1527,12 +1664,19 @@ function Session:concede_deal()
         deltas = deltas,
         running_totals_before = self._running_totals,
         barrel_state_before = self._barrel_state,
+        bid = type(bid) == "number" and bid or nil,
+        declarer_made_contract = false,
+        effective_target_before = self._effective_target,
     })
     if not g.ok then
         error("session: advance_game failed (concede): " .. tostring(g.error.message), 2)
     end
     self._running_totals = g.game.running_totals
     self._barrel_state = g.game.barrel_state
+    self._effective_target = g.game.effective_target_after
+    if g.game.tiebreaker_continuation_event then
+        self._winner = nil
+    end
     if g.game.winner then
         self._winner = g.game.winner
     else
@@ -2355,7 +2499,38 @@ function Session:start_next_deal()
     end
 
     self._deal_done = nil
-    self._deal_index = self._deal_index + 1
+
+    -- Phase 3.6 opening-game / golden_deal_failure_handling. When the
+    -- just-completed deal closed the opening sequence and every
+    -- declarer in it failed their forced contract,
+    -- `replay_round` restarts the sequence; `reset` additionally
+    -- zeroes the running totals and barrel state. `continue` is the
+    -- canonical default and proceeds to normal play with whatever
+    -- penalties the round produced.
+    local opening = self._config.opening_game
+    local golden_count = opening.golden_deal_count
+    local was_last_golden = self._in_golden_deal and self._deal_index == golden_count
+    local handling = opening.golden_deal_failure_handling
+    if
+        was_last_golden
+        and self._golden_deal_failures >= golden_count
+        and handling ~= "continue"
+    then
+        if handling == "reset" then
+            self._running_totals = zero_totals(player_count)
+            self._barrel_state = scoring.initial_barrel_state(self._config)
+            self._effective_target = self._config.endgame.target_score
+        end
+        self._deal_index = 1
+        self._golden_deal_failures = 0
+        next_dealer = (self._dealer - golden_count) % player_count
+        if next_dealer == 0 then
+            next_dealer = player_count
+        end
+    else
+        self._deal_index = self._deal_index + 1
+    end
+
     -- The redeal/misdeal banners are per-deal; clear them before the
     -- next deal so a previous deal's events don't leak into the new
     -- one's view-model.
@@ -2762,6 +2937,9 @@ function Session:concede_forced_bid()
         deltas = deltas,
         running_totals_before = self._running_totals,
         barrel_state_before = self._barrel_state,
+        bid = type(bid) == "number" and bid or nil,
+        declarer_made_contract = false,
+        effective_target_before = self._effective_target,
     })
     if not g.ok then
         return failure("scoring_failed", g.error.message or "advance_game failed", {
@@ -2770,7 +2948,10 @@ function Session:concede_forced_bid()
     end
     self._running_totals = g.game.running_totals
     self._barrel_state = g.game.barrel_state
-    if g.game.winner then
+    self._effective_target = g.game.effective_target_after
+    if g.game.tiebreaker_continuation_event then
+        self._winner = nil
+    elseif g.game.winner then
         self._winner = g.game.winner
     end
     self._deal_done = {

@@ -1220,38 +1220,110 @@ local SCHEMA = {
             },
         },
     },
-    -- Opening-game house rules. The Phase 3.2 catalogue lands a single
-    -- entry here — golden deal — leaving room for future opening-game
-    -- variants without further section additions. See
-    -- docs/variations/house-rules.md "Opening-game house rules".
+    -- Opening-game house rules. Golden deal is the only documented
+    -- entry; its sub-flags (count, marriages-doubled, blind-allowed,
+    -- penalty-doubled, failure-handling) live as sibling fields so
+    -- saved templates round-trip cleanly even when the parent toggle
+    -- is off. See docs/variations/house-rules.md "Opening-game house
+    -- rules".
     opening_game = {
         kind = "section",
-        field_order = { "golden_deal" },
+        field_order = {
+            "golden_deal",
+            "golden_deal_count",
+            "golden_deal_marriages_doubled",
+            "golden_deal_blind_allowed",
+            "golden_deal_penalty_doubled",
+            "golden_deal_failure_handling",
+        },
         fields = {
             -- House-rule: during the first N deals (typically equal to
             -- the player count) every player in turn must play a
-            -- mandatory 120 contract. Penalties and bolts are commonly
-            -- doubled. The detail toggles (marriages doubled, blind
-            -- play allowed, etc.) are sibling fields that land with
-            -- the gameplay task. See docs/variations/house-rules.md
-            -- "Golden deal / Золотой кон".
+            -- mandatory 120 contract. The auction is bypassed for the
+            -- duration. The detail toggles (marriages doubled, blind
+            -- play allowed, penalties doubled, failure handling) live
+            -- in the sibling fields below. See
+            -- docs/variations/house-rules.md "Golden deal / Золотой
+            -- кон".
             golden_deal = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
+            },
+            -- Number of opening deals played as forced 120 contracts
+            -- under `golden_deal = "on"`. Conventionally equal to the
+            -- player count (3 for canonical Russian, 2 for two-player,
+            -- 4 for four-player). Inert under `golden_deal = "off"`;
+            -- carried in the schema so saved templates round-trip
+            -- cleanly. Bounded in [1, 8] — anything beyond a single
+            -- round of golden deals is unheard of in practice.
+            golden_deal_count = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 1,
+                max = 8,
+                default = 3,
+                status = "selectable",
+            },
+            -- Sibling of `golden_deal`. Doubles marriage values during
+            -- the opening N deals when on. Most tables run with this
+            -- on — see docs/variations/house-rules.md "Golden deal".
+            -- Inert under `golden_deal = "off"`.
+            golden_deal_marriages_doubled = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "selectable",
+            },
+            -- Sibling of `golden_deal`. When on, declarers may opt
+            -- into a blind 120 bid during the opening N deals (under
+            -- `bidding.blind_bid` semantics). Most tables forbid this;
+            -- defaults off accordingly. Inert under `golden_deal =
+            -- "off"`.
+            golden_deal_blind_allowed = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "selectable",
+            },
+            -- Sibling of `golden_deal`. Doubles the −120 fall penalty
+            -- (and any cross / bolt counters) for failed forced
+            -- contracts during the opening N deals. Inert under
+            -- `golden_deal = "off"`.
+            golden_deal_penalty_doubled = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "selectable",
+            },
+            -- Sibling of `golden_deal`. Resolves what happens when no
+            -- declarer makes their 120 contract across the opening N
+            -- deals. `continue` proceeds to normal play with the
+            -- accumulated penalties. `replay_round` re-runs the
+            -- opening sequence from the start. `reset` re-runs and
+            -- also wipes accumulated penalties from those deals. Inert
+            -- under `golden_deal = "off"`.
+            golden_deal_failure_handling = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "continue", "replay_round", "reset" },
+                default = "continue",
+                status = "selectable",
             },
         },
     },
-    -- Barrel rules and house-rule toggles. The first three fields are
-    -- "implemented" — core/scoring.lua's barrel state machine reads
-    -- each one. The remaining fields are the barrel house-rule
-    -- catalogue from docs/variations/house-rules.md "Barrel house
-    -- rules", landing here as deferred entries so built-in templates
-    -- and saved customs can reference them by shape today and the
-    -- engine can wire them up in a later task without another schema
-    -- migration.
+    -- Barrel rules and house-rule toggles. `threshold`, `deal_count`,
+    -- and `fall_off_penalty` are "implemented" — core/scoring.lua's
+    -- barrel state machine reads each one. The remaining fields are
+    -- the barrel house-rule catalogue from
+    -- docs/variations/house-rules.md "Barrel house rules". Phase 3.6
+    -- wires every toggle into the engine so a built-in or saved
+    -- template can opt into any combination.
     barrel = {
         kind = "section",
         field_order = {
@@ -1259,9 +1331,11 @@ local SCHEMA = {
             "deal_count",
             "fall_off_penalty",
             "pit_lock_in",
+            "pit_score",
             "collision_rule",
             "overshoot_penalty",
             "reverse_barrel",
+            "reverse_barrel_fallback",
         },
         fields = {
             -- `fall_off_penalty` intentionally omits `min`: -120 is canonical.
@@ -1284,29 +1358,44 @@ local SCHEMA = {
                 default = -120,
                 status = "implemented",
             },
-            -- House-rule: an intermediate "pit" score (e.g. an at-700
-            -- lock-in) that players must clear before approaching the
-            -- barrel. The exact pit score is a sibling field that
-            -- lands with the gameplay task. See
-            -- docs/variations/house-rules.md "Alternative barrel
-            -- threshold".
+            -- House-rule: an intermediate "pit" score that players
+            -- must clear before approaching the barrel. Crossing the
+            -- pit from below caps the running total at exactly
+            -- `pit_score`; the player must make a successful
+            -- declarer contract to pass through. Defender points
+            -- accumulate normally below the pit but cannot push the
+            -- locked total higher. See docs/variations/house-rules.md
+            -- "Alternative barrel threshold".
             pit_lock_in = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
-            -- House-rule: who survives when two or more players sit on
+            -- Sibling of `pit_lock_in`. The exact running-total value
+            -- the lock fires on. Conventionally 700 (the documented
+            -- "at-700 lock-in"). Inert under `pit_lock_in = "off"`.
+            -- Bounded in [100, threshold − 1] — must sit strictly
+            -- below the barrel threshold to be meaningful.
+            pit_score = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 100,
+                max = 879,
+                default = 700,
+                status = "selectable",
+            },
+            -- House-rule: who survives when two or more units sit on
             -- the barrel simultaneously. `last_mounter` is the
-            -- canonical Russian rule and the barrel state machine's
-            -- current default; `first_mounter` and
-            -- `all_collide_fall_off` are documented variants. A
-            -- relaxed `coexist` mode (multiple players on the barrel
+            -- canonical Russian rule (latest mount survives, others
+            -- fall off). `first_mounter` keeps the earliest mount on
+            -- the barrel and falls the rest off. `all_collide_fall_off`
+            -- knocks every colliding unit off, leaving the barrel
+            -- empty. A relaxed `coexist` mode (multiple players sit
             -- without collision) is its own deferred catalogue entry
-            -- in the bigger barrel-rules cluster and lands with the
-            -- gameplay task. See docs/variations/house-rules.md
-            -- "Barrel collisions".
+            -- in the bigger barrel-rules cluster. See
+            -- docs/variations/house-rules.md "Barrel collisions".
             collision_rule = {
                 kind = "leaf",
                 lua_type = "string",
@@ -1316,40 +1405,55 @@ local SCHEMA = {
                     "all_collide_fall_off",
                 },
                 default = "last_mounter",
-                status = "deferred",
+                status = "selectable",
             },
-            -- House-rule: bidding far above the 120 needed (e.g. 200)
-            -- while on the barrel and failing incurs an extra
-            -- penalty. Discourages "hero" bids. See
+            -- House-rule: bidding strictly above the closing-gap
+            -- (`target_score − threshold`, canonically 120) while on
+            -- the barrel and failing incurs an extra penalty. The
+            -- declarer falls off losing their bid amount instead of
+            -- the standard `fall_off_penalty`. Discourages "hero"
+            -- bids from the barrel. See
             -- docs/variations/house-rules.md "Barrel-jump penalty".
             overshoot_penalty = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
             -- House-rule: a symmetric variant for failing players. At
-            -- -880, a player enters a reverse barrel: 3 deals to
-            -- reach -1000 (which would lose the game outright);
-            -- failing falls them back to a pre-agreed score. See
-            -- docs/variations/house-rules.md "Reverse barrel".
+            -- −threshold (canonically −880), a unit enters a reverse
+            -- barrel: `deal_count` deals to reach −target (which loses
+            -- the game outright); failing falls back to
+            -- `reverse_barrel_fallback`. Rare; mostly a cruel add-on
+            -- for long sessions. See docs/variations/house-rules.md
+            -- "Reverse barrel".
             reverse_barrel = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
+            },
+            -- Sibling of `reverse_barrel`. Running total a unit lands
+            -- on after failing the reverse-barrel sequence. Common
+            -- conventions: −760 (mirror of canonical fall-off) or
+            -- −500. Inert under `reverse_barrel = "off"`. No `min`:
+            -- the value is intentionally negative.
+            reverse_barrel_fallback = {
+                kind = "leaf",
+                lua_type = "number",
+                default = -760,
+                status = "selectable",
             },
         },
     },
     -- Endgame rules and house-rule toggles. `target_score` is
-    -- "implemented" — core/scoring.lua reads it directly. The
-    -- remaining fields are the endgame house-rule catalogue from
-    -- docs/variations/house-rules.md "Endgame house rules", landing
-    -- here as deferred entries so built-in templates and saved
-    -- customs can reference them by shape today and the engine can
-    -- wire them up in a later task without another schema migration.
+    -- "implemented" — core/scoring.lua reads it directly. Phase 3.6
+    -- wires the remaining fields into the post-deal advancement so
+    -- built-in templates and saved customs honour every documented
+    -- variant from docs/variations/house-rules.md "Endgame house
+    -- rules".
     endgame = {
         kind = "section",
         field_order = {
@@ -1365,43 +1469,52 @@ local SCHEMA = {
                 default = 1000,
                 status = "implemented",
             },
-            -- House-rule: what happens when a player exceeds the
-            -- target in a single deal. `win_immediately` matches the
-            -- canonical Russian rule; `exact_only` caps at
-            -- `target_score - 1` and continues play until someone
-            -- lands exactly on the target. See
+            -- House-rule: what happens when a unit exceeds the target
+            -- in a single deal. `win_immediately` matches the
+            -- canonical Russian rule (any total at or above the
+            -- target wins). `exact_only` caps post-deal totals at
+            -- `target_score - 1` until a unit lands exactly on the
+            -- target — only an exact match wins. See
             -- docs/variations/house-rules.md "Going over the target".
             going_over_target = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "win_immediately", "exact_only" },
                 default = "win_immediately",
-                status = "deferred",
+                status = "selectable",
             },
-            -- House-rule: how to break a tie when two or more players
-            -- cross the target in the same deal. `declarer_wins` is
-            -- the canonical Russian rule; `high_score` awards the
-            -- player with the highest running total; `continuation`
-            -- raises the target by +500 and continues play. See
+            -- House-rule: how to break a tie when two or more units
+            -- cross the target in the same deal. `declarer_wins`
+            -- (canonical Russian) keeps the existing
+            -- highest-wins-with-declarer-tiebreaker rule.
+            -- `high_score` drops the declarer favouritism — the
+            -- highest running total wins, with ties broken by lowest
+            -- seat (or lowest side index) instead. `continuation`
+            -- declares no winner and raises the effective target by
+            -- +500 for the rest of the game; tied units sit at
+            -- `target − 1` heading into the next deal. See
             -- docs/variations/house-rules.md "Tiebreakers".
             tiebreaker = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "declarer_wins", "high_score", "continuation" },
                 default = "declarer_wins",
-                status = "deferred",
+                status = "selectable",
             },
             -- House-rule: dump-truck / самосвал — landing on a
-            -- specific score (commonly +555) resets the running total
-            -- to zero. `positive_only` triggers on +555 only;
-            -- `both_signs` triggers on -555 too. See
-            -- docs/variations/house-rules.md "Dump truck / Самосвал".
+            -- specific score (commonly +555) resets the unit's
+            -- running total to zero. `positive_only` triggers on
+            -- +555 only; `both_signs` triggers on −555 as well. The
+            -- reset fires before the barrel/winner branch so a unit
+            -- already on the barrel that lands on 555 resets to 0
+            -- and dismounts. See docs/variations/house-rules.md
+            -- "Dump truck / Самосвал".
             dump_truck = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "off", "positive_only", "both_signs" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
         },
     },
@@ -2439,15 +2552,24 @@ local function canonical_russian_blob()
             failed_contract_distribution = "lost",
             declarer_rounding_before_contract_check = "on",
         },
-        opening_game = { golden_deal = "off" },
+        opening_game = {
+            golden_deal = "off",
+            golden_deal_count = 3,
+            golden_deal_marriages_doubled = "off",
+            golden_deal_blind_allowed = "off",
+            golden_deal_penalty_doubled = "off",
+            golden_deal_failure_handling = "continue",
+        },
         barrel = {
             threshold = 880,
             deal_count = 3,
             fall_off_penalty = -120,
             pit_lock_in = "off",
+            pit_score = 700,
             collision_rule = "last_mounter",
             overshoot_penalty = "off",
             reverse_barrel = "off",
+            reverse_barrel_fallback = -760,
         },
         endgame = {
             target_score = 1000,

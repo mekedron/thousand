@@ -110,9 +110,9 @@ describe("core.templates", function()
 
         it("bubbles up a deferred-field change as invalid_rule_config", function()
             local blob = valid_wrapper()
-            -- barrel.pit_lock_in stays deferred until Phase 3.6's
-            -- opening-game / barrel / endgame task lands.
-            blob.ruleConfig.barrel.pit_lock_in = "on"
+            -- penalties.zero_tricks stays deferred until Phase 3.6's
+            -- penalties task lands.
+            blob.ruleConfig.penalties.zero_tricks = "consecutive_three"
             local r = templates.try_new(blob)
             assert.is_false(r.ok)
             assert.are.equal("invalid_rule_config", r.error.code)

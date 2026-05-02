@@ -841,6 +841,82 @@ local function build_score_breakdown(payload)
         }
     end
 
+    -- Phase 3.6 opening-game / barrel / endgame house-rule rows.
+    -- dump_truck_reset / pit_lock_in_capped / overshoot_penalty are
+    -- per-seat boolean flags surfaced from advance_game; render a row
+    -- for each fired event. tiebreaker_continuation is a single banner
+    -- row showing the previous-vs-new effective target.
+    if payload.dump_truck_events then
+        local fired = {}
+        local list = {}
+        for i = 1, #payload.dump_truck_events do
+            list[i] = 0
+        end
+        for i, hit in ipairs(payload.dump_truck_events) do
+            if hit then
+                fired[#fired + 1] = i
+                -- The reset is `running_total → 0`; surface the seat's
+                -- delta-into-the-reset as 0 (running totals already
+                -- carry the post-reset state). The row's presence is
+                -- the signal — the value is 0 by design.
+                list[i] = 0
+            end
+        end
+        if #fired > 0 then
+            rows[#rows + 1] = {
+                kind = "dump_truck_reset",
+                label_key = "scene.table.scoreboard.dump_truck_reset_row",
+                amounts_by_seat = list,
+                seats = fired,
+                total = 0,
+            }
+        end
+    end
+
+    if payload.pit_lock_in_state then
+        local fired = {}
+        for i, state in ipairs(payload.pit_lock_in_state) do
+            if state == "pit_locked" or state == "cleared_this_deal" then -- i18n-ok: state enum
+                fired[#fired + 1] = { seat = i, state = state }
+            end
+        end
+        if #fired > 0 then
+            rows[#rows + 1] = {
+                kind = "pit_lock_in_capped",
+                label_key = "scene.table.scoreboard.pit_lock_in_capped_row",
+                events = fired,
+                total = 0,
+            }
+        end
+    end
+
+    if payload.overshoot_penalty_applied then
+        local fired = {}
+        for i, hit in ipairs(payload.overshoot_penalty_applied) do
+            if hit then
+                fired[#fired + 1] = i
+            end
+        end
+        if #fired > 0 then
+            rows[#rows + 1] = {
+                kind = "overshoot_penalty_applied",
+                label_key = "scene.table.scoreboard.overshoot_penalty_row",
+                seats = fired,
+                total = 0,
+            }
+        end
+    end
+
+    if payload.tiebreaker_continuation_event then
+        rows[#rows + 1] = {
+            kind = "tiebreaker_continuation",
+            label_key = "scene.table.scoreboard.tiebreaker_continuation_row",
+            previous_target = payload.effective_target_before,
+            new_target = payload.effective_target_after,
+            total = 0,
+        }
+    end
+
     return rows
 end
 
@@ -978,13 +1054,23 @@ function M.from_session(session)
 
     local scoreboard = {}
     for i = 1, player_count do
+        local entry = barrel[i]
         scoreboard[i] = {
             player = i,
             total = running[i] or 0,
             barrel = {
-                on_barrel = barrel[i] and barrel[i].on_barrel or false,
-                deals_remaining = barrel[i] and barrel[i].deals_remaining or nil,
+                on_barrel = entry and entry.on_barrel or false,
+                deals_remaining = entry and entry.deals_remaining or nil,
             },
+            -- Phase 3.6 barrel house-rules: surface the new flags
+            -- without breaking back-compat. Renderer reads them when
+            -- present, ignores them otherwise.
+            pit_locked = entry and entry.pit_locked == true or false,
+            reverse_barrel = {
+                on = entry and entry.on_reverse_barrel == true or false,
+                deals_remaining = entry and entry.reverse_deals_remaining or nil,
+            },
+            eliminated = entry and entry.eliminated == true or false,
             is_dealer = (i == dealer),
             is_turn = (i == turn),
             is_winner = (winner ~= nil and i == winner),
@@ -1019,6 +1105,36 @@ function M.from_session(session)
     local leader = raspassy_active and nil or session:current_leader()
     local trump = raspassy_active and nil or session:trump()
 
+    -- Phase 3.6 endgame house-rules: scoreboard target line. When a
+    -- `tiebreaker == "continuation"` event has fired, effective_target
+    -- > target_score; the renderer shows the elevated value beside
+    -- the canonical "1000". `going_over_target.exact_only` flips the
+    -- "must land exactly" indicator on (rendered above the target).
+    local effective_target = session:effective_target() or config.endgame.target_score
+    local exact_only_indicator = config.endgame.going_over_target == "exact_only"
+
+    -- Phase 3.6 opening-game: forced-120 banner that replaces the
+    -- auction panel during golden deals. The session synthesises a
+    -- `done` auction state for these deals so the rest of the
+    -- view-model continues unchanged; the banner block surfaces the
+    -- forced contract for the table scene to render.
+    local golden_deal_banner
+    if session:in_golden_deal() then
+        local auction_state = session._auction
+        local declarer_seat
+        local final_amount
+        if auction_state then
+            declarer_seat = auction_state.declarer
+            final_amount = auction_state.final_bid
+        end
+        golden_deal_banner = {
+            seat = declarer_seat,
+            amount = final_amount,
+            deal_index = session._deal_index,
+            opening_count = config.opening_game.golden_deal_count,
+        }
+    end
+
     return {
         phase = session:current_phase(),
         turn_player = turn,
@@ -1027,6 +1143,9 @@ function M.from_session(session)
         leader = leader,
         trump = trump,
         scoreboard = scoreboard,
+        effective_target = effective_target,
+        exact_only_indicator = exact_only_indicator,
+        golden_deal_banner = golden_deal_banner,
         hands = hands,
         talon = talon,
         stock = stock_block,

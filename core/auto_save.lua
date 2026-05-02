@@ -179,6 +179,10 @@ function M.serialize(session)
         winner = session._winner,
         deal_done = data_clone(session._deal_done),
         pending_trump_apply = session._pending_trump_apply,
+        -- Phase 3.6 endgame house-rules persistence.
+        effective_target = session._effective_target,
+        in_golden_deal = session._in_golden_deal,
+        golden_deal_failures = session._golden_deal_failures,
     }
 end
 
@@ -217,6 +221,9 @@ function M.deserialize(blob)
         winner = blob.winner,
         deal_done = blob.deal_done,
         pending_trump_apply = blob.pending_trump_apply,
+        effective_target = blob.effective_target,
+        in_golden_deal = blob.in_golden_deal,
+        golden_deal_failures = blob.golden_deal_failures,
     }
 end
 
