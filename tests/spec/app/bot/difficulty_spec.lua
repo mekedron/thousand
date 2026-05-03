@@ -66,9 +66,13 @@ describe("app.bot.difficulty", function()
         end)
 
         it("rejects nil-valued slots inside the array", function()
-            assert.error_matches(function()
+            -- Lua's `#` operator on a table with a hole is implementation-
+            -- defined: it may return 1 (length check fires) or 3 (per-slot
+            -- check fires on the nil). Either error is acceptable; what
+            -- matters is that the validator refuses the input.
+            assert.has_error(function()
                 difficulty.validate({ "easy", nil, "hard" }, 3, "ctx")
-            end, "seat_difficulties length")
+            end)
         end)
 
         it("does not mutate the input on success", function()
