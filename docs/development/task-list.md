@@ -1170,6 +1170,22 @@ algorithmic.
     composition. (Phase 5.3's "assigned characters per seat"
     requirement extends this binding; Phase 7 fills the character
     layer.)
+- [ ] Lock the human seat's perspective in single-player and mixed
+  compositions.
+  - The view-model treats the lone (or first) human seat as the
+    viewer instead of following `current_turn()`, so the human's
+    own hand stays in the bottom "self" slot and bot seats render
+    as face-down opponent strips for the entire deal.
+  - Mixed compositions with multiple human seats keep the existing
+    hot-seat behaviour: the viewer follows `current_turn()` between
+    human seats and the privacy curtain hands off as today.
+  - The action panel (auction, talon, marriage, trick affordances)
+    is hidden while a bot is on turn; only the existing "Bot N
+    thinking…" banner remains, so the human can't accidentally
+    interact with a bot's decision surface.
+  - Talon visibility still honours `talon.hidden_on_minimum_100`
+    from the human viewer's seat, not from whichever bot is on
+    turn.
 - [ ] Add bot difficulty levels.
   - Easy, normal, and hard differ in bidding aggression, marriage
     planning, trump leading, discard quality, and — where the rule
