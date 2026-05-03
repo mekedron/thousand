@@ -182,15 +182,29 @@ contract you didn't want.
 ### Bad talon redeal
 
 After winning the auction and revealing the talon, the declarer may
-demand a redeal if the talon is worthless. Common triggers (any one
-qualifies, depending on the table):
-
-- talon contains **fewer than 5 card-points**;
-- talon contains **two nines**;
-- talon contains **three Jacks**.
+demand a redeal if the talon is worthless by **card-point sum** —
+typically when it contains **fewer than 5 card-points**.
 
 Some tables allow this only on a minimum 100 contract; others let any
 declarer request it before the pass-cards step.
+
+### Two nines in the talon redeal
+
+A sibling rule to **Bad talon redeal** with a different predicate:
+the declarer may demand a redeal when the **talon (widow / прикуп)
+contains exactly two 9s**, regardless of card-point sum. Distinct
+trigger from "fewer than 5 card-points" — a talon with 2 nines and an
+Ace passes the bad-talon-points threshold but still qualifies under
+this rule. The book lists it among the agreed-upon redeal conditions.
+
+- **Off**: never offered.
+- **Any contract**: offered after talon reveal regardless of bid.
+- **Minimum-100 only**: offered only when the contract sits at the
+  opening floor (100), mirroring the bad-talon-redeal gate.
+
+If both this rule and bad-talon-redeal fire on the same talon, the
+table sees a single offer, not two — the declarer accepts or declines
+once.
 
 ### Talon re-buy
 
@@ -272,6 +286,23 @@ typically worth **+200 points**. Variants:
 Only the **first declared marriage** sets trump. Later marriages still
 **score their bonus**, but they **do not change the trump suit**. Used
 at tables that find mid-deal trump-flipping confusing.
+
+### Marriage trick required
+
+The book's standard rule: a player may declare a **K-Q (trump)
+marriage** only after the seat has already **captured at least one
+trick** in the current deal. The same gate applies uniformly to the
+**four-aces (ace) marriage**.
+
+- **On** (book default): every marriage declaration — K-Q or four-aces,
+  on lead or via hand-announcement / pre-first-trick — requires a
+  prior captured trick. The pre-first-trick announcement window is
+  effectively unusable under this rule because no seat has any
+  captured tricks yet.
+- **Off** (trickless variant): declarations are legal at any phase,
+  including the first lead and the pre-first-trick window. Tables that
+  use the pre-first-trick announcement timing or want to give the
+  declarer a strong opening line typically pin this off.
 
 ## Trick-play house rules
 
@@ -398,6 +429,10 @@ strong ones.
 - **Last-mounted survives** (standard).
 - **All collide → all fall off**.
 - **First-mounted survives** (rarer).
+- **Coexist** — every on-barrel unit stays mounted simultaneously,
+  each running its own `deal_count` countdown independently. Listed in
+  the book as an agreed-in-advance variant: when more than one unit
+  reaches the threshold, no eviction takes place.
 
 ### Barrel penalty
 
@@ -466,14 +501,18 @@ If two players cross the target in the same deal:
 
 ### Dump truck / Самосвал
 
-If a player's running score lands **exactly on +555** (or, in some
-versions, on **−555** as well), their score is **reset to zero**. Pure
+If a player's running score lands **exactly on the threshold** (most
+commonly **+555**), their score is **reset to zero**. Pure
 kitchen-table folklore but widely known and frequently played.
 
-- **Positive only**: only +555 triggers the reset (most common).
-- **Both signs**: +555 and −555 both trigger.
-- **Other landmarks**: some tables apply the same rule to other
-  arbitrary scores (e.g. ±111).
+- **Positive only**: only the positive threshold triggers the reset
+  (most common).
+- **Both signs**: positive and negative thresholds both trigger.
+
+The exact threshold is configurable as a sibling toggle: tables that
+play with **+550** instead of **+555** use the same rule with a
+shifted landmark. Bounded in [100, 1000]; thresholds not divisible by
+5 rarely fire because scoring rounds running totals to multiples of 5.
 
 ## Special contracts
 

@@ -14,8 +14,13 @@ local function c(suit, rank)
     return card.new(suit, rank)
 end
 
+-- Existing variant tests do not set up a captured-trick history before
+-- declaring a marriage, so the canonical `trick_required = "on"` rule
+-- would gate every assertion. The helper turns the gate off by default;
+-- tests that target `trick_required` set it explicitly via `overrides`.
 local function config_with_marriage_overrides(overrides)
     local blob = json.decode(rule_config.to_json(rule_config.canonical_russian))
+    blob.marriages.trick_required = "off"
     overrides = overrides or {}
     for k, v in pairs(overrides) do
         blob.marriages[k] = v
@@ -290,6 +295,50 @@ describe("app.session marriage variants", function()
             assert.is_true(s:skip_pre_first_trick_marriage(1).ok)
             assert.is_nil(s:pre_first_trick_announcement_state())
             assert.are.equal(0, s:_marriages_state_for_test().bonuses[2])
+        end)
+    end)
+
+    describe("trick_required = on", function()
+        it("rejects a K-Q declaration before the seat has captured a trick", function()
+            local cfg = config_with_marriage_overrides({
+                trick_required = "on",
+                trump_activation_timing = "immediate",
+            })
+            local s = session_at_tricks(cfg, full_deal_layout())
+            local r = s:declare_marriage(2, "hearts")
+            assert.is_false(r.ok)
+            assert.are.equal("trick_required_not_met", r.error.code)
+        end)
+
+        it("accepts a K-Q declaration once the seat has captured a trick", function()
+            local cfg = config_with_marriage_overrides({
+                trick_required = "on",
+                trump_activation_timing = "immediate",
+            })
+            -- Seat 3 captures trick 1 (hearts.A beats hearts.10), then
+            -- leads trick 2 holding spades K and Q. Spades marriage
+            -- now passes the trick gate.
+            local s = session_at_tricks(cfg, full_deal_layout())
+            assert.is_true(s:play(2, c("hearts", "10")).ok)
+            assert.is_true(s:play(3, c("hearts", "A")).ok)
+            assert.is_true(s:play(1, c("diamonds", "9")).ok)
+            local r = s:declare_marriage(3, "spades")
+            assert.is_true(r.ok)
+        end)
+
+        it("rejects every seat in the pre_first_trick window", function()
+            local cfg = config_with_marriage_overrides({
+                trick_required = "on",
+                marriage_announcement_timing = "pre_first_trick",
+            })
+            -- Seat 2 holds the hearts K-Q; in the pre_first_trick
+            -- window every seat has zero captured tricks, so the
+            -- announcement returns trick_required_not_met. The seat
+            -- can still skip its turn in the queue.
+            local s = session_at_tricks(cfg, full_deal_layout())
+            local r = s:announce_marriage(2, "hearts")
+            assert.is_false(r.ok)
+            assert.are.equal("trick_required_not_met", r.error.code)
         end)
     end)
 

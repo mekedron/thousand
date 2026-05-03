@@ -310,6 +310,7 @@ return {
     ["templates.field.dealing.four_jack_redeal.label"] = "4-jack redeal",
     ["templates.field.dealing.weak_hand_redeal.label"] = "Weak-hand redeal",
     ["templates.field.dealing.weak_hand_threshold.label"] = "Weak-hand threshold (counted)",
+    ["templates.field.dealing.two_nines_in_talon_redeal.label"] = "Two nines in talon redeal",
     ["templates.field.dealing.weak_hand_threshold.help"] = "Card-points threshold for the counted variant. Hands strictly below this value are eligible.",
     ["templates.field.dealing.misdeal_handling.label"] = "Misdeal handling",
     ["templates.field.dealing.misdeal_flat_penalty.label"] = "Misdeal flat penalty",
@@ -387,6 +388,7 @@ return {
     ["templates.field.marriages.one_trump_per_deal.help"] = "Only the first declared marriage flips trump.",
     ["templates.field.marriages.one_trump_per_deal.off"] = "Off",
     ["templates.field.marriages.one_trump_per_deal.on"] = "On",
+    ["templates.field.marriages.trick_required.label"] = "Marriage trick required",
 
     ["templates.field.tricks.must_follow.label"] = "Must follow suit",
     ["templates.field.tricks.must_follow.help"] = "Player must follow the led suit when able.",
@@ -457,6 +459,7 @@ return {
     ["templates.field.endgame.tiebreaker.help"] = "Declarer wins (canonical), highest score wins, or continuation: target raised by +500 and play continues.",
     ["templates.field.endgame.dump_truck.label"] = "Dump truck (самосвал)",
     ["templates.field.endgame.dump_truck.help"] = "Off: standard. Positive only: landing on +555 resets to 0. Both signs: +/-555 reset.",
+    ["templates.field.endgame.dump_truck_threshold.label"] = "Dump truck threshold",
 
     ["templates.field.specials.mizere.label"] = "Mizère / no-tricks",
     ["templates.field.specials.slam_contract.label"] = "Slam contract",

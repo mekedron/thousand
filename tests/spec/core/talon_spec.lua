@@ -540,9 +540,12 @@ describe("core.talon", function()
                     four_jack_redeal = "off",
                     weak_hand_redeal = "off",
                     weak_hand_threshold = 14,
+                    two_nines_in_talon_redeal = "off",
                     misdeal_handling = "standard",
                     misdeal_flat_penalty = 20,
                     all_pass_handling = "redeal",
+                    deck_size = "24",
+                    cut_deck_nine_jack_penalty = "off",
                 },
                 talon = {
                     size = 3,
@@ -592,6 +595,7 @@ describe("core.talon", function()
                     ace_marriage = "off",
                     ace_marriage_value = 200,
                     one_trump_per_deal = "off",
+                    trick_required = "on",
                 },
                 tricks = {
                     must_follow = true,
@@ -643,6 +647,7 @@ describe("core.talon", function()
                     going_over_target = "win_immediately",
                     tiebreaker = "declarer_wins",
                     dump_truck = "off",
+                    dump_truck_threshold = 555,
                 },
                 specials = {
                     mizere = "off",

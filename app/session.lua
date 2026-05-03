@@ -1287,31 +1287,61 @@ function on_auction_end(self)
     -- Phase 3.6 talon-variants: bad-talon redeal eligibility check.
     -- The talon module exposes `is_bad_talon`; we evaluate it here so
     -- the offer is in place by the time the player can act on it.
-    local bad_mode = self._config.talon.bad_talon_redeal
-    if bad_mode ~= "off" then
-        local eligible
-        if bad_mode == "any_contract" then
-            eligible = true
+    -- Phase 3.7 adds a parallel two-nines-in-talon trigger that
+    -- shares the same offer machinery but fires on a 9-count
+    -- predicate instead of a card-point sum. If both triggers
+    -- evaluate true on the same talon they collapse into a single
+    -- offer (the bad-talon trigger wins for breadcrumb purposes —
+    -- it carries a card-point payload).
+    local function eligibility_for(mode)
+        if mode == "off" then
+            return false
+        elseif mode == "any_contract" then
+            return true
         else -- "minimum_100_only"
             -- Forced minimum-100 contract: declarer's only bid was the
             -- opening minimum and no one else bid. Forced-opening /
             -- forced-dealer-bid toggles still deferred so we approximate
             -- with the floor-bid heuristic.
-            eligible = a.final_bid == self._config.bidding.opening_min
+            return a.final_bid == self._config.bidding.opening_min
         end
-        if eligible then
-            local threshold = self._config.talon.bad_talon_threshold
-            if talon_module.is_bad_talon(self._talon_cards, threshold, self._config) then
-                local total = 0
-                for _, c in ipairs(self._talon_cards) do
-                    total = total + card_module.point_value(c, self._config)
-                end
-                self._bad_talon_offer = {
-                    kind = "bad_talon",
-                    declarer = a.declarer,
-                    points = total,
-                }
+    end
+
+    local function nine_count(cards)
+        local n = 0
+        for _, c in ipairs(cards) do
+            if c.rank == "9" then
+                n = n + 1
             end
+        end
+        return n
+    end
+
+    local bad_mode = self._config.talon.bad_talon_redeal
+    if eligibility_for(bad_mode) then
+        local threshold = self._config.talon.bad_talon_threshold
+        if talon_module.is_bad_talon(self._talon_cards, threshold, self._config) then
+            local total = 0
+            for _, c in ipairs(self._talon_cards) do
+                total = total + card_module.point_value(c, self._config)
+            end
+            self._bad_talon_offer = {
+                kind = "bad_talon",
+                trigger = "bad_talon",
+                declarer = a.declarer,
+                points = total,
+            }
+        end
+    end
+
+    if not self._bad_talon_offer then
+        local nines_mode = self._config.dealing.two_nines_in_talon_redeal
+        if eligibility_for(nines_mode) and nine_count(self._talon_cards) == 2 then
+            self._bad_talon_offer = {
+                kind = "bad_talon",
+                trigger = "two_nines",
+                declarer = a.declarer,
+            }
         end
     end
 
@@ -2413,7 +2443,8 @@ function Session:declare_marriage(player, suit)
         })
     end
     local hand = self._tricks.hands[player]
-    local result = marriages_module.declare(self._marriages, player, suit, hand)
+    local tricks_won = (self._tricks.tricks_won and self._tricks.tricks_won[player]) or 0
+    local result = marriages_module.declare(self._marriages, player, suit, hand, tricks_won)
     if not result.ok then
         return result
     end
@@ -2479,7 +2510,12 @@ function Session:announce_marriage(player, suit)
         hand = self._tricks.hands[player]
     end
 
-    local result = marriages_module.announce_from_hand(self._marriages, player, suit, hand)
+    local tricks_won = 0
+    if self._tricks and self._tricks.tricks_won then
+        tricks_won = self._tricks.tricks_won[player] or 0
+    end
+    local result =
+        marriages_module.announce_from_hand(self._marriages, player, suit, hand, tricks_won)
     if not result.ok then
         return result
     end
@@ -2570,7 +2606,11 @@ function Session:declare_ace_marriage(player)
         hand = self._tricks.hands[player]
     end
 
-    local result = marriages_module.declare_ace_marriage(self._marriages, player, hand)
+    local tricks_won = 0
+    if self._tricks and self._tricks.tricks_won then
+        tricks_won = self._tricks.tricks_won[player] or 0
+    end
+    local result = marriages_module.declare_ace_marriage(self._marriages, player, hand, tricks_won)
     if not result.ok then
         return result
     end

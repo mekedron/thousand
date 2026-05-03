@@ -811,7 +811,7 @@ every-third-write-off counter in task 2 depends on it.
     next to the existing zero-tricks/cross counters so players see
     their progress toward the threshold.
 
-- [ ] Implement marriage trick-required precondition and the minor
+- [x] Implement marriage trick-required precondition and the minor
   book toggles.
   - Book default: a marriage may only be declared once the seat has
     already taken at least one trick; the trickless variant is the

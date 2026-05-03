@@ -51,9 +51,12 @@ local function canonical_with_talon(overrides)
             four_jack_redeal = "off",
             weak_hand_redeal = "off",
             weak_hand_threshold = 14,
+            two_nines_in_talon_redeal = "off",
             misdeal_handling = "standard",
             misdeal_flat_penalty = 20,
             all_pass_handling = "redeal",
+            deck_size = "24",
+            cut_deck_nine_jack_penalty = "off",
         },
         talon = t,
         bidding = {
@@ -90,6 +93,7 @@ local function canonical_with_talon(overrides)
             ace_marriage = "off",
             ace_marriage_value = 200,
             one_trump_per_deal = "off",
+            trick_required = "on",
         },
         tricks = {
             must_follow = true,
@@ -141,6 +145,7 @@ local function canonical_with_talon(overrides)
             going_over_target = "win_immediately",
             tiebreaker = "declarer_wins",
             dump_truck = "off",
+            dump_truck_threshold = 555,
         },
         specials = {
             mizere = "off",
@@ -213,6 +218,46 @@ local function hands_with_low_talon()
         c("spades", "9"),
         c("clubs", "9"),
         c("diamonds", "9"),
+    }
+    return { seat1, seat2, seat3 }, talon
+end
+
+-- Hands and a talon with exactly two 9s plus a high card (2 nines +
+-- ace = 11 card-points). Designed for the two-nines-in-talon trigger:
+-- 11 points is above the default `bad_talon_threshold` of 5, so the
+-- bad-talon trigger does NOT fire — only the two-nines trigger does.
+local function hands_with_two_nines_talon()
+    local seat1 = {
+        c("spades", "K"),
+        c("clubs", "K"),
+        c("diamonds", "K"),
+        c("hearts", "K"),
+        c("spades", "Q"),
+        c("clubs", "Q"),
+        c("diamonds", "Q"),
+    }
+    local seat2 = {
+        c("hearts", "Q"),
+        c("spades", "J"),
+        c("clubs", "J"),
+        c("diamonds", "J"),
+        c("hearts", "J"),
+        c("spades", "A"),
+        c("clubs", "A"),
+    }
+    local seat3 = {
+        c("diamonds", "A"),
+        c("spades", "10"),
+        c("clubs", "10"),
+        c("diamonds", "10"),
+        c("hearts", "10"),
+        c("diamonds", "9"),
+        c("hearts", "9"),
+    }
+    local talon = {
+        c("spades", "9"),
+        c("clubs", "9"),
+        c("hearts", "A"),
     }
     return { seat1, seat2, seat3 }, talon
 end
@@ -395,6 +440,128 @@ describe("app.session talon variants", function()
             assert.are.equal("talon_conceded", s:deal_done().reason)
             local totals = s:running_totals()
             assert.are.equal(-100, totals[declarer])
+        end)
+    end)
+
+    describe("two_nines_in_talon_redeal", function()
+        local function with_two_nines_rule(value)
+            -- Override only the dealing toggle, leaving bad_talon_redeal
+            -- off so the offer surfaces purely from the two-nines path.
+            local rc = require("core.rule_config")
+            local jsmod = require("app.json")
+            local blob = jsmod.decode(rc.to_json(canonical_with_talon({})))
+            blob.dealing.two_nines_in_talon_redeal = value
+            return rc.new(blob)
+        end
+
+        it("does not surface an offer when the rule is off", function()
+            local cfg = with_two_nines_rule("off")
+            local hands, talon = hands_with_two_nines_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s)
+            assert.are.equal("talon", s:current_phase())
+            assert.is_nil(s:bad_talon_offer_state())
+        end)
+
+        it("surfaces the offer when the rule is any_contract and the talon has two 9s", function()
+            local cfg = with_two_nines_rule("any_contract")
+            local hands, talon = hands_with_two_nines_talon()
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s)
+            assert.are.equal("awaiting_bad_talon_decision", s:current_phase())
+            local offer = s:bad_talon_offer_state()
+            assert.is_not_nil(offer)
+            assert.are.equal("bad_talon", offer.kind)
+            assert.are.equal("two_nines", offer.trigger)
+            assert.are.equal(2, offer.declarer)
+        end)
+
+        it("does not surface when the talon has zero or one 9s", function()
+            local cfg = with_two_nines_rule("any_contract")
+            local hands, talon = hands_with_rich_talon() -- talon = 3 aces, no 9s
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s)
+            assert.is_nil(s:bad_talon_offer_state())
+        end)
+
+        it("minimum_100_only is gated by the contract floor", function()
+            local cfg = with_two_nines_rule("minimum_100_only")
+            local hands, talon = hands_with_two_nines_talon()
+            -- Contract bid = 100 (the floor) → the offer surfaces.
+            local s = session_at_auction(cfg, hands, talon)
+            drive_auction_to_done(s, 100)
+            assert.are.equal("awaiting_bad_talon_decision", s:current_phase())
+        end)
+
+        it("minimum_100_only suppresses the offer when contract is above 100", function()
+            local cfg = with_two_nines_rule("minimum_100_only")
+            local hands, talon = hands_with_two_nines_talon()
+            -- A contract above the opening floor short-circuits the
+            -- minimum_100_only gate (heuristic in app/session.lua).
+            local s = session_at_auction(cfg, hands, talon)
+            -- Forehand opens 105 (above floor); other seats pass.
+            assert(s:bid(2, 105).ok)
+            assert(s:pass(3).ok)
+            assert(s:pass(1).ok)
+            assert.are.equal("talon", s:current_phase())
+            assert.is_nil(s:bad_talon_offer_state())
+        end)
+
+        it("a single offer fires when both bad_talon and two_nines triggers match", function()
+            -- Talon with three 9s (0 points): bad_talon fires AND
+            -- two_nines fires (count is 3, not 2 — actually let's use
+            -- a talon with 2 nines and 0-point third card to match
+            -- both predicates simultaneously).
+            local rc = require("core.rule_config")
+            local jsmod = require("app.json")
+            local blob = jsmod.decode(rc.to_json(canonical_with_talon({})))
+            blob.dealing.two_nines_in_talon_redeal = "any_contract"
+            blob.talon.bad_talon_redeal = "any_contract"
+            blob.talon.bad_talon_threshold = 5
+            local cfg = rc.new(blob)
+            -- Build a talon with 2 nines + a J = 0 + 0 + 2 = 2 points
+            -- (below threshold 5 → bad_talon fires; nine count = 2 →
+            -- two_nines fires too).
+            local seat1 = {
+                c("spades", "K"),
+                c("clubs", "K"),
+                c("diamonds", "K"),
+                c("hearts", "K"),
+                c("spades", "Q"),
+                c("clubs", "Q"),
+                c("diamonds", "Q"),
+            }
+            local seat2 = {
+                c("hearts", "Q"),
+                c("clubs", "J"),
+                c("diamonds", "J"),
+                c("hearts", "J"),
+                c("spades", "A"),
+                c("clubs", "A"),
+                c("diamonds", "A"),
+            }
+            local seat3 = {
+                c("hearts", "A"),
+                c("spades", "10"),
+                c("clubs", "10"),
+                c("diamonds", "10"),
+                c("hearts", "10"),
+                c("diamonds", "9"),
+                c("hearts", "9"),
+            }
+            local talon = {
+                c("spades", "9"),
+                c("clubs", "9"),
+                c("spades", "J"),
+            }
+            local s = session_at_auction(cfg, { seat1, seat2, seat3 }, talon)
+            drive_auction_to_done(s, 100)
+            assert.are.equal("awaiting_bad_talon_decision", s:current_phase())
+            local offer = s:bad_talon_offer_state()
+            assert.is_not_nil(offer)
+            -- Single offer collapses; bad_talon trigger wins for
+            -- breadcrumb purposes (it carries the points payload).
+            assert.are.equal("bad_talon", offer.trigger)
         end)
     end)
 

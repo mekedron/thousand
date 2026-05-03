@@ -16,9 +16,12 @@ local function canonical_with_dealing(overrides)
         four_jack_redeal = "off",
         weak_hand_redeal = "off",
         weak_hand_threshold = 14,
+        two_nines_in_talon_redeal = "off",
         misdeal_handling = "standard",
         misdeal_flat_penalty = 20,
         all_pass_handling = "redeal",
+        deck_size = "24",
+        cut_deck_nine_jack_penalty = "off",
     }
     for k, v in pairs(overrides) do
         d[k] = v
@@ -91,6 +94,7 @@ local function canonical_with_dealing(overrides)
             ace_marriage = "off",
             ace_marriage_value = 200,
             one_trump_per_deal = "off",
+            trick_required = "on",
         },
         tricks = {
             must_follow = true,
@@ -142,6 +146,7 @@ local function canonical_with_dealing(overrides)
             going_over_target = "win_immediately",
             tiebreaker = "declarer_wins",
             dump_truck = "off",
+            dump_truck_threshold = 555,
         },
         specials = {
             mizere = "off",

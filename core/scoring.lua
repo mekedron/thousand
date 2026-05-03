@@ -1204,6 +1204,7 @@ function M.advance_game(config, opts)
     local going_over_target = config.endgame.going_over_target
     local tiebreaker = config.endgame.tiebreaker
     local dump_truck_mode = config.endgame.dump_truck
+    local dump_truck_threshold = config.endgame.dump_truck_threshold
     local declarer_made_contract = opts.declarer_made_contract and true or false
     local declarer_bid = opts.bid
 
@@ -1490,11 +1491,14 @@ function M.advance_game(config, opts)
         end
 
         -- Dump truck reset fires last on the settled unit total. Lands
-        -- on +555 always (under positive_only / both_signs); lands on
-        -- -555 only under both_signs. Resets the running total to 0
-        -- and clears any forward / reverse barrel state.
+        -- on +threshold always (under positive_only / both_signs); lands
+        -- on -threshold only under both_signs. Resets the running total
+        -- to 0 and clears any forward / reverse barrel state. The
+        -- threshold is configurable via `endgame.dump_truck_threshold`
+        -- (default 555); thresholds not divisible by 5 rarely fire
+        -- because scoring rounds to multiples of 5.
         if dump_truck_mode == "positive_only" or dump_truck_mode == "both_signs" then
-            if new_total == 555 then
+            if new_total == dump_truck_threshold then
                 new_total = 0
                 new_entry = off_barrel_entry()
                 unit_dump_truck[u] = true
@@ -1502,7 +1506,7 @@ function M.advance_game(config, opts)
             end
         end
         if dump_truck_mode == "both_signs" then
-            if new_total == -555 then
+            if new_total == -dump_truck_threshold then
                 new_total = 0
                 new_entry = off_barrel_entry()
                 unit_dump_truck[u] = true
@@ -1530,15 +1534,18 @@ function M.advance_game(config, opts)
     -- Collision rule at the unit level. `last_mounter` is canonical:
     -- only the latest-mounted unit stays. `first_mounter` keeps the
     -- earliest mount. `all_collide_fall_off` knocks every colliding
-    -- unit off. Same-deal mount ties break by declarer-wins, then
-    -- lowest unit index (preserved for backward compat).
+    -- unit off. `coexist` is the relaxed book variant where every
+    -- on-barrel unit stays mounted simultaneously, each running its
+    -- own `deal_count` countdown — no eviction takes place. Same-deal
+    -- mount ties (under last/first_mounter) break by declarer-wins,
+    -- then lowest unit index (preserved for backward compat).
     local on_barrel_units = {}
     for u = 1, unit_count do
         if unit_barrel[u].on_barrel then
             on_barrel_units[#on_barrel_units + 1] = u
         end
     end
-    if #on_barrel_units > 1 then
+    if #on_barrel_units > 1 and collision_rule ~= "coexist" then
         if collision_rule == "all_collide_fall_off" then
             for _, u in ipairs(on_barrel_units) do
                 unit_running[u] = fall_off_total

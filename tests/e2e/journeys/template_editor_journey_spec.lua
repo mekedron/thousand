@@ -44,18 +44,19 @@ describe("e2e: template editor (built-in view)", function()
     end)
 
     it("renders the deferred badge only when a deferred field exists", function()
-        -- Phase 3.6 closes every catalogued toggle, so the editor
-        -- ships with no deferred fields. The contract is preserved
-        -- for the day a future feature reintroduces one — the badge
-        -- must render iff such a field is present.
+        -- The badge must render iff a deferred field is present in the
+        -- schema. Phase 3.7 reintroduced two deferred catalogue entries
+        -- (deck_size, cut_deck_nine_jack_penalty) for book-mentioned
+        -- rules that are out of scope for v1.
         open_editor_for_russian()
         local rule_config = require("core.rule_config")
         local has_deferred = false
         for _, section in ipairs(rule_config.sections()) do
-            local schema = rule_config.schema_for(section)
-            if schema and schema.fields then
-                for _, descriptor in pairs(schema.fields) do
-                    if descriptor.status == "deferred" then
+            local section_schema = rule_config.schema_for(section)
+            if section_schema and section_schema.fields then
+                for _, field_name in ipairs(section_schema.fields) do
+                    local descriptor = rule_config.schema_for(section .. "." .. field_name)
+                    if descriptor and descriptor.status == "deferred" then
                         has_deferred = true
                         break
                     end

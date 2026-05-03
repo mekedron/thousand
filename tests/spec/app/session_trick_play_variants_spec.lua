@@ -18,6 +18,11 @@ end
 
 local function config_with_trick_overrides(overrides)
     local blob = json.decode(rule_config.to_json(rule_config.canonical_russian))
+    -- Trick-play tests declare marriages at the start of the tricks
+    -- phase (no captured tricks yet); the canonical
+    -- `marriages.trick_required = "on"` rule would gate them. The gate
+    -- itself is covered by tests/spec/core/marriages_spec.lua.
+    blob.marriages.trick_required = "off"
     overrides = overrides or {}
     for k, v in pairs(overrides) do
         blob.tricks[k] = v

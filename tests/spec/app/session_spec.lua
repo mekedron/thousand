@@ -48,17 +48,6 @@ local function drive_to_talon(seed)
     return s
 end
 
-local function drive_to_talon_contested(seed)
-    -- Variant B path: contested auction climbs to 120.
-    local s = Session.new({ seed = seed, dealer = 1 })
-    assert(s:bid(2, 100).ok)
-    assert(s:bid(3, 105).ok)
-    assert(s:pass(1).ok)
-    assert(s:bid(2, 120).ok)
-    assert(s:pass(3).ok)
-    return s
-end
-
 local function drive_to_tricks_no_marriage(seed)
     local s = drive_to_talon(seed)
     assert(s:take_talon().ok)
@@ -70,8 +59,30 @@ local function drive_to_tricks_no_marriage(seed)
     return s
 end
 
+-- The marriage describe block exercises K-Q declarations at the start
+-- of the tricks phase (no captured tricks yet). The canonical
+-- `marriages.trick_required = "on"` rule would gate every assertion,
+-- so the helper drives the deal under a config with the gate off; the
+-- gate itself is covered by a dedicated describe block below.
+local function marriage_test_config()
+    local json = require("app.json")
+    local blob = json.decode(rule_config.to_json(rule_config.canonical_russian))
+    blob.marriages.trick_required = "off"
+    return rule_config.new(blob)
+end
+
+local function drive_to_talon_contested_with_config(seed, cfg)
+    local s = Session.new({ seed = seed, dealer = 1, config = cfg })
+    assert(s:bid(2, 100).ok)
+    assert(s:bid(3, 105).ok)
+    assert(s:pass(1).ok)
+    assert(s:bid(2, 120).ok)
+    assert(s:pass(3).ok)
+    return s
+end
+
 local function drive_to_tricks_with_marriage(seed)
-    local s = drive_to_talon_contested(seed)
+    local s = drive_to_talon_contested_with_config(seed, marriage_test_config())
     assert(s:take_talon().ok)
     -- Pass two non-marriage cards.
     local hand = s:hands()[2]

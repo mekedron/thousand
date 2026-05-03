@@ -18,8 +18,14 @@ local function c(suit, rank)
     return card.new(suit, rank)
 end
 
+-- The journey scenarios declare marriages at the start of the tricks
+-- phase (no captured tricks yet); the canonical
+-- `marriages.trick_required = "on"` rule would gate them. The gate
+-- itself is exercised by tests/spec/core/marriages_spec.lua and the
+-- session-level marriage variants spec.
 local function with_overrides(overrides)
     local blob = json.decode(rule_config.to_json(rule_config.canonical_russian))
+    blob.marriages.trick_required = "off"
     overrides = overrides or {}
     for k, v in pairs(overrides) do
         blob.marriages[k] = v

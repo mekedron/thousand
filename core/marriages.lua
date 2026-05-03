@@ -224,7 +224,7 @@ local function count_kq_declarations(state)
     return n
 end
 
-local function validate_kq_declaration(state, player, suit, hand)
+local function validate_kq_declaration(state, player, suit, hand, tricks_won)
     local state_err = ensure_marriages(state)
     if state_err then
         return state_err
@@ -279,6 +279,14 @@ local function validate_kq_declaration(state, player, suit, hand)
         )
     end
 
+    if state.config.marriages.trick_required == "on" and (tonumber(tricks_won) or 0) < 1 then
+        return failure(
+            "trick_required_not_met",
+            "marriages.trick_required = on; the seat has not yet captured a trick",
+            { player = player, suit = suit, tricks_won = tonumber(tricks_won) or 0 }
+        )
+    end
+
     local value = state.config.marriages.values[suit]
     if type(value) ~= "number" then
         return failure("bad_suit", "config has no marriage value for " .. suit, {
@@ -304,8 +312,14 @@ local function apply_kq_declaration(state, player, suit, value)
     return tag_as_marriages(next_state)
 end
 
-function M.declare(state, player, suit, hand)
-    local validated = validate_kq_declaration(state, player, suit, hand)
+-- The optional `tricks_won` argument is the count of tricks the
+-- declaring seat has captured this deal at the moment of declaration.
+-- Under `marriages.trick_required = "on"` (the book default), the call
+-- fails with `trick_required_not_met` if the count is below 1. Callers
+-- that already gate the precondition externally (or that want the
+-- trickless variant) pass a satisfying number or set the rule to "off".
+function M.declare(state, player, suit, hand, tricks_won)
+    local validated = validate_kq_declaration(state, player, suit, hand, tricks_won)
     if not validated.ok then
         return validated
     end
@@ -321,10 +335,10 @@ end
 -- and `pre_first_trick` (announce before the first lead). The lead /
 -- phase precondition is the orchestrator's responsibility — this
 -- module only checks the structural rule (hand holds K+Q, suit not
--- already declared) and applies the bonus + trump under the
--- `one_trump_per_deal` rule.
-function M.announce_from_hand(state, player, suit, hand)
-    local validated = validate_kq_declaration(state, player, suit, hand)
+-- already declared, trick captured if `trick_required = on`) and
+-- applies the bonus + trump under the `one_trump_per_deal` rule.
+function M.announce_from_hand(state, player, suit, hand, tricks_won)
+    local validated = validate_kq_declaration(state, player, suit, hand, tricks_won)
     if not validated.ok then
         return validated
     end
@@ -367,7 +381,11 @@ end
 -- by the declaring seat and call `tricks.set_trump` (or the
 -- in-trick equivalent) with that suit; the marriage state records
 -- `pending_ace_trump = player` until cleared.
-function M.declare_ace_marriage(state, player, hand)
+-- The optional `tricks_won` argument follows the same contract as
+-- `M.declare`: under `marriages.trick_required = "on"` the call fails
+-- with `trick_required_not_met` if the seat has not yet captured a
+-- trick this deal.
+function M.declare_ace_marriage(state, player, hand, tricks_won)
     local state_err = ensure_marriages(state)
     if state_err then
         return state_err
@@ -417,6 +435,14 @@ function M.declare_ace_marriage(state, player, hand)
             "ace_marriage_already_declared",
             "an ace marriage has already been declared this deal",
             {}
+        )
+    end
+
+    if state.config.marriages.trick_required == "on" and (tonumber(tricks_won) or 0) < 1 then
+        return failure(
+            "trick_required_not_met",
+            "marriages.trick_required = on; the seat has not yet captured a trick",
+            { player = player, kind = "ace_marriage", tricks_won = tonumber(tricks_won) or 0 }
         )
     end
 

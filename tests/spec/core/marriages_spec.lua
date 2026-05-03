@@ -10,8 +10,12 @@ local function fresh_marriages()
     return result.marriages
 end
 
-local function declare(state, player, suit, hand)
-    local result = marriages.declare(state, player, suit, hand)
+-- The fixture passes `tricks_won = 1` by default so the canonical
+-- `marriages.trick_required = "on"` rule does not gate happy-path
+-- declaration tests. Tests targeting the trick gate itself call
+-- `marriages.declare` directly with the count they need to assert.
+local function declare(state, player, suit, hand, tricks_won)
+    local result = marriages.declare(state, player, suit, hand, tricks_won or 1)
     assert.is_true(
         result.ok,
         "fixture: declare must succeed (got " .. (result.error and result.error.code or "?") .. ")"
@@ -466,7 +470,7 @@ describe("core.marriages", function()
         it("records a K-Q marriage and sets trump", function()
             local m = fresh_marriages()
             local result =
-                marriages.announce_from_hand(m, 1, "hearts", hand_with_marriage("hearts"))
+                marriages.announce_from_hand(m, 1, "hearts", hand_with_marriage("hearts"), 1)
             assert.is_true(result.ok)
             assert.are.equal("hearts", result.marriages.trump)
             assert.are.equal(100, result.marriages.bonuses[1])
@@ -476,7 +480,7 @@ describe("core.marriages", function()
 
         it("rejects when the hand is missing K or Q", function()
             local m = fresh_marriages()
-            local result = marriages.announce_from_hand(m, 1, "hearts", { king_of("hearts") })
+            local result = marriages.announce_from_hand(m, 1, "hearts", { king_of("hearts") }, 1)
             assert.is_false(result.ok)
             assert.are.equal("card_not_in_hand", result.error.code)
         end)
@@ -484,8 +488,9 @@ describe("core.marriages", function()
         it("respects one_trump_per_deal", function()
             local cfg = config_with_marriage_overrides({ one_trump_per_deal = "on" })
             local m = marriages.new(cfg).marriages
-            m = marriages.announce_from_hand(m, 1, "hearts", hand_with_marriage("hearts")).marriages
-            local r = marriages.announce_from_hand(m, 2, "spades", hand_with_marriage("spades"))
+            m =
+                marriages.announce_from_hand(m, 1, "hearts", hand_with_marriage("hearts"), 1).marriages
+            local r = marriages.announce_from_hand(m, 2, "spades", hand_with_marriage("spades"), 1)
             assert.is_true(r.ok)
             assert.are.equal("hearts", r.marriages.trump)
         end)
@@ -509,7 +514,7 @@ describe("core.marriages", function()
 
         it("rejects when ace_marriage = 'off'", function()
             local m = fresh_marriages()
-            local r = marriages.declare_ace_marriage(m, 1, four_aces_hand())
+            local r = marriages.declare_ace_marriage(m, 1, four_aces_hand(), 1)
             assert.is_false(r.ok)
             assert.are.equal("ace_marriage_disabled", r.error.code)
         end)
@@ -517,7 +522,7 @@ describe("core.marriages", function()
         it("awards ace_marriage_value under 'on' without setting trump", function()
             local cfg = config_with_marriage_overrides({ ace_marriage = "on" })
             local m = marriages.new(cfg).marriages
-            local r = marriages.declare_ace_marriage(m, 1, four_aces_hand())
+            local r = marriages.declare_ace_marriage(m, 1, four_aces_hand(), 1)
             assert.is_true(r.ok)
             assert.are.equal(200, r.marriages.bonuses[1])
             assert.is_nil(r.marriages.trump)
@@ -528,7 +533,7 @@ describe("core.marriages", function()
         it("marks pending_ace_trump under 'sets_trump'", function()
             local cfg = config_with_marriage_overrides({ ace_marriage = "sets_trump" })
             local m = marriages.new(cfg).marriages
-            local r = marriages.declare_ace_marriage(m, 2, four_aces_hand())
+            local r = marriages.declare_ace_marriage(m, 2, four_aces_hand(), 1)
             assert.is_true(r.ok)
             assert.are.equal(2, r.marriages.pending_ace_trump)
         end)
@@ -542,7 +547,7 @@ describe("core.marriages", function()
                 card.new("clubs", "A"),
                 card.new("spades", "K"),
             }
-            local r = marriages.declare_ace_marriage(m, 1, hand)
+            local r = marriages.declare_ace_marriage(m, 1, hand, 1)
             assert.is_false(r.ok)
             assert.are.equal("ace_marriage_requires_four_aces", r.error.code)
         end)
@@ -550,8 +555,8 @@ describe("core.marriages", function()
         it("rejects re-declaring the ace marriage", function()
             local cfg = config_with_marriage_overrides({ ace_marriage = "on" })
             local m = marriages.new(cfg).marriages
-            m = marriages.declare_ace_marriage(m, 1, four_aces_hand()).marriages
-            local r = marriages.declare_ace_marriage(m, 1, four_aces_hand())
+            m = marriages.declare_ace_marriage(m, 1, four_aces_hand(), 1).marriages
+            local r = marriages.declare_ace_marriage(m, 1, four_aces_hand(), 1)
             assert.is_false(r.ok)
             assert.are.equal("ace_marriage_already_declared", r.error.code)
         end)
@@ -562,7 +567,7 @@ describe("core.marriages", function()
                 ace_marriage_value = 250,
             })
             local m = marriages.new(cfg).marriages
-            local r = marriages.declare_ace_marriage(m, 1, four_aces_hand())
+            local r = marriages.declare_ace_marriage(m, 1, four_aces_hand(), 1)
             assert.is_true(r.ok)
             assert.are.equal(250, r.marriages.bonuses[1])
         end)
@@ -577,7 +582,7 @@ describe("core.marriages", function()
                 card.new("diamonds", "A"),
                 card.new("clubs", "A"),
                 card.new("spades", "A"),
-            }).marriages
+            }, 1).marriages
             local r = marriages.activate_ace_trump(m, "diamonds")
             assert.is_true(r.ok)
             assert.are.equal("diamonds", r.marriages.trump)
@@ -622,9 +627,92 @@ describe("core.marriages", function()
             local m = fresh_marriages()
             m = declare(m, 1, "hearts", hand_with_marriage("hearts"))
             m = marriages.cancel_drowned(m, "hearts").marriages
-            local r = marriages.declare(m, 2, "hearts", hand_with_marriage("hearts"))
+            local r = marriages.declare(m, 2, "hearts", hand_with_marriage("hearts"), 1)
             assert.is_true(r.ok)
             assert.are.equal(100, r.marriages.bonuses[2])
+        end)
+    end)
+
+    describe("trick_required gate", function()
+        local function four_aces_hand()
+            return {
+                card.new("hearts", "A"),
+                card.new("diamonds", "A"),
+                card.new("clubs", "A"),
+                card.new("spades", "A"),
+            }
+        end
+
+        it(
+            "declare() rejects a K-Q marriage when no trick has been captured under trick_required=on",
+            function()
+                local cfg = config_with_marriage_overrides({ trick_required = "on" })
+                local m = marriages.new(cfg).marriages
+                local r = marriages.declare(m, 1, "hearts", hand_with_marriage("hearts"), 0)
+                assert.is_false(r.ok)
+                assert.are.equal("trick_required_not_met", r.error.code)
+            end
+        )
+
+        it("declare() accepts a K-Q marriage with at least one trick captured", function()
+            local cfg = config_with_marriage_overrides({ trick_required = "on" })
+            local m = marriages.new(cfg).marriages
+            local r = marriages.declare(m, 1, "hearts", hand_with_marriage("hearts"), 1)
+            assert.is_true(r.ok)
+        end)
+
+        it("declare() ignores tricks_won when trick_required=off", function()
+            local cfg = config_with_marriage_overrides({ trick_required = "off" })
+            local m = marriages.new(cfg).marriages
+            local r = marriages.declare(m, 1, "hearts", hand_with_marriage("hearts"), 0)
+            assert.is_true(r.ok)
+        end)
+
+        it(
+            "announce_from_hand() rejects without a captured trick under trick_required=on",
+            function()
+                local cfg = config_with_marriage_overrides({ trick_required = "on" })
+                local m = marriages.new(cfg).marriages
+                local r =
+                    marriages.announce_from_hand(m, 1, "hearts", hand_with_marriage("hearts"), 0)
+                assert.is_false(r.ok)
+                assert.are.equal("trick_required_not_met", r.error.code)
+            end
+        )
+
+        it("announce_from_hand() ignores tricks_won when trick_required=off", function()
+            local cfg = config_with_marriage_overrides({ trick_required = "off" })
+            local m = marriages.new(cfg).marriages
+            local r = marriages.announce_from_hand(m, 1, "hearts", hand_with_marriage("hearts"), 0)
+            assert.is_true(r.ok)
+        end)
+
+        it(
+            "declare_ace_marriage() rejects without a captured trick under trick_required=on",
+            function()
+                local cfg =
+                    config_with_marriage_overrides({ ace_marriage = "on", trick_required = "on" })
+                local m = marriages.new(cfg).marriages
+                local r = marriages.declare_ace_marriage(m, 1, four_aces_hand(), 0)
+                assert.is_false(r.ok)
+                assert.are.equal("trick_required_not_met", r.error.code)
+            end
+        )
+
+        it("declare_ace_marriage() accepts when a trick has been captured", function()
+            local cfg =
+                config_with_marriage_overrides({ ace_marriage = "on", trick_required = "on" })
+            local m = marriages.new(cfg).marriages
+            local r = marriages.declare_ace_marriage(m, 1, four_aces_hand(), 1)
+            assert.is_true(r.ok)
+        end)
+
+        it("declare_ace_marriage() ignores tricks_won when trick_required=off", function()
+            local cfg =
+                config_with_marriage_overrides({ ace_marriage = "on", trick_required = "off" })
+            local m = marriages.new(cfg).marriages
+            local r = marriages.declare_ace_marriage(m, 1, four_aces_hand(), 0)
+            assert.is_true(r.ok)
         end)
     end)
 end)

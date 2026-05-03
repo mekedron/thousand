@@ -183,9 +183,12 @@ local SCHEMA = {
             "four_jack_redeal",
             "weak_hand_redeal",
             "weak_hand_threshold",
+            "two_nines_in_talon_redeal",
             "misdeal_handling",
             "misdeal_flat_penalty",
             "all_pass_handling",
+            "deck_size",
+            "cut_deck_nine_jack_penalty",
         },
         fields = {
             -- A player dealt all four 9s may demand a redeal. "mandatory"
@@ -246,6 +249,25 @@ local SCHEMA = {
                 default = 14,
                 status = "selectable",
             },
+            -- Book-rule: presence of exactly two 9s in the talon
+            -- (widow / прикуп) entitles the declarer to demand a
+            -- redeal after the talon is revealed. Distinct from the
+            -- threshold-based `talon.bad_talon_redeal`: this fires
+            -- on a 9-count predicate, not a card-point sum. The mode
+            -- names mirror `talon.bad_talon_redeal`:
+            --   "off":              never offered.
+            --   "any_contract":     offered regardless of contract.
+            --   "minimum_100_only": offered only when the contract
+            --                       sits at or above 100. See
+            -- docs/variations/house-rules.md "Two nines in the talon
+            -- redeal".
+            two_nines_in_talon_redeal = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "any_contract", "minimum_100_only" },
+                default = "off",
+                status = "selectable",
+            },
             -- Misdeal recovery branch.
             --   "standard":     same dealer redeals, no penalty.
             --   "soft_penalty": deal moves clockwise.
@@ -287,6 +309,35 @@ local SCHEMA = {
                 allowed = { "redeal", "pass_out", "raspassy" },
                 default = "redeal",
                 status = "selectable",
+            },
+            -- Book-rule, deferred: a 32-card deck (sixes through aces,
+            -- with sevens worth 7 and eights worth 0) is the book's
+            -- optional alternative to the canonical 24-card deck.
+            -- Out of scope for v1; the field is here so saved
+            -- templates round-trip cleanly. Only the schema's default
+            -- ("24") is accepted today — `M.try_new` rejects "32"
+            -- with `deferred_field_changed`.
+            deck_size = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "24", "32" },
+                default = "24",
+                status = "deferred",
+            },
+            -- Book-rule, deferred: when the dealer cuts the deck and
+            -- a 9 (or, in some agreements, a J) lands at the bottom,
+            -- the deck is re-cut; the third occurrence assigns the
+            -- standard penalty to the dealer. Procedural — not
+            -- suitable for software simulation, where the cut is
+            -- replaced by a deterministic shuffle. The field is here
+            -- so saved templates round-trip cleanly. Only the
+            -- schema's default ("off") is accepted today.
+            cut_deck_nine_jack_penalty = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "redeal_after_three" },
+                default = "off",
+                status = "deferred",
             },
         },
     },
@@ -819,6 +870,7 @@ local SCHEMA = {
             "ace_marriage",
             "ace_marriage_value",
             "one_trump_per_deal",
+            "trick_required",
         },
         fields = {
             values = {
@@ -935,6 +987,23 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
+                status = "selectable",
+            },
+            -- Book-rule: a K-Q (trump) marriage and a four-aces ace
+            -- marriage may only be declared once the seat has already
+            -- captured at least one trick this deal. The book frames
+            -- this as the standard rule and the trickless variant as
+            -- the exception. The gate applies uniformly to every
+            -- declaration path: lead-time `M.declare`, hand-time
+            -- `M.announce_from_hand`, and `M.declare_ace_marriage`.
+            -- Default `"on"` matches the book; tables that allow
+            -- declaration without a trick pin this to `"off"`. See
+            -- docs/variations/house-rules.md "Marriage trick required".
+            trick_required = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "on", "off" },
+                default = "on",
                 status = "selectable",
             },
         },
@@ -1430,9 +1499,10 @@ local SCHEMA = {
             -- fall off). `first_mounter` keeps the earliest mount on
             -- the barrel and falls the rest off. `all_collide_fall_off`
             -- knocks every colliding unit off, leaving the barrel
-            -- empty. A relaxed `coexist` mode (multiple players sit
-            -- without collision) is its own deferred catalogue entry
-            -- in the bigger barrel-rules cluster. See
+            -- empty. `coexist` is the relaxed book variant: every
+            -- on-barrel unit stays mounted simultaneously, each
+            -- running its own `deal_count` countdown. The book frames
+            -- coexistence as an agreed-in-advance variant — see
             -- docs/variations/house-rules.md "Barrel collisions".
             collision_rule = {
                 kind = "leaf",
@@ -1441,6 +1511,7 @@ local SCHEMA = {
                     "last_mounter",
                     "first_mounter",
                     "all_collide_fall_off",
+                    "coexist",
                 },
                 default = "last_mounter",
                 status = "selectable",
@@ -1519,6 +1590,7 @@ local SCHEMA = {
             "going_over_target",
             "tiebreaker",
             "dump_truck",
+            "dump_truck_threshold",
         },
         fields = {
             target_score = {
@@ -1559,19 +1631,39 @@ local SCHEMA = {
                 default = "declarer_wins",
                 status = "selectable",
             },
-            -- House-rule: dump-truck / самосвал — landing on a
-            -- specific score (commonly +555) resets the unit's
+            -- House-rule: dump-truck / самосвал — landing on the
+            -- threshold score (commonly +555) resets the unit's
             -- running total to zero. `positive_only` triggers on
-            -- +555 only; `both_signs` triggers on −555 as well. The
-            -- reset fires before the barrel/winner branch so a unit
-            -- already on the barrel that lands on 555 resets to 0
-            -- and dismounts. See docs/variations/house-rules.md
-            -- "Dump truck / Самосвал".
+            -- +threshold only; `both_signs` triggers on −threshold
+            -- as well. The reset fires before the barrel/winner
+            -- branch so a unit already on the barrel that lands on
+            -- the threshold resets to 0 and dismounts. The exact
+            -- threshold is the sibling field `dump_truck_threshold`.
+            -- See docs/variations/house-rules.md "Dump truck /
+            -- Самосвал".
             dump_truck = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "off", "positive_only", "both_signs" },
                 default = "off",
+                status = "selectable",
+            },
+            -- Sibling of `dump_truck`. The exact running-total value
+            -- the reset fires on (the book mentions both 555 and 550
+            -- as agreed-upon variants). Inert under `dump_truck =
+            -- "off"`; carried in the schema so saved templates round-
+            -- trip cleanly. The trigger uses exact equality with
+            -- ±threshold; because the scoring engine rounds totals to
+            -- multiples of 5, threshold values not divisible by 5 will
+            -- rarely fire in practice. Bounded in [100, 1000] —
+            -- thresholds outside that range do not match the book's
+            -- usage of the rule.
+            dump_truck_threshold = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 100,
+                max = 1000,
+                default = 555,
                 status = "selectable",
             },
         },
@@ -2765,9 +2857,12 @@ local function canonical_russian_blob()
             four_jack_redeal = "off",
             weak_hand_redeal = "off",
             weak_hand_threshold = 14,
+            two_nines_in_talon_redeal = "off",
             misdeal_handling = "standard",
             misdeal_flat_penalty = 20,
             all_pass_handling = "redeal",
+            deck_size = "24",
+            cut_deck_nine_jack_penalty = "off",
         },
         talon = {
             size = 3,
@@ -2817,6 +2912,7 @@ local function canonical_russian_blob()
             ace_marriage = "off",
             ace_marriage_value = 200,
             one_trump_per_deal = "off",
+            trick_required = "on",
         },
         tricks = {
             must_follow = true,
@@ -2868,6 +2964,7 @@ local function canonical_russian_blob()
             going_over_target = "win_immediately",
             tiebreaker = "declarer_wins",
             dump_truck = "off",
+            dump_truck_threshold = 555,
         },
         specials = {
             mizere = "off",

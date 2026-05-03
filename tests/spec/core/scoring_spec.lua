@@ -241,9 +241,12 @@ describe("core.scoring", function()
                     four_jack_redeal = "off",
                     weak_hand_redeal = "off",
                     weak_hand_threshold = 14,
+                    two_nines_in_talon_redeal = "off",
                     misdeal_handling = "standard",
                     misdeal_flat_penalty = 20,
                     all_pass_handling = "redeal",
+                    deck_size = "24",
+                    cut_deck_nine_jack_penalty = "off",
                 },
                 talon = {
                     size = 3,
@@ -293,6 +296,7 @@ describe("core.scoring", function()
                     ace_marriage = "off",
                     ace_marriage_value = 200,
                     one_trump_per_deal = "off",
+                    trick_required = "on",
                 },
                 tricks = {
                     must_follow = true,
@@ -344,6 +348,7 @@ describe("core.scoring", function()
                     going_over_target = "win_immediately",
                     tiebreaker = "declarer_wins",
                     dump_truck = "off",
+                    dump_truck_threshold = 555,
                 },
                 specials = {
                     mizere = "off",
@@ -1925,6 +1930,72 @@ describe("core.scoring", function()
             assert.are.equal(760, g.running_totals[1])
             assert.is_false(g.barrel_state[2].on_barrel)
             assert.are.equal(760, g.running_totals[2])
+        end)
+
+        it("coexist leaves every on-barrel unit mounted with its own countdown", function()
+            local cfg = with_endgame_overrides({
+                barrel = { collision_rule = "coexist" },
+            })
+            local g = advance_with(cfg, {
+                deltas = { 0, 80, 80 },
+                running_totals_before = { 880, 800, 800 },
+                barrel_state_before = {
+                    { on_barrel = true, mounted_on_deal = 1, deals_remaining = 2 },
+                    { on_barrel = false },
+                    { on_barrel = false },
+                },
+                deal_index = 2,
+                declarer = 1,
+            })
+            -- Seat 1 was already on the barrel; seats 2 and 3 reach
+            -- 880 in this deal. Under `coexist` no eviction happens —
+            -- all three stay mounted, each with its own countdown.
+            assert.is_true(g.barrel_state[1].on_barrel)
+            assert.are.equal(880, g.running_totals[1])
+            assert.is_true(g.barrel_state[2].on_barrel)
+            assert.are.equal(880, g.running_totals[2])
+            assert.is_true(g.barrel_state[3].on_barrel)
+            assert.are.equal(880, g.running_totals[3])
+        end)
+    end)
+
+    describe("advance_game() dump_truck_threshold", function()
+        it("fires at the configured threshold instead of the default 555", function()
+            local cfg = with_endgame_overrides({
+                endgame = { dump_truck = "positive_only", dump_truck_threshold = 550 },
+            })
+            local g = advance_with(cfg, {
+                deltas = { 50, 0, 0 },
+                running_totals_before = { 500, 0, 0 },
+            })
+            assert.are.equal(0, g.running_totals[1])
+            assert.is_true(g.dump_truck_events[1])
+        end)
+
+        it("does not fire on the legacy 555 when the threshold has moved", function()
+            local cfg = with_endgame_overrides({
+                endgame = { dump_truck = "positive_only", dump_truck_threshold = 550 },
+            })
+            local g = advance_with(cfg, {
+                deltas = { 55, 0, 0 },
+                running_totals_before = { 500, 0, 0 },
+            })
+            assert.are.equal(555, g.running_totals[1])
+            assert.is_false(g.dump_truck_events[1] or false)
+        end)
+
+        it("both_signs branch zeroes on the negative threshold mirror", function()
+            local cfg = with_endgame_overrides({
+                endgame = { dump_truck = "both_signs", dump_truck_threshold = 700 },
+            })
+            local g = advance_with(cfg, {
+                deltas = { 0, 0, -100 },
+                running_totals_before = { 0, 0, -600 },
+                declarer = 3,
+                declarer_made_contract = false,
+            })
+            assert.are.equal(0, g.running_totals[3])
+            assert.is_true(g.dump_truck_events[3])
         end)
     end)
 

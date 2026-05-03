@@ -26,8 +26,21 @@ local marriages_module = require("core.marriages")
 local tricks_module = require("core.tricks")
 local scoring = require("core.scoring")
 local rule_config = require("core.rule_config")
+local json = require("app.json")
 
-local config = rule_config.canonical_russian
+-- The full-deal scripted scenario declares its spades marriage at the
+-- start of the tricks phase (before any trick has been captured), so
+-- it runs under a config with the canonical `marriages.trick_required
+-- = "on"` gate switched off. The gate itself is exercised by
+-- tests/spec/core/marriages_spec.lua and the session-level marriage
+-- variants spec.
+local function trickless_canonical()
+    local blob = json.decode(rule_config.to_json(rule_config.canonical_russian))
+    blob.marriages.trick_required = "off"
+    return rule_config.new(blob)
+end
+
+local config = trickless_canonical()
 
 local function build_deck(seed)
     return deck_module.shuffle(deck_module.build(), seed)

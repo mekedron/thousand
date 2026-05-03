@@ -24,8 +24,21 @@ local function find_safe_pass(hand, marriage_suit)
     error("no safe pass card available")
 end
 
+-- The auto-save round-trip exercises a marriage declaration at the
+-- start of the tricks phase. The canonical
+-- `marriages.trick_required = "on"` rule would gate it; the spec
+-- drives the deal under a config with the gate off (the gate behaviour
+-- itself is covered by tests/spec/core/marriages_spec.lua).
+local function trickless_canonical()
+    local rc = require("core.rule_config")
+    local jsmod = require("app.json")
+    local blob = jsmod.decode(rc.to_json(rc.canonical_russian))
+    blob.marriages.trick_required = "off"
+    return rc.new(blob)
+end
+
 local function drive_to_talon(seed)
-    local s = Session.new({ seed = seed, dealer = 1 })
+    local s = Session.new({ seed = seed, dealer = 1, config = trickless_canonical() })
     assert(s:bid(2, 100).ok)
     assert(s:pass(3).ok)
     assert(s:pass(1).ok)
