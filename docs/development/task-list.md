@@ -714,6 +714,171 @@ ships scripted engine tests covering every value.
     `app/session.lua`'s `on_auction_end`.
   - Engine + session + e2e tests covering the three contracts.
 
+### 3.7 Canonical Russian alignment with book ruleset
+
+Goal: align `canonical_russian` and the engine with the "common
+standard" Russian rules described in the reference book
+(`TMP - Rules according to a book.md`). The audit identified six
+engine gaps and a small set of default-value mismatches; this
+section closes the gaps (or marks them explicitly deferred), updates
+the canonical defaults, and brings the docs in line with the book's
+terminology.
+
+Gaps the audit flagged against the book's standard:
+
+- **Not implemented:** marriage trick-required precondition,
+  write-off / сдача mid-deal concession, no-win-for-3-rounds penalty,
+  every-third-write-off penalty, reset-to-zero on third barrel
+  fall-off, dark-game stick doubling.
+- **Partially implemented:** dedicated "two nines in the widow"
+  redeal trigger (today subsumed by the `bad_talon_threshold` path),
+  multiple-players-on-the-barrel coexistence (the existing comment
+  in `core/rule_config.lua` mentions a future `coexist` value that
+  is not in `allowed`), configurable dump-truck threshold (canonical
+  ±555 hard-coded; book mentions a +550 variant).
+- **Out of scope (explicitly deferred):** 32-card deck variant
+  (book's optional 6-A deck with sevens = 7, eights = 0), cut-deck
+  nine/jack penalty (procedural, not suitable for software
+  simulation).
+
+The work is grouped into four agent-sized chunks. Tasks 1–3 close
+the engine gaps; the closing task flips the canonical defaults and
+brings the docs in line. The write-off task lands first because the
+every-third-write-off counter in task 2 depends on it.
+
+- [ ] Implement write-off / сдача and the every-third-write-off
+  penalty.
+  - Book: a declarer who sees they cannot make their contract may
+    "write off" — subtract the full bid from themselves and credit
+    half of the bid to each opponent. Every third write-off then
+    triggers the standard 120 penalty. Distinct from
+    `bidding.forced_bid_concession`, which only fires on a forced
+    100 contract.
+  - Add `bidding.write_off` (allowed `{"off", "on"}`, default
+    `"off"`) and `bidding.write_off_split` (allowed
+    `{"half_to_each", "equal_split"}`, default `"half_to_each"`).
+  - Add `penalties.write_off_streak` (allowed `{"off", "any_three"}`,
+    default `"off"`), `penalties.write_off_streak_threshold` (default
+    3, bounds `[2, 5]`), and `penalties.write_off_streak_penalty_amount`
+    (default 120, bounds `[0, 240]`).
+  - Engine surfaces a "Write off" action to the declarer between
+    tricks (before the eighth trick) and applies the configured
+    split, pooling credit through the active
+    `scoring.defender_contributions` on partnerships.
+  - Engine maintains a per-seat write-off counter; on every Nth
+    write-off the penalty fires and the counter resets. The counter
+    survives auto-save / resume.
+  - All five fields flip to selectable. Engine + session tests cover
+    canonical, partnership, and 2-/4-player layouts; counter
+    triggering and reset are exercised across scripted multi-deal
+    runs.
+  - Table scene exposes a localised "Write off" button when the
+    toggle is on; the running scoreboard shows the write-off counter
+    so players can see how close they are to the threshold.
+
+- [ ] Implement the cross-deal counter penalties: no-win-for-3-rounds,
+  three-falls reset, and dark-game stick doubling.
+  - Book: a seat with no win in 3 consecutive (or total) rounds takes
+    the 120 penalty; a player who fell off the barrel three times
+    has their running total reset to zero; in a dark (blind-bid)
+    game the received stick is doubled.
+  - Add `penalties.no_win_streak` (allowed `{"off",
+    "consecutive_three", "any_three"}`, default `"off"`),
+    `penalties.no_win_streak_threshold` (default 3, bounds `[2, 5]`),
+    and `penalties.no_win_streak_penalty_amount` (default 120, bounds
+    `[0, 240]`). Shape mirrors the existing `zero_tricks` cluster.
+  - Add `barrel.fall_count_resets_to_zero` (allowed `{"off", "on"}`,
+    default `"off"`); the third fall overrides the standard
+    `fall_off_penalty` and zeroes the running total.
+  - Add `penalties.zero_tricks_dark_game_doubled` (allowed
+    `{"off", "on"}`, default `"off"`); shape mirrors the existing
+    `zero_tricks_golden_deal_doubled` sub-flag.
+  - Engine tracks per-seat winless-streak and barrel-fall-off
+    counters; both survive auto-save / resume. "Winning a deal" is
+    pinned in the scoring spec as the declarer making contract or a
+    defender capturing positive deal points, so the streak rule
+    cannot drift downstream.
+  - Under `consecutive_three`, the no-win-streak counter resets on
+    any winning deal; under `any_three`, only the penalty trigger
+    resets it.
+  - When `bidding.blind_bid` is active for the deal and the dark-
+    game toggle is `"on"`, a zero-tricks seat earns 2 sticks instead
+    of 1.
+  - All five fields flip to selectable. Scoring engine tests cover
+    every counter path across scripted multi-deal runs; auto-save
+    round-trips assert the counters persist.
+  - Running scoreboard shows the no-win and barrel-fall counters
+    next to the existing zero-tricks/cross counters so players see
+    their progress toward the threshold.
+
+- [ ] Implement marriage trick-required precondition and the minor
+  book toggles.
+  - Book default: a marriage may only be declared once the seat has
+    already taken at least one trick; the trickless variant is the
+    exception. Plus a cluster of smaller book items needed for
+    parity.
+  - Add `marriages.trick_required` (allowed `{"on", "off"}`, default
+    `"on"`); the engine refuses K-Q lead-time declaration when the
+    seat has no captured trick. `marriage_announcement_timing`
+    interacts correctly under both values
+    (`hand_announcement` / `pre_first_trick` still gate on the trick
+    requirement). The four-aces ace marriage already requires a
+    trick — sanity-check the path under the new shared field.
+  - Extend `barrel.collision_rule` with a new `"coexist"` value
+    (multiple players sit on the barrel simultaneously, each
+    running their own countdown). Implement fully or land it
+    deferred with a comment citing this task.
+  - Add `endgame.dump_truck_threshold` (default 555, bounds
+    `[100, 1000]`) so a table can opt for the +550 variant the book
+    mentions; the existing `dump_truck` toggle keys off this value.
+  - Add `dealing.two_nines_in_talon_redeal` (allowed `{"off",
+    "any_contract", "minimum_100_only"}`, default `"off"`) as a
+    dedicated trigger distinct from the threshold-based bad-talon
+    redeal.
+  - Mark 32-card deck (book's optional 6-A deck with sevens = 7,
+    eights = 0) and the cut-deck nine/jack penalty as explicitly
+    deferred in the schema with comments naming the deferral
+    reason ("out of scope for v1" / "procedural; not suitable for
+    software simulation").
+  - All four newly-selectable fields flip to selectable; engine
+    tests cover marriage trick-required across forehand-leads-first
+    scenarios and the four-aces path. Schema specs cover the new
+    sibling fields and the deferred markers.
+  - Built-in templates that legitimately allow trickless
+    declaration pin `marriages.trick_required = "off"` explicitly.
+
+- [ ] Update `canonical_russian` defaults to match the book's standard
+  and refresh the documentation.
+  - Flip `penalties.zero_tricks` from `"off"` to `"any_three"` (book
+    treats the every-3-sticks penalty as part of the standard
+    penalty system).
+  - Flip `endgame.dump_truck` from `"off"` to `"both_signs"` (book
+    describes ±555 reset as a standard rule).
+  - Land `marriages.trick_required` at `"on"` (default of the new
+    field; matches the book default).
+  - All other Phase 3.7 fields stay at their `"off"` defaults — the
+    book frames them as agreed-in-advance.
+  - Non-Russian built-ins (`polish`, `ukrainian`, `two_player_a`,
+    `two_player_b`, `four_player_a`, `four_player_b`) override any
+    new default that would change their scripted scoring or
+    legality.
+  - Update every spec that asserts the old defaults; the full
+    `tests/spec/core/builtins_spec.lua` scripted deals still pass.
+  - `docs/rules/*` adopts the book's vocabulary where it fits
+    naturally: widow / прикуп, stick / pole, boast / overboast,
+    dump truck / самосвал, write-off / сдача.
+  - `docs/variations/russian.md` lists the canonical defaults
+    explicitly (3-sticks penalty on, dump truck on, marriage
+    requires a trick) and the toggles that remain off-by-default.
+  - `docs/variations/house-rules.md` gains entries for the new
+    toggles introduced in tasks 1–3 (write-off, every-third-
+    write-off, no-win-streak, three-falls reset, dark-game stick
+    double, coexist barrel collision, dump-truck threshold,
+    two-nines-in-talon redeal).
+  - `docs/variations/index.md` adds a "Comparison with the
+    reference book" section that lists every gap that stays
+    deferred after 3.7 (32-card deck, cut-deck procedural rule).
+
 ---
 
 ## Phase 4 — AI opponents (algorithmic)
