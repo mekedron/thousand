@@ -956,6 +956,93 @@ moment of play.
     reference book" drops cut-deck nine/jack from the deferred-rules
     list (only the 32-card deck remains).
 
+### 3.9 Write-off as a between-talon-and-tricks prompt
+
+Goal: align the write-off action with the book's pre-play framing.
+The book describes write-off as a one-shot decision the declarer
+makes after seeing the widow ("if it is not possible to score the
+ordered amount"). Today the engine surfaces the *Write off* button
+between tricks — too lenient — so a declarer can keep playing,
+realise the contract is dead, and concede mid-deal.
+
+- [ ] Move write-off out of the tricks panel into a dedicated
+  pre-tricks decision phase.
+  - Engine: introduce an `awaiting_write_off_decision` phase that
+    opens after the talon discard / Polish pass, before the first
+    trick is dealt. Declarer chooses *Play* or *Write off*; *Play*
+    transitions to tricks normally. *Write off* fires the existing
+    half-bid distribution and the every-third-write-off counter.
+  - Session API: `Session:write_off()` already exists; gate it on
+    the new phase only. Add `Session:accept_play()` (or rename) for
+    the *Play* branch.
+  - Bot: bots auto-decide based on hand strength; for Phase 3.9
+    expose the API and ship a placeholder "always play" stub —
+    Phase 4.5 task already covers bidding-house-rules bot logic and
+    can extend this with a real heuristic.
+  - UI (table scene): swap the inline tricks-phase write-off button
+    for a Play / Write off modal that surfaces only during the new
+    phase. The modal lives between the talon discard animation and
+    the first trick lead.
+  - Tests: cover the happy path (Play → tricks proceed), the write-
+    off path (declarer pays the bid, opponents share half), the
+    every-third-write-off counter still fires correctly, the new
+    phase round-trips through auto-save, and the legacy "write off
+    mid-tricks" path is rejected.
+  - Docs: `docs/rules/scoring.md` and `docs/variations/house-rules.md`
+    note that write-off is now a pre-tricks decision rather than an
+    in-trick interrupt.
+
+### 3.10 Template editor: "current value" visual for read-only built-ins
+
+Goal: when editing a built-in (read-only) template, the selected
+option in each toggle group must be visually distinguishable from
+the other disabled options. Today every option renders in the same
+greyed-out state, so the player can't tell which value is currently
+set without consulting the docs.
+
+- [ ] Add a visual marker for the selected-but-disabled state in
+  the template editor.
+  - UI (template editor): introduce a `current` indicator (outline
+    ring, "Current" pill, or analogous treatment that survives
+    keyboard focus + touch) on the option whose value matches the
+    template's current setting. Applies to enum-leaf groups,
+    boolean toggles, and number steppers alike.
+  - Read-only behaviour stays unchanged: the option is still
+    non-interactive in built-ins; the marker is purely
+    informational.
+  - Editable templates (clones) keep the existing selected-active
+    visual and don't need the marker — the active state already
+    communicates the same thing through ordinary affordance.
+  - Tests: a UI scene spec asserts the marker is rendered for the
+    canonical Russian template and absent for an editable clone.
+  - Docs: no doc change — the template-editor screenshot in
+    `docs/development/architecture.md` is a future Phase 5 deliverable.
+
+### 3.11 Decide canonical Russian all-pass behaviour
+
+Goal: pick a book-faithful default for the all-pass case. The book
+is silent on what happens when every seat passes the auction; the
+current default is `dealing.all_pass_handling = "redeal"` and
+`bidding.forced_dealer_bid = "off"`, which lets the deal collapse
+into a silent redeal. Two reasonable readings exist; pick exactly
+one for the canonical Russian template.
+
+- [ ] Choose between the two book-faithful readings and pin the
+  defaults accordingly.
+  - **Reading A — silent redeal (status quo):** keep
+    `all_pass_handling = "redeal"` and `forced_dealer_bid = "off"`.
+    Matches "no stick if no trick was attempted."
+  - **Reading B — forced dealer 100:** flip `forced_dealer_bid` to
+    `"on"`. Matches "every deal has play, sticks accumulate." This
+    is the Ukrainian *bolt* / *болт* rule the book mentions
+    obliquely; the Ukrainian template also pins it on.
+  - Whichever reading wins, update the canonical Russian blob,
+    `docs/variations/russian.md`, and any spec that asserts the
+    old default.
+  - Non-Russian built-ins keep their own behaviour: Ukrainian
+    `forced_dealer_bid = "on"` regardless; Polish / 2-player /
+    4-player retain whatever their variant pages document.
+
 ---
 
 ## Phase 4 — Bot opponents (algorithmic)
