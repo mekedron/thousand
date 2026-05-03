@@ -111,11 +111,11 @@ local function field_help_key(section, field)
     return "templates.field." .. section .. "." .. field .. ".help" -- i18n-ok: composes a key
 end
 
-local function value_label_key(value)
+local function value_label_key_for(section, field, value)
     if type(value) == "boolean" then
         return value and "scene.settings.toggle.on" or "scene.settings.toggle.off" -- i18n-ok: keys
     end
-    return tostring(value)
+    return string.format("templates.field.%s.%s.%s", section, field, tostring(value))
 end
 
 local function build_toggle_for_field(self, section, field, descriptor)
@@ -129,7 +129,7 @@ local function build_toggle_for_field(self, section, field, descriptor)
         value_labels = {}
         for i, v in ipairs(descriptor.allowed) do
             values[i] = v
-            value_labels[i] = value_label_key(v)
+            value_labels[i] = value_label_key_for(section, field, v)
         end
     end
     local widget = Toggle.new({

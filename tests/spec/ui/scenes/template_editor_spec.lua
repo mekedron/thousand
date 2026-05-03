@@ -256,6 +256,42 @@ describe("ui.scenes.template_editor", function()
         end)
     end)
 
+    describe("enum value labels", function()
+        local rule_config = require("core.rule_config")
+
+        it("every non-boolean enum value resolves to a localized label", function()
+            local i18n = require("app.i18n")
+            i18n.set_locale("en")
+            local missing = {}
+            for _, section in ipairs(rule_config.sections()) do
+                local sd = rule_config.schema_for(section)
+                if sd and sd.fields then
+                    for _, field in ipairs(sd.fields) do
+                        local d = rule_config.schema_for(section .. "." .. field)
+                        if d and type(d.allowed) == "table" and d.lua_type ~= "boolean" then
+                            for _, v in ipairs(d.allowed) do
+                                local key = "templates.field."
+                                    .. section
+                                    .. "."
+                                    .. field
+                                    .. "."
+                                    .. tostring(v)
+                                if i18n.t(key) == key then
+                                    missing[#missing + 1] = key
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            assert.are.equal(
+                0,
+                #missing,
+                "missing enum-value labels in en.lua: " .. table.concat(missing, ", ")
+            )
+        end)
+    end)
+
     describe("layout panels", function()
         before_each(function()
             scene:enter(nil, { template_id = custom.id })
