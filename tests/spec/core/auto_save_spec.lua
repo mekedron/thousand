@@ -247,5 +247,25 @@ describe("core.auto_save", function()
             assert.are.equal(sd.declarer, rd.declarer)
             assert.are.same(sd.deal_scores, rd.deal_scores)
         end)
+
+        it("preserves write_off_counts across a round-trip", function()
+            local s = Session.new({ seed = 7 })
+            -- Test-only: prime the counter directly. The action path is
+            -- exercised in tests/spec/app/session_write_off_spec.
+            s._write_off_counts = { 1, 2, 0 }
+            local restored = Session.from_state(round_trip(s))
+            assert.are.same({ 1, 2, 0 }, restored:write_off_counts())
+        end)
+
+        it("defaults write_off_counts to zeros when missing from the blob", function()
+            -- Simulates a save written before the field was added.
+            local s = Session.new({ seed = 7 })
+            local blob = auto_save.serialize(s)
+            blob.write_off_counts = nil
+            local encoded = json.encode(blob)
+            local decoded = json.decode(encoded)
+            local restored = Session.from_state(auto_save.deserialize(decoded))
+            assert.are.same({ 0, 0, 0 }, restored:write_off_counts())
+        end)
     end)
 end)

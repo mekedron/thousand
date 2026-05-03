@@ -194,6 +194,11 @@ function M.serialize(session)
         zero_tricks_bolts = data_clone(session._zero_tricks_bolts),
         cross_count = data_clone(session._cross_count),
         recorded_penalties = data_clone(session._recorded_penalties),
+        -- Phase 3.7 write-off counter: per-seat persistent count under
+        -- bidding.write_off / penalties.write_off_streak. Older saves
+        -- written before the field existed simply round-trip as nil
+        -- and Session.from_state defaults to all-zeros.
+        write_off_counts = data_clone(session._write_off_counts),
     }
 end
 
@@ -239,6 +244,7 @@ function M.deserialize(blob)
         zero_tricks_bolts = blob.zero_tricks_bolts,
         cross_count = blob.cross_count,
         recorded_penalties = blob.recorded_penalties,
+        write_off_counts = blob.write_off_counts,
     }
 end
 

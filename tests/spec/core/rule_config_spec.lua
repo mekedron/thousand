@@ -64,6 +64,8 @@ local function valid_table()
             redouble_multiplier = 2,
             forced_bid_concession = "off",
             forced_bid_concession_preset_ratio = { 0.5, 0.5 },
+            write_off = "off",
+            write_off_split = "half_to_each",
             no_contract_without_marriage = "off",
             negative_score_restriction = "off",
             named_contracts = "off",
@@ -147,6 +149,9 @@ local function valid_table()
             zero_tricks_penalty_amount = 120,
             zero_tricks_declarer_exempt = "off",
             zero_tricks_golden_deal_doubled = "off",
+            write_off_streak = "off",
+            write_off_streak_threshold = 3,
+            write_off_streak_penalty_amount = 120,
             cross = "off",
             cross_penalty_amount = 120,
         },
@@ -2953,6 +2958,65 @@ describe("core.rule_config", function()
         end)
     end)
 
+    describe("bidding.write_off", function()
+        it("exposes a selectable string-leaf descriptor", function()
+            local d = rule_config.schema_for("bidding.write_off")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("selectable", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["on"])
+        end)
+
+        it("accepts every selectable value", function()
+            for _, value in ipairs({ "off", "on" }) do
+                local t = valid_table()
+                t.bidding.write_off = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " should be accepted")
+                assert.are.equal(value, res.config.bidding.write_off)
+            end
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.bidding.write_off)
+        end)
+    end)
+
+    describe("bidding.write_off_split", function()
+        it("exposes a selectable string-leaf descriptor with default half_to_each", function()
+            local d = rule_config.schema_for("bidding.write_off_split")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("half_to_each", d.default)
+            assert.are.equal("selectable", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["half_to_each"])
+            assert.is_true(allowed["equal_split"])
+        end)
+
+        it("accepts every selectable value", function()
+            for _, value in ipairs({ "half_to_each", "equal_split" }) do
+                local t = valid_table()
+                t.bidding.write_off_split = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " should be accepted")
+                assert.are.equal(value, res.config.bidding.write_off_split)
+            end
+        end)
+    end)
+
     describe("bidding.named_contracts_precedence", function()
         it("exposes a selectable list descriptor with default {mizere, open_hand, slam}", function()
             local d = rule_config.schema_for("bidding.named_contracts_precedence")
@@ -4931,6 +4995,92 @@ describe("core.rule_config", function()
                 local res = rule_config.try_new(t)
                 assert.is_true(res.ok)
                 assert.are.equal(value, res.config.penalties.zero_tricks_golden_deal_doubled)
+            end
+        end)
+    end)
+
+    describe("penalties.write_off_streak", function()
+        it("exposes a selectable string-leaf descriptor", function()
+            local d = rule_config.schema_for("penalties.write_off_streak")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("selectable", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["any_three"])
+        end)
+
+        it("accepts every selectable value", function()
+            for _, value in ipairs({ "off", "any_three" }) do
+                local t = valid_table()
+                t.penalties.write_off_streak = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " should be accepted")
+                assert.are.equal(value, res.config.penalties.write_off_streak)
+            end
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.penalties.write_off_streak)
+        end)
+    end)
+
+    describe("penalties.write_off_streak_threshold", function()
+        it("exposes a selectable bounded number descriptor", function()
+            local d = rule_config.schema_for("penalties.write_off_streak_threshold")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(2, d.min)
+            assert.are.equal(5, d.max)
+            assert.are.equal(3, d.default)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("accepts values inside [2, 5]", function()
+            for _, value in ipairs({ 2, 3, 4, 5 }) do
+                local t = valid_table()
+                t.penalties.write_off_streak_threshold = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " should be accepted")
+                assert.are.equal(value, res.config.penalties.write_off_streak_threshold)
+            end
+        end)
+
+        it("rejects values outside [2, 5]", function()
+            for _, bad in ipairs({ 1, 6, 100 }) do
+                local t = valid_table()
+                t.penalties.write_off_streak_threshold = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
+                assert.are.equal("penalties.write_off_streak_threshold", res.error.path)
+            end
+        end)
+    end)
+
+    describe("penalties.write_off_streak_penalty_amount", function()
+        it("exposes a selectable bounded number descriptor", function()
+            local d = rule_config.schema_for("penalties.write_off_streak_penalty_amount")
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(0, d.min)
+            assert.are.equal(240, d.max)
+            assert.are.equal(120, d.default)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("rejects values outside [0, 240]", function()
+            for _, bad in ipairs({ -1, 241 }) do
+                local t = valid_table()
+                t.penalties.write_off_streak_penalty_amount = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
+                assert.are.equal("penalties.write_off_streak_penalty_amount", res.error.path)
             end
         end)
     end)

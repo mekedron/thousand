@@ -349,6 +349,8 @@ return {
     ["templates.field.bidding.re_entry_after_pass.label"] = "Re-entry after pass",
     ["templates.field.bidding.contra.label"] = "Contra and redouble",
     ["templates.field.bidding.forced_bid_concession.label"] = "Forced-bid concession",
+    ["templates.field.bidding.write_off.label"] = "Сдача",
+    ["templates.field.bidding.write_off_split.label"] = "Распределение сдачи",
     ["templates.field.bidding.no_contract_without_marriage.label"] = "No contract without marriage",
     ["templates.field.bidding.negative_score_restriction.label"] = "Negative-score restriction",
     ["templates.field.bidding.named_contracts.label"] = "Named contracts",
@@ -464,5 +466,8 @@ return {
     ["templates.field.penalties.talon_look.label"] = "Talon-look penalty",
     ["templates.field.penalties.showing_hand.label"] = "Showing-hand penalty",
     ["templates.field.penalties.zero_tricks.label"] = "Zero-tricks penalty (бoлт / палка)",
+    ["templates.field.penalties.write_off_streak.label"] = "Штраф за каждую третью сдачу",
+    ["templates.field.penalties.write_off_streak_threshold.label"] = "Порог серии сдач",
+    ["templates.field.penalties.write_off_streak_penalty_amount.label"] = "Штраф за серию сдач",
     ["templates.field.penalties.cross.label"] = "Cross / крест",
 }

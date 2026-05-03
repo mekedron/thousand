@@ -62,6 +62,8 @@ local function build_config(overrides, specials_overrides)
             end
             return r
         end)(),
+        write_off = base.bidding.write_off,
+        write_off_split = base.bidding.write_off_split,
         no_contract_without_marriage = base.bidding.no_contract_without_marriage,
         negative_score_restriction = base.bidding.negative_score_restriction,
         named_contracts = base.bidding.named_contracts,

@@ -746,7 +746,7 @@ the engine gaps; the closing task flips the canonical defaults and
 brings the docs in line. The write-off task lands first because the
 every-third-write-off counter in task 2 depends on it.
 
-- [ ] Implement write-off / сдача and the every-third-write-off
+- [x] Implement write-off / сдача and the every-third-write-off
   penalty.
   - Book: a declarer who sees they cannot make their contract may
     "write off" — subtract the full bid from themselves and credit

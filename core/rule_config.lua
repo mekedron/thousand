@@ -505,6 +505,8 @@ local SCHEMA = {
             "redouble_multiplier",
             "forced_bid_concession",
             "forced_bid_concession_preset_ratio",
+            "write_off",
+            "write_off_split",
             "no_contract_without_marriage",
             "negative_score_restriction",
             "named_contracts",
@@ -698,6 +700,41 @@ local SCHEMA = {
                 kind = "list",
                 element_type = "number",
                 default = { 0.5, 0.5 },
+                status = "selectable",
+            },
+            -- Phase 3.7 book toggle: declarer-initiated mid-deal
+            -- concession (сдача / "write-off"). When `on`, the
+            -- declarer may abandon the deal between tricks (any time
+            -- before the last trick begins), subtracting the full
+            -- contract bid from themselves and crediting opponents
+            -- per `write_off_split`. The cross-deal counter that
+            -- triggers the every-third-write-off penalty lives in
+            -- `penalties.write_off_streak`. Distinct from
+            -- `bidding.forced_bid_concession`, which fires only on a
+            -- forced 100 contract at auction time. See
+            -- docs/variations/house-rules.md "Write-off / Сдача"
+            -- (added by the Phase 3.7 closing task).
+            write_off = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "selectable",
+            },
+            -- Sibling of `write_off`. Distribution of the conceded
+            -- bid:
+            --   * half_to_each — each opponent receives half the bid
+            --     (book default; with 3+ opponents the credits
+            --     intentionally exceed the debit).
+            --   * equal_split — the bid value is divided equally
+            --     across opponents, preserving conservation.
+            -- Inert under `write_off = "off"`. Pools through
+            -- `scoring.defender_contributions` for partnerships.
+            write_off_split = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "half_to_each", "equal_split" },
+                default = "half_to_each",
                 status = "selectable",
             },
             -- House-rule: forbid bidding 120 or higher without a
@@ -1614,6 +1651,9 @@ local SCHEMA = {
             "zero_tricks_penalty_amount",
             "zero_tricks_declarer_exempt",
             "zero_tricks_golden_deal_doubled",
+            "write_off_streak",
+            "write_off_streak_threshold",
+            "write_off_streak_penalty_amount",
             "cross",
             "cross_penalty_amount",
         },
@@ -1734,6 +1774,48 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
+                status = "selectable",
+            },
+            -- Phase 3.7 book toggle: every-third-write-off penalty.
+            -- When set to `any_three`, a per-seat counter increments
+            -- on each `bidding.write_off` use; on the configured
+            -- threshold the seat takes
+            -- `write_off_streak_penalty_amount` and the counter
+            -- resets to zero. Counter spans the whole game and
+            -- survives auto-save / resume. Inert when
+            -- `bidding.write_off = "off"` because the counter cannot
+            -- advance. See docs/variations/house-rules.md
+            -- "Every-third-write-off penalty" (added by the Phase
+            -- 3.7 closing task).
+            write_off_streak = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "any_three" },
+                default = "off",
+                status = "selectable",
+            },
+            -- Write-off count at which the every-third-write-off
+            -- penalty fires and the counter resets. Inert under
+            -- `write_off_streak = "off"`. Bounded in [2, 5] — the
+            -- book's "every third" sits at 3.
+            write_off_streak_threshold = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 2,
+                max = 5,
+                default = 3,
+                status = "selectable",
+            },
+            -- Penalty deducted when a player's write-off count
+            -- reaches `write_off_streak_threshold`. Inert under
+            -- `write_off_streak = "off"`. Bounded in [0, 240] — the
+            -- book's "−120 typical" sits at the midpoint.
+            write_off_streak_penalty_amount = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 0,
+                max = 240,
+                default = 120,
                 status = "selectable",
             },
             -- House-rule: cross / крест — alternative penalty path
@@ -2631,6 +2713,8 @@ local function canonical_russian_blob()
             redouble_multiplier = 2,
             forced_bid_concession = "off",
             forced_bid_concession_preset_ratio = { 0.5, 0.5 },
+            write_off = "off",
+            write_off_split = "half_to_each",
             no_contract_without_marriage = "off",
             negative_score_restriction = "off",
             named_contracts = "off",
@@ -2714,6 +2798,9 @@ local function canonical_russian_blob()
             zero_tricks_penalty_amount = 120,
             zero_tricks_declarer_exempt = "off",
             zero_tricks_golden_deal_doubled = "off",
+            write_off_streak = "off",
+            write_off_streak_threshold = 3,
+            write_off_streak_penalty_amount = 120,
             cross = "off",
             cross_penalty_amount = 120,
         },

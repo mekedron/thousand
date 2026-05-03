@@ -445,6 +445,11 @@ function M.new(opts)
         _zero_tricks_bolts = zero_totals(config.players.count),
         _cross_count = zero_totals(config.players.count),
         _recorded_penalties = {},
+        -- Phase 3.7 write-off counter: per-seat persistent count of
+        -- mid-deal write-offs (Session:write_off). Threshold-hit fires
+        -- the configured penalty and resets the seat's counter to 0.
+        -- Persisted across deals.
+        _write_off_counts = zero_totals(config.players.count),
     }, Session)
     evaluate_entitlement_with_forced_loop(self)
     -- Phase 3.6 opening-game: drive the auction-end transition so the
@@ -521,6 +526,7 @@ function M.from_state(state)
         _zero_tricks_bolts = state.zero_tricks_bolts or zero_totals(player_count),
         _cross_count = state.cross_count or zero_totals(player_count),
         _recorded_penalties = state.recorded_penalties or {},
+        _write_off_counts = state.write_off_counts or zero_totals(player_count),
     }, Session)
     -- Phase 3.6: when from_state restores a tricks-phase session and
     -- the active variant is pre_first_trick, re-open the queue from
@@ -764,6 +770,16 @@ end
 -- Returns a copy.
 function Session:cross_count()
     return copy_list(self._cross_count)
+end
+
+-- Per-seat persistent write-off counter under
+-- `bidding.write_off = "on"`. Counts the number of times each seat
+-- has invoked `Session:write_off`. Threshold-hit (under
+-- `penalties.write_off_streak ~= "off"`) fires the configured
+-- penalty and resets that seat's counter. Returns a copy so callers
+-- cannot mutate session state.
+function Session:write_off_counts()
+    return copy_list(self._write_off_counts)
 end
 
 -- Record a penalty violation for the current deal. The session
@@ -3356,6 +3372,136 @@ function Session:decline_forced_bid()
     -- opened. The auction state is unchanged so the talon-construction
     -- branch runs normally now.
     on_auction_end(self)
+    return { ok = true }
+end
+
+-- Phase 3.7 write-off / сдача. The declarer abandons the deal mid-
+-- play (any time during the tricks phase before the last trick
+-- begins) and pays out the contract per `bidding.write_off_split`:
+--   * half_to_each — every active opponent gets half the bid.
+--     Book default; with 3+ opponents the credits intentionally
+--     exceed the debit.
+--   * equal_split — the bid value is divided equally across the
+--     opponents.
+-- Sits-out seats (4-player B) are excluded from recipients, mirroring
+-- `concede_forced_bid`. The declarer's per-seat counter advances; on
+-- threshold (under `penalties.write_off_streak = "any_three"`) the
+-- configured penalty is folded into the declarer's delta and the
+-- counter resets. The deal closes with `reason = "write_off"` so
+-- `start_next_deal` rotates the dealer normally.
+function Session:write_off()
+    if self._config.bidding.write_off ~= "on" then
+        local msg = "bidding.write_off is not enabled" -- i18n-ok: internal error
+        return failure("write_off_disabled", msg, { rule = self._config.bidding.write_off })
+    end
+    if self:current_phase() ~= "tricks" then
+        return failure("wrong_phase", "write_off requires the tricks phase", {
+            phase = self:current_phase(),
+        })
+    end
+    local t = self._tricks
+    if not t then
+        return failure("wrong_phase", "write_off requires an active tricks state", {
+            phase = self:current_phase(),
+        })
+    end
+    -- "Before the last trick begins" — the canonical 8-trick layout
+    -- gates writes off after seven tricks have resolved. The check is
+    -- data-driven so 6-trick (Polish 2-card) and other layouts get the
+    -- same semantic: write-off is unavailable once the final trick is
+    -- the only one left to play.
+    if (t.tricks_played or 0) >= (t.tricks_per_deal or 0) - 1 then
+        local msg = "write_off must be invoked before the last trick begins" -- i18n-ok
+        return failure("too_late_to_write_off", msg, {
+            tricks_played = t.tricks_played,
+            tricks_per_deal = t.tricks_per_deal,
+        })
+    end
+
+    local declarer = self._talon and self._talon.declarer or self._auction.declarer
+    if declarer == nil then
+        return failure("no_declarer", "write_off has no declarer to charge", {})
+    end
+    local bid = self:current_bid()
+    if type(bid) ~= "number" then
+        return failure("no_numeric_bid", "write_off requires a numeric contract bid", { bid = bid })
+    end
+
+    local count = self._config.players.count
+    local sits_out = self._auction and self._auction.sits_out or nil
+    local recipients = {}
+    for seat = 1, count do
+        if seat ~= declarer and seat ~= sits_out then
+            recipients[#recipients + 1] = seat
+        end
+    end
+
+    local deltas = {}
+    for seat = 1, count do
+        deltas[seat] = 0
+    end
+    deltas[declarer] = -bid
+    local split_mode = self._config.bidding.write_off_split
+    if split_mode == "half_to_each" then
+        local share = math.floor(bid / 2)
+        for _, seat in ipairs(recipients) do
+            deltas[seat] = share
+        end
+    elseif split_mode == "equal_split" then
+        if #recipients > 0 then
+            local share = math.floor(bid / #recipients)
+            for _, seat in ipairs(recipients) do
+                deltas[seat] = share
+            end
+        end
+    end
+
+    -- Streak counter. Increment unconditionally so a UI scoreboard can
+    -- display progress even when `write_off_streak = "off"`. The
+    -- threshold-fire branch only fires when the streak rule is on.
+    local pen_rules = self._config.penalties
+    local new_count = (self._write_off_counts[declarer] or 0) + 1
+    local streak_active = pen_rules.write_off_streak == "any_three"
+    if streak_active and new_count >= (pen_rules.write_off_streak_threshold or 3) then
+        deltas[declarer] = deltas[declarer] - (pen_rules.write_off_streak_penalty_amount or 120)
+        new_count = 0
+    end
+    self._write_off_counts[declarer] = new_count
+
+    local g = scoring.advance_game(self._config, {
+        declarer = declarer,
+        deal_index = self._deal_index,
+        deltas = deltas,
+        running_totals_before = self._running_totals,
+        barrel_state_before = self._barrel_state,
+        bid = bid,
+        declarer_made_contract = false,
+        effective_target_before = self._effective_target,
+    })
+    if not g.ok then
+        error("session: advance_game failed (write_off): " .. tostring(g.error.message), 2)
+    end
+    self._running_totals = g.game.running_totals
+    self._barrel_state = g.game.barrel_state
+    self._effective_target = g.game.effective_target_after
+    if g.game.tiebreaker_continuation_event then
+        self._winner = nil
+    elseif g.game.winner then
+        self._winner = g.game.winner
+    end
+    if not self._winner then
+        self._deal_done = {
+            reason = "write_off",
+            declarer = declarer,
+            deal_scores = deltas,
+        }
+    end
+    -- Drop the live tricks/talon state; the deal is over.
+    self._tricks = nil
+    self._talon = nil
+    self._marriages = nil
+    self._pre_first_trick_marriage_queue = nil
+    self._raspassy_active = false
     return { ok = true }
 end
 

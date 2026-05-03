@@ -600,6 +600,19 @@ function M:_do_concede_deal()
     self:_refresh_view_model()
 end
 
+-- Phase 3.7 write-off / сдача: declarer concedes mid-deal under
+-- `bidding.write_off = "on"`. The view-model gates the button on the
+-- declarer + trick-count + toggle conditions; the action's own
+-- guards do the same so this handler is unconditionally safe.
+function M:_do_write_off()
+    local session = self:_session()
+    if not session then
+        return
+    end
+    self:_invoke(session:write_off())
+    self:_refresh_view_model()
+end
+
 function M:_do_buyback_hand()
     local session = self:_session()
     if not session then
@@ -1344,6 +1357,24 @@ local function build_deal_done_panel(self)
     }
 end
 
+-- Phase 3.7: tricks-phase panel buttons. Currently only the Write-off
+-- button when `bidding.write_off = "on"`; future tricks-phase actions
+-- can join the same panel without restructuring the rebuild path.
+local function build_tricks_panel(self, view)
+    local buttons = {}
+    if view.tricks_phase and view.tricks_phase.declarer_can_write_off then
+        buttons[#buttons + 1] = Button.new({
+            id = "tricks_write_off", -- i18n-ok
+            label_key = "scene.table.tricks.write_off_button",
+            enabled = true,
+            on_press = function()
+                self:_do_write_off()
+            end,
+        })
+    end
+    return buttons
+end
+
 -- A short signature for the current panel's contents — phase + relevant
 -- view-model fields. When this signature stays the same across frames
 -- the existing button instances are preserved, which means a press on
@@ -1425,7 +1456,11 @@ local function panel_signature(view)
         return "talon:" .. status .. ":" .. contra_token .. ":" .. concede -- i18n-ok
     end
     if phase == "tricks" then
-        return "tricks"
+        local wo = "-" -- i18n-ok: signature token, never rendered
+        if view.tricks_phase and view.tricks_phase.declarer_can_write_off then
+            wo = "W" -- i18n-ok: signature token, never rendered
+        end
+        return "tricks:" .. wo
     end
     if phase == "deal_done" then
         return "deal_done"
@@ -1465,7 +1500,7 @@ function M:_rebuild_panel_if_needed(view)
         -- panel doesn't apply.
         self._panel_buttons = build_talon_take_panel(self, view)
     elseif phase == "tricks" then
-        self._panel_buttons = {}
+        self._panel_buttons = build_tricks_panel(self, view)
     elseif phase == "deal_done" then
         self._panel_buttons = build_deal_done_panel(self)
     end
@@ -2028,6 +2063,21 @@ local function draw_scoreboard(view, region)
                     region.x + 12,
                     extra_y
                 )
+                extra_y = extra_y + 14
+            end
+            -- Phase 3.7 write-off counter. Distinct blue-grey tint so
+            -- the every-third-write-off progress reads independently
+            -- from the orange bolt and purple cross counters.
+            if entry.write_offs then
+                love.graphics.setColor(0.45, 0.60, 0.80, 1)
+                love.graphics.print(
+                    t("scene.table.scoreboard.write_off_counter", {
+                        count = entry.write_offs.count,
+                        threshold = entry.write_offs.threshold,
+                    }),
+                    region.x + 12,
+                    extra_y
+                )
             end
         end
 
@@ -2197,6 +2247,9 @@ local function deal_done_banner_key(view)
     end
     if payload.reason == "scored" then
         return "scene.table.deal_done.scored"
+    end
+    if payload.reason == "write_off" then
+        return "scene.table.deal_done.write_off"
     end
     if view.all_pass_banner then
         local mode = view.all_pass_banner.mode

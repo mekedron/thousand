@@ -349,6 +349,8 @@ return {
     ["templates.field.bidding.re_entry_after_pass.label"] = "Re-entry after pass",
     ["templates.field.bidding.contra.label"] = "Contra and redouble",
     ["templates.field.bidding.forced_bid_concession.label"] = "Forced-bid concession",
+    ["templates.field.bidding.write_off.label"] = "Spasowanie / сдача",
+    ["templates.field.bidding.write_off_split.label"] = "Podział przy spasowaniu",
     ["templates.field.bidding.no_contract_without_marriage.label"] = "No contract without marriage",
     ["templates.field.bidding.negative_score_restriction.label"] = "Negative-score restriction",
     ["templates.field.bidding.named_contracts.label"] = "Named contracts",
@@ -464,5 +466,8 @@ return {
     ["templates.field.penalties.talon_look.label"] = "Talon-look penalty",
     ["templates.field.penalties.showing_hand.label"] = "Showing-hand penalty",
     ["templates.field.penalties.zero_tricks.label"] = "Zero-tricks penalty (бoлт / палка)",
+    ["templates.field.penalties.write_off_streak.label"] = "Kara za co trzecie spasowanie",
+    ["templates.field.penalties.write_off_streak_threshold.label"] = "Próg serii spasowań",
+    ["templates.field.penalties.write_off_streak_penalty_amount.label"] = "Kara za serię spasowań",
     ["templates.field.penalties.cross.label"] = "Cross / крест",
 }

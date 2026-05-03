@@ -558,6 +558,29 @@ local function build_current_trick_block(session)
     return session:current_trick()
 end
 
+-- Phase 3.7 tricks-phase action affordances. Today this surfaces the
+-- write-off / сдача button gate; future tricks-phase actions land
+-- alongside without a second block. Returns nil outside the tricks
+-- phase so the renderer can skip the block entirely.
+local function build_tricks_phase_block(session)
+    if session:current_phase() ~= "tricks" then
+        return nil
+    end
+    local cfg = session:config()
+    local declarer = session:current_leader()
+    local tricks = session._tricks
+    local tricks_played = tricks and tricks.tricks_played or 0
+    local tricks_per_deal = tricks and tricks.tricks_per_deal or 0
+    local can_write_off = cfg.bidding.write_off == "on"
+        and declarer ~= nil
+        and tricks_played < (tricks_per_deal - 1)
+    return {
+        declarer = declarer,
+        declarer_can_write_off = can_write_off,
+        write_off_split = cfg.bidding.write_off_split,
+    }
+end
+
 local function build_marriage_offer_block(session)
     if session:current_phase() ~= "tricks" then
         return nil
@@ -1086,6 +1109,11 @@ function M.from_session(session)
     local bolts = bolts_active and session:zero_tricks_bolts() or nil
     local crosses = cross_active and session:cross_count() or nil
     local bolt_threshold = pen_rules.zero_tricks_threshold
+    -- Phase 3.7 write-off counter: surface only when the streak rule is
+    -- on so the renderer can skip the line entirely under the default.
+    local write_off_streak_active = pen_rules.write_off_streak ~= "off"
+    local write_off_counts = write_off_streak_active and session:write_off_counts() or nil
+    local write_off_threshold = pen_rules.write_off_streak_threshold
 
     local scoreboard = {}
     for i = 1, player_count do
@@ -1117,6 +1145,14 @@ function M.from_session(session)
             crosses = crosses and {
                 count = crosses[i] or 0,
                 threshold = 2,
+            } or nil,
+            -- Phase 3.7 write-off counter: only present when the
+            -- streak rule is selectable. The renderer reads count /
+            -- threshold from this entry so it can show progress
+            -- toward the every-third-write-off penalty.
+            write_offs = write_off_counts and {
+                count = write_off_counts[i] or 0,
+                threshold = write_off_threshold,
             } or nil,
             is_dealer = (i == dealer),
             is_turn = (i == turn),
@@ -1234,6 +1270,7 @@ function M.from_session(session)
         auction = build_auction_block(session),
         talon_phase = build_talon_phase_block(session),
         current_trick = build_current_trick_block(session),
+        tricks_phase = build_tricks_phase_block(session),
         marriage_offer = build_marriage_offer_block(session),
         hand_announcement_marriage_offer = build_hand_announcement_marriage_offer_block(session),
         pre_first_trick_marriage_offer = build_pre_first_trick_marriage_offer_block(session),
