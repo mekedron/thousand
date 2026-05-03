@@ -60,7 +60,7 @@ combine them at most one at a time — the cross-field invariant
 rejects turning both on.
 
 - **On** (canonical Russian default): the shuffle's final step
-  swaps the bottom card with the first non-{9, J} card it finds
+  swaps the bottom card with the first card that is not a 9 or J
   whenever the offence applies, so the bottom slot is always a Q,
   K, 10, or A. The procedural cut-and-recut penalty cannot fire.
   Deterministic — the swap is a function of the post-Fisher-Yates
