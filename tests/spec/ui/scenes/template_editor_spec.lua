@@ -65,6 +65,33 @@ local function find_text(mock, needle)
     return nil
 end
 
+-- Phase 3.10 "current value" marker fingerprint: a line-mode rectangle
+-- inset by 2 px on every side from a fill-mode rectangle. Both Toggle
+-- (per current segment) and NumberStepper (around the value cell) use
+-- this exact geometry, so the count tells us how many widgets surfaced
+-- the marker without having to thread widget references through the
+-- assertion. Builds an O(N) index of fill rects keyed on the inset
+-- corner so the inner loop stays linear.
+local function count_current_markers(recording)
+    local fills = {}
+    for _, op in ipairs(recording) do
+        if op.op == "rectangle" and op.mode == "fill" then
+            local key = op.x .. ":" .. op.y .. ":" .. op.w .. ":" .. op.h
+            fills[key] = true
+        end
+    end
+    local count = 0
+    for _, op in ipairs(recording) do
+        if op.op == "rectangle" and op.mode == "line" then
+            local key = (op.x - 2) .. ":" .. (op.y - 2) .. ":" .. (op.w + 4) .. ":" .. (op.h + 4)
+            if fills[key] then
+                count = count + 1
+            end
+        end
+    end
+    return count
+end
+
 describe("ui.scenes.template_editor", function()
     local mock, scene, settings, templates, manager, last_switches, t, custom
 
@@ -253,6 +280,47 @@ describe("ui.scenes.template_editor", function()
                 local key = "templates.section." .. s
                 assert.is_not_nil(find_text(mock, t(key)), "section " .. s)
             end
+        end)
+
+        -- Phase 3.10: every disabled widget surfaces a "current value"
+        -- marker — an inset amber outline 2px inside its parent rect —
+        -- so the active option is distinguishable from the other
+        -- greyed-out options in built-in templates. (Deferred-field
+        -- widgets are also disabled on clones and get the marker for
+        -- the same reason; the editable-clone test below pins this.)
+        it("draws a current-value marker on every disabled widget", function()
+            scene:draw(1024, 720)
+            local marker_count = count_current_markers(mock.graphics.recording())
+            local disabled_count = 0
+            for _, entry in ipairs(scene._widgets) do
+                if entry.widget and not entry.widget.enabled then
+                    disabled_count = disabled_count + 1
+                end
+            end
+            assert.is_true(disabled_count > 0, "built-in editor disables at least one widget")
+            assert.are.equal(disabled_count, marker_count)
+        end)
+    end)
+
+    describe("current-value marker on editable clones", function()
+        it("is drawn only for deferred (still-disabled) widgets, not the editable rest", function()
+            scene:enter(nil, { template_id = custom.id })
+            scene:draw(1024, 720)
+            local marker_count = count_current_markers(mock.graphics.recording())
+            local disabled_count, enabled_count = 0, 0
+            for _, entry in ipairs(scene._widgets) do
+                if entry.widget then
+                    if entry.widget.enabled then
+                        enabled_count = enabled_count + 1
+                    else
+                        disabled_count = disabled_count + 1
+                    end
+                end
+            end
+            assert.is_true(enabled_count > 0, "clone exposes editable widgets")
+            -- Marker count tracks disabled widgets exactly: deferred
+            -- fields keep theirs, the editable majority do not.
+            assert.are.equal(disabled_count, marker_count)
         end)
     end)
 

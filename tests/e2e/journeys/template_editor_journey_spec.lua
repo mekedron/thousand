@@ -80,4 +80,37 @@ describe("e2e: template editor (built-in view)", function()
         j:step()
         assert.is_not_nil(j:find_text(j:find_localised("scene.template_picker.title")))
     end)
+
+    -- Phase 3.10: built-in templates surface a "current value" marker on
+    -- every disabled toggle / stepper so the active option stands out
+    -- from the other greyed-out options. The marker is an inset 2px
+    -- amber outline drawn inside the segment / value rect; we sniff it
+    -- by matching the inset-by-2 geometry against a parent fill rect.
+    it("draws the current-value marker on the canonical Russian template", function()
+        open_editor_for_russian()
+        local recording = j:draws()
+        local fills = {}
+        for _, op in ipairs(recording) do
+            if op.op == "rectangle" and op.mode == "fill" then
+                fills[op.x .. ":" .. op.y .. ":" .. op.w .. ":" .. op.h] = true
+            end
+        end
+        local found = false
+        for _, op in ipairs(recording) do
+            if op.op == "rectangle" and op.mode == "line" then
+                local key = (op.x - 2)
+                    .. ":"
+                    .. (op.y - 2)
+                    .. ":"
+                    .. (op.w + 4)
+                    .. ":"
+                    .. (op.h + 4)
+                if fills[key] then
+                    found = true
+                    break
+                end
+            end
+        end
+        assert.is_true(found, "current-value marker rendered on read-only built-in")
+    end)
 end)

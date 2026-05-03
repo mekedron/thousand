@@ -1,9 +1,12 @@
 -- Unit coverage for the number-stepper widget. Like the segmented
 -- toggle but for free-range numeric fields with min/max bounds and a
 -- step. Click the - button to decrement; click the + button to
--- increment. Values clamp to [min, max].
+-- increment. Values clamp to [min, max]. The draw block runs under
+-- tests.e2e.support.love_mock so we can also assert the rendered
+-- "current value" marker in the disabled state.
 
 local NumberStepper = require("ui.number_stepper")
+local love_mock = require("tests.e2e.support.love_mock")
 
 local function make(opts)
     opts = opts or {}
@@ -157,6 +160,85 @@ describe("ui.number_stepper", function()
             s:on_mousereleased(p.x + 5, p.y + 5, 1)
             assert.are.equal(100, s.current)
             assert.are.equal(0, fired)
+        end)
+    end)
+
+    describe("draw — current-value marker", function()
+        local AMBER = { 0.95, 0.85, 0.30, 1 }
+        local mock
+
+        before_each(function()
+            mock = love_mock.new({ width = 800, height = 600 })
+            mock:install()
+        end)
+
+        after_each(function()
+            mock:restore()
+        end)
+
+        local function find_inset_outline(rects, value_rect)
+            for _, r in ipairs(rects) do
+                if
+                    r.op == "rectangle"
+                    and r.mode == "line"
+                    and r.x == value_rect.x + 2
+                    and r.y == value_rect.y + 2
+                    and r.w == value_rect.w - 4
+                    and r.h == value_rect.h - 4
+                then
+                    return r
+                end
+            end
+            return nil
+        end
+
+        local function color_before(rects, target)
+            local last
+            for _, r in ipairs(rects) do
+                if r == target then
+                    return last
+                end
+                if r.op == "setColor" then
+                    last = r.color
+                end
+            end
+            return last
+        end
+
+        local function colors_match(actual, expected)
+            if not actual then
+                return false
+            end
+            for i = 1, 4 do
+                if math.abs((actual[i] or 0) - (expected[i] or 0)) > 1e-3 then
+                    return false
+                end
+            end
+            return true
+        end
+
+        it("draws an inset amber outline around the value when disabled", function()
+            local s = make({ enabled = false, current = 100 })
+            s:set_rect(0, 0, 300, 50)
+            s:draw()
+            local rects = mock.graphics.recording()
+            local outline = find_inset_outline(rects, s:value_rect())
+            assert.is_not_nil(outline, "current marker drawn around value rect")
+            assert.is_true(
+                colors_match(color_before(rects, outline), AMBER),
+                "outline drawn in amber"
+            )
+        end)
+
+        it("does not draw the marker when enabled", function()
+            local s = make({ enabled = true, current = 100 })
+            s:set_rect(0, 0, 300, 50)
+            s:draw()
+            local rects = mock.graphics.recording()
+            assert.is_nil(
+                find_inset_outline(rects, s:value_rect()),
+                "no current marker when enabled"
+            )
         end)
     end)
 end)

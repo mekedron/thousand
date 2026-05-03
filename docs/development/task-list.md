@@ -1008,7 +1008,7 @@ the other disabled options. Today every option renders in the same
 greyed-out state, so the player can't tell which value is currently
 set without consulting the docs.
 
-- [ ] Add a visual marker for the selected-but-disabled state in
+- [x] Add a visual marker for the selected-but-disabled state in
   the template editor.
   - UI (template editor): introduce a `current` indicator (outline
     ring, "Current" pill, or analogous treatment that survives

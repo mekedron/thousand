@@ -175,17 +175,28 @@ function NumberStepper:draw()
     love.graphics.setColor(0.10, 0.14, 0.10, 1)
     love.graphics.rectangle("line", v.x, v.y, v.w, v.h)
 
-    if self.enabled then
-        love.graphics.setColor(1, 1, 1, 1)
-    else
-        love.graphics.setColor(0.55, 0.55, 0.55, 1)
-    end
+    local glyph_color = self.enabled and { 1, 1, 1, 1 } or { 0.55, 0.55, 0.55, 1 }
+    -- Current-value text stays bright in the disabled state so the user
+    -- can still tell *what* the read-only built-in is set to. The minus
+    -- and plus glyphs stay greyed to communicate "not interactive".
+    local value_color = self.enabled and { 1, 1, 1, 1 } or { 0.98, 0.92, 0.72, 1 }
     local minus = tostring("-") -- i18n-ok: glyph
     local plus = tostring("+") -- i18n-ok: glyph
+    love.graphics.setColor(glyph_color)
     love.graphics.printf(minus, m.x, m.y + math.floor(m.h * 0.5) - 8, m.w, "center")
     love.graphics.printf(plus, p.x, p.y + math.floor(p.h * 0.5) - 8, p.w, "center")
+    love.graphics.setColor(value_color)
     local val = tostring(self.current)
     love.graphics.printf(val, v.x, v.y + math.floor(v.h * 0.5) - 8, v.w, "center")
+
+    -- Inset amber ring around the value when disabled — the analogue of
+    -- the toggle's "current segment" marker for free-range numerics.
+    if not self.enabled then
+        love.graphics.setColor(0.95, 0.85, 0.30, 1)
+        love.graphics.setLineWidth(2)
+        love.graphics.rectangle("line", v.x + 2, v.y + 2, v.w - 4, v.h - 4)
+        love.graphics.setLineWidth(1)
+    end
 
     if self.focused and self.enabled then
         love.graphics.setColor(0.95, 0.95, 0.55, 1)

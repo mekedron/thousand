@@ -188,11 +188,30 @@ function Toggle:draw()
         love.graphics.rectangle("line", r.x, r.y, r.w, r.h)
         if self.enabled then
             love.graphics.setColor(1, 1, 1, 1)
+        elseif is_selected then
+            -- Read-only "current value" highlight: the matching label
+            -- stays bright so it's distinguishable from the other
+            -- greyed-out options in built-in templates.
+            love.graphics.setColor(0.98, 0.92, 0.72, 1)
         else
             love.graphics.setColor(0.55, 0.55, 0.55, 1)
         end
         local label = t(self.value_labels[i])
         love.graphics.printf(label, r.x, r.y + math.floor(r.h * 0.5) - 8, r.w, "center")
+    end
+    -- Inset amber ring on the current segment when disabled — pairs with
+    -- the brightened text above to flag "this is the current value" in
+    -- built-in templates without ever fighting the focus outline (focus
+    -- only renders while enabled).
+    if not self.enabled then
+        for i, r in ipairs(rects) do
+            if self.values[i] == self.current then
+                love.graphics.setColor(0.95, 0.85, 0.30, 1)
+                love.graphics.setLineWidth(2)
+                love.graphics.rectangle("line", r.x + 2, r.y + 2, r.w - 4, r.h - 4)
+                love.graphics.setLineWidth(1)
+            end
+        end
     end
     if self.focused and self.enabled then
         love.graphics.setColor(0.95, 0.95, 0.55, 1)
