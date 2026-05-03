@@ -853,6 +853,107 @@ describe("ui.scenes.table", function()
             assert.is_false(sc._bot_driver:is_thinking())
         end)
     end)
+
+    describe("viewer lock (Phase 4.2)", function()
+        local function fresh_scene(seat_kinds)
+            local Session = require("app.session")
+            local s = Session.new({ seed = 42, dealer = 1, seat_kinds = seat_kinds })
+            local table_scene = require("ui.scenes.table")
+            local sc = table_scene.new(fake_manager(s))
+            sc:enter(nil, { seat_kinds = seat_kinds })
+            return sc, s
+        end
+
+        it("locks _viewer_seat to the lone human in single-player", function()
+            local sc = fresh_scene({ "human", "bot", "bot" })
+            -- Forehand is seat 2 (a bot under this binding); viewer
+            -- must still resolve to seat 1.
+            assert.are.equal(1, sc._viewer_seat)
+        end)
+
+        it("renders the human's hand as 'self' even when a bot is on turn", function()
+            local sc = fresh_scene({ "human", "bot", "bot" })
+            assert.are.equal("self", sc._view_model.hands[1].perspective)
+            assert.are.equal("other", sc._view_model.hands[2].perspective)
+            assert.are.equal("other", sc._view_model.hands[3].perspective)
+        end)
+
+        it("clears _viewer_seat when seat_kinds is nil (legacy hot-seat)", function()
+            local sc = fresh_scene(nil)
+            assert.is_nil(sc._viewer_seat)
+            -- Legacy: turn-seat (forehand 2) renders as self.
+            assert.are.equal("self", sc._view_model.hands[2].perspective)
+        end)
+
+        it("returns nil viewer for an all-bot composition", function()
+            local sc = fresh_scene({ "bot", "bot", "bot" })
+            assert.is_nil(sc._viewer_seat)
+        end)
+
+        it("snaps the viewer to the human-on-turn in a multi-human composition", function()
+            local Session = require("app.session")
+            local s =
+                Session.new({ seed = 42, dealer = 1, seat_kinds = { "human", "human", "bot" } })
+            local table_scene = require("ui.scenes.table")
+            local sc = table_scene.new(fake_manager(s))
+            sc:enter(nil, { seat_kinds = { "human", "human", "bot" } })
+            -- Forehand 2 is human → viewer follows.
+            assert.are.equal(2, sc._viewer_seat)
+            -- Pass to seat 3 (bot). Viewer stays at 2 across the bot turn.
+            assert.is_true(s:pass(2).ok)
+            sc:_refresh_view_model()
+            assert.are.equal(3, s:current_turn())
+            assert.are.equal(2, sc._viewer_seat)
+        end)
+
+        it("hides the action panel while a bot is on turn", function()
+            local sc = fresh_scene({ "human", "bot", "bot" })
+            -- Bot on turn (forehand 2) → no buttons.
+            assert.are.equal(0, #sc._panel_buttons)
+        end)
+
+        it("shows the action panel when control returns to the human", function()
+            local Session = require("app.session")
+            local s = Session.new({ seed = 42, dealer = 1, seat_kinds = { "human", "bot", "bot" } })
+            local table_scene = require("ui.scenes.table")
+            local sc = table_scene.new(fake_manager(s))
+            sc:enter(nil, { seat_kinds = { "human", "bot", "bot" } })
+            -- Drive both bot seats past their auction turn so seat 1
+            -- becomes the next forehand candidate.
+            assert.is_true(s:pass(2).ok)
+            assert.is_true(s:pass(3).ok)
+            sc:_refresh_view_model()
+            sc:draw(1024, 720)
+            assert.are.equal(1, s:current_turn())
+            assert.is_true(
+                #sc._panel_buttons > 0,
+                "expected auction panel to rebuild for the human"
+            )
+        end)
+
+        it("blocks hand interactivity while a bot is on turn", function()
+            local sc = fresh_scene({ "human", "bot", "bot" })
+            -- Forehand 2 is a bot under this binding.
+            assert.is_false(sc:_hand_is_interactive())
+        end)
+
+        it("does not render the bot's hand face-up at the bottom in single-player", function()
+            local sc = fresh_scene({ "human", "bot", "bot" })
+            mock.graphics.clear_recording()
+            sc:draw(1024, 720)
+            -- The "you" label belongs to the human (seat 1); seat 2's
+            -- per-N label appears at the top because it's an opponent
+            -- now even though it's on turn.
+            assert.is_not_nil(
+                find_text(mock, t("scene.table.player_label.you")),
+                "expected the human (seat 1) to render as 'you'"
+            )
+            assert.is_not_nil(
+                find_text(mock, t("scene.table.player_label.other", { n = 2 })),
+                "expected the bot at seat 2 to render as Player 2"
+            )
+        end)
+    end)
 end)
 
 -- ---------------------------------------------------------------------------

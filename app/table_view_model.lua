@@ -1085,10 +1085,60 @@ local function build_deal_done_block(session)
     return block
 end
 
+-- Phase 4.2 viewer derivation. Resolves which seat the table view should
+-- treat as "self" given the per-seat human/bot binding, the current turn,
+-- and the previously-resolved viewer (sticky across frames so multi-human
+-- compositions don't snap back to seat 1 while a bot is on turn).
+--
+-- Returns nil when the caller should fall back to legacy current_turn
+-- behaviour: either seat_kinds isn't known yet (pre-Phase-4.2 saves and
+-- legacy specs), or the composition is all-bot (there is no human to
+-- anchor a perspective on, so dev observability keeps working as before).
+--
+-- Single-player (one human) locks the viewer to that human for the whole
+-- deal. Multi-human follows current_turn between humans and stays put
+-- while a bot is on turn — the privacy curtain in the table scene still
+-- handles the human-to-human handoff exactly as before.
+function M.derive_viewer(seat_kinds, current_turn, last_human_viewer)
+    if seat_kinds == nil then
+        return nil
+    end
+    local first_human, human_count = nil, 0
+    for i, kind in ipairs(seat_kinds) do
+        if kind == "human" then -- i18n-ok: enum
+            human_count = human_count + 1
+            if first_human == nil then
+                first_human = i
+            end
+        end
+    end
+    if human_count == 0 then
+        return nil
+    end
+    if human_count == 1 then
+        return first_human
+    end
+    if current_turn ~= nil and seat_kinds[current_turn] == "human" then
+        return current_turn
+    end
+    if last_human_viewer ~= nil and seat_kinds[last_human_viewer] == "human" then
+        return last_human_viewer
+    end
+    return first_human
+end
+
 -- Build a frame-shaped view-model from a Session. The output shape is the
 -- contract the renderer relies on; widening it is fine, removing fields
 -- needs a deliberate change in the table scene first.
-function M.from_session(session)
+--
+-- The optional `viewer` arg pins the perspective to a specific seat —
+-- the table scene resolves it from `seat_kinds` plus its sticky
+-- last-human-viewer state and passes it in. When omitted, this function
+-- best-effort derives a viewer from `session:seat_kinds()` so unit tests
+-- that build a Session with seat_kinds but no scene still get the
+-- viewer-locked perspective; legacy callers (no seat_kinds at all) get
+-- the original current_turn-based behaviour.
+function M.from_session(session, viewer)
     assert(session, "table_view_model.from_session: session is required")
 
     local config = session:config()
@@ -1102,13 +1152,23 @@ function M.from_session(session)
     local sits_out = session:sits_out()
     local sides = session:partnership_sides()
 
+    local resolved_viewer = viewer
+    if resolved_viewer == nil then
+        resolved_viewer = M.derive_viewer(session:seat_kinds(), turn, nil)
+    end
+
     local legal_set = legal_card_set(session)
     local hands_in = session:hands()
     local hands = {}
     for i = 1, player_count do
         local raw_cards = hands_in[i] or {}
         local is_turn = (i == turn)
-        local is_self = is_turn or (turn == nil and i == 1 and i ~= sits_out)
+        local is_self
+        if resolved_viewer ~= nil then
+            is_self = (i == resolved_viewer) and (i ~= sits_out)
+        else
+            is_self = is_turn or (turn == nil and i == 1 and i ~= sits_out)
+        end
         -- Hand cards are sorted by (suit, trick rank) for the active
         -- player so the displayed order matches the player's expected
         -- read; opponents are face-down stacks so card order doesn't

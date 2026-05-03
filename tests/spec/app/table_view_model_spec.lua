@@ -1192,4 +1192,105 @@ describe("app.table_view_model", function()
             end
         )
     end)
+
+    describe("derive_viewer (Phase 4.2)", function()
+        it("returns nil when seat_kinds is nil", function()
+            assert.is_nil(view_model.derive_viewer(nil, 2, nil))
+        end)
+
+        it("returns nil for an all-bot composition", function()
+            assert.is_nil(view_model.derive_viewer({ "bot", "bot", "bot" }, 2, nil))
+        end)
+
+        it("returns the lone human regardless of current_turn", function()
+            local sk = { "human", "bot", "bot" }
+            assert.are.equal(1, view_model.derive_viewer(sk, 1, nil))
+            assert.are.equal(1, view_model.derive_viewer(sk, 2, nil))
+            assert.are.equal(1, view_model.derive_viewer(sk, 3, nil))
+            assert.are.equal(1, view_model.derive_viewer(sk, nil, nil))
+        end)
+
+        it("locks to a non-seat-1 lone human", function()
+            local sk = { "bot", "human", "bot" }
+            assert.are.equal(2, view_model.derive_viewer(sk, 1, nil))
+            assert.are.equal(2, view_model.derive_viewer(sk, 3, nil))
+        end)
+
+        it("follows current_turn when a human is on turn (multi-human)", function()
+            local sk = { "human", "human", "bot" }
+            assert.are.equal(1, view_model.derive_viewer(sk, 1, nil))
+            assert.are.equal(2, view_model.derive_viewer(sk, 2, nil))
+        end)
+
+        it("sticks to last_human_viewer while a bot is on turn (multi-human)", function()
+            local sk = { "human", "human", "bot" }
+            assert.are.equal(2, view_model.derive_viewer(sk, 3, 2))
+            assert.are.equal(1, view_model.derive_viewer(sk, 3, 1))
+        end)
+
+        it("falls back to first human when last_human_viewer is nil and bot is on turn", function()
+            local sk = { "human", "human", "bot" }
+            assert.are.equal(1, view_model.derive_viewer(sk, 3, nil))
+        end)
+
+        it("ignores a stale last_human_viewer that points to a bot seat", function()
+            local sk = { "human", "human", "bot" }
+            assert.are.equal(1, view_model.derive_viewer(sk, 3, 3))
+        end)
+    end)
+
+    describe("from_session viewer parameter (Phase 4.2)", function()
+        it("honours an explicit viewer parameter", function()
+            local s = Session.new({ seed = 42, dealer = 1 })
+            local view = view_model.from_session(s, 1)
+            -- Forehand is seat 2 under canonical Russian, but viewer=1
+            -- pins the perspective to seat 1.
+            assert.are.equal("self", view.hands[1].perspective)
+            assert.are.equal("other", view.hands[2].perspective)
+            assert.are.equal("other", view.hands[3].perspective)
+        end)
+
+        it("derives the viewer from session:seat_kinds() when viewer arg is nil", function()
+            local s = Session.new({
+                seed = 42,
+                dealer = 1,
+                seat_kinds = { "human", "bot", "bot" },
+            })
+            local view = view_model.from_session(s)
+            -- Lone human at seat 1; forehand bot at seat 2 must not be
+            -- the viewer.
+            assert.are.equal(2, view.turn_player)
+            assert.are.equal("self", view.hands[1].perspective)
+            assert.are.equal("other", view.hands[2].perspective)
+            assert.are.equal("other", view.hands[3].perspective)
+        end)
+
+        it(
+            "falls back to legacy turn-based perspective when viewer and seat_kinds are nil",
+            function()
+                local s = Session.new({ seed = 42, dealer = 1 })
+                local view = view_model.from_session(s)
+                -- Forehand is seat 2, no seat_kinds → legacy hot-seat
+                -- behaviour: turn seat is "self".
+                assert.are.equal(2, view.turn_player)
+                assert.are.equal("other", view.hands[1].perspective)
+                assert.are.equal("self", view.hands[2].perspective)
+                assert.are.equal("other", view.hands[3].perspective)
+            end
+        )
+
+        it("does not leak card legality to bot hands when viewer is locked", function()
+            local s = drive_to_tricks(123)
+            -- Forehand of tricks under canonical Russian + this seed —
+            -- whoever holds turn now should NOT have legality flags
+            -- when viewer is pinned elsewhere.
+            local turn = s:current_turn()
+            assert.is_truthy(turn)
+            local viewer = (turn % 3) + 1
+            local view = view_model.from_session(s, viewer)
+            assert.are.equal("self", view.hands[viewer].perspective)
+            assert.are.equal("other", view.hands[turn].perspective)
+            assert.is_nil(next(view.hands[turn].card_legality))
+        end)
+    end)
 end)

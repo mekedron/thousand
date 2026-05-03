@@ -98,4 +98,35 @@ describe("e2e: Single Player main-menu entry", function()
             "expected privacy curtain on human seat 1 after both bots act"
         )
     end)
+
+    it("locks the human's perspective for the entire deal (Phase 4.2)", function()
+        j:start_single_player_game()
+        -- Right after entry, forehand is the bot at seat 2. Phase 4.2
+        -- viewer lock means seat 1 still renders as "you" and seat 2 as
+        -- Player 2 — the bot's hand never takes over the bottom slot.
+        assert.is_not_nil(
+            j:find_text(j:find_localised("scene.table.player_label.you")),
+            "human seat 1 must render as 'you' even on the bot's turn"
+        )
+        assert.is_not_nil(
+            j:find_text(j:find_localised("scene.table.player_label.other", { n = 2 })),
+            "bot at seat 2 must render with the opponent label"
+        )
+        -- The action panel must be empty during the bot's turn — no bid
+        -- buttons rendered. The bid button label is "Bid 100", "Bid 110",
+        -- … so no draw should contain the prefix.
+        for _, op in ipairs(j:draws()) do
+            if op.op == "text" then
+                assert.is_nil(
+                    op.text:find("Bid ", 1, true),
+                    "no bid button text should render while a bot is on turn, got: " .. op.text
+                )
+            end
+        end
+        -- The "Bot N thinking…" banner is the only on-turn affordance.
+        assert.is_not_nil(
+            j:find_text(j:find_localised("scene.table.bot_thinking", { n = 2 })),
+            "expected the 'Bot 2 thinking…' banner during the bot's turn"
+        )
+    end)
 end)

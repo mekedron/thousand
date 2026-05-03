@@ -1170,7 +1170,7 @@ algorithmic.
     composition. (Phase 5.3's "assigned characters per seat"
     requirement extends this binding; Phase 7 fills the character
     layer.)
-- [ ] Lock the human seat's perspective in single-player and mixed
+- [x] Lock the human seat's perspective in single-player and mixed
   compositions.
   - The view-model treats the lone (or first) human seat as the
     viewer instead of following `current_turn()`, so the human's

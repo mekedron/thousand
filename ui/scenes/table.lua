@@ -159,6 +159,13 @@ function M.new(manager)
         -- hot-seat semantics.
         _seat_kinds = nil,
         _bot_driver = nil,
+        -- Phase 4.2 viewer lock. When `_seat_kinds` is set, the view-model
+        -- treats `_viewer_seat` as "self" instead of following
+        -- current_turn. Single-player pins it to the lone human; mixed
+        -- multi-human follows current_turn between humans and stays put
+        -- while a bot is on turn. Recomputed each frame in
+        -- _refresh_viewer; nil means legacy hot-seat behaviour.
+        _viewer_seat = nil,
     }, M)
     self._back_button = Button.new({
         id = "back_to_menu", -- i18n-ok
@@ -183,10 +190,26 @@ end
 function M:_refresh_view_model()
     local session = self:_session()
     if session then
-        self._view_model = view_model.from_session(session)
+        self:_refresh_viewer(session)
+        self._view_model = view_model.from_session(session, self._viewer_seat)
     else
+        self._viewer_seat = nil
         self._view_model = nil
     end
+end
+
+-- Phase 4.2: derive the persistent viewer seat from seat_kinds and the
+-- current turn. Sticky last-human-viewer carries forward across frames
+-- (single-player resolves to a constant; multi-human snaps between
+-- humans on turn change but ignores bot-on-turn intermediate states).
+function M:_refresh_viewer(session)
+    if not self._seat_kinds then
+        self._viewer_seat = nil
+        return
+    end
+    session = session or self:_session()
+    local turn = session and session:current_turn() or nil
+    self._viewer_seat = view_model.derive_viewer(self._seat_kinds, turn, self._viewer_seat)
 end
 
 function M:enter(_prev_id, params)
@@ -212,6 +235,11 @@ function M:enter(_prev_id, params)
     self._last_revealed_seat = nil
     self._curtain_button = nil
     self._curtain_focus = nil
+    -- Phase 4.2: reset the viewer lock on re-entry. _refresh_view_model
+    -- below recomputes it from the resolved seat_kinds; clearing here
+    -- ensures the sticky last-human-viewer state from a previous deal
+    -- doesn't leak into the new one.
+    self._viewer_seat = nil
     -- Phase 4.2: per-seat human/bot binding flows from the new-game
     -- picker (or Single Player one-click) via switch_to params. The
     -- Continue path comes through main.lua → manager:set_session(...) →
@@ -242,6 +270,14 @@ end
 function M:_hand_is_interactive(view)
     view = view or self._view_model
     if not view then
+        return false
+    end
+    -- Phase 4.2: never let the human tap into a bot's hand. For tricks
+    -- this is implicit (the perspective change makes the bot's hand
+    -- "other"), but talon awaiting_pass / awaiting_discard branches
+    -- below don't check perspective, so the explicit gate is
+    -- load-bearing for those.
+    if self._seat_kinds and view.turn_player ~= nil and self:_seat_is_bot(view.turn_player) then
         return false
     end
     if view.phase == "tricks" or view.phase == "raspassy_play" then -- i18n-ok: phase enums
@@ -1660,6 +1696,18 @@ function M:_rebuild_panel_if_needed(view)
     if not view then
         return
     end
+    -- Phase 4.2: bot on turn — suppress all action affordances. The
+    -- "Bot N thinking…" banner is the only on-turn surface so the human
+    -- can't accidentally tap a bid button or take-talon on the bot's
+    -- behalf. Auction signatures already encode `on_turn` and cut-phase
+    -- signatures encode `active_cutter`, so the rebuild fires cleanly
+    -- when control returns to a human; talon declarer is fixed for the
+    -- whole talon phase, and the tricks panel is intentionally empty.
+    if self._seat_kinds and view.turn_player ~= nil and self:_seat_is_bot(view.turn_player) then
+        self._focus = FocusGroup.new(self:_concat_focus_buttons())
+        self._focus_index = nil
+        return
+    end
     local phase = view.phase
     if phase == "auction" and view.auction then
         self._panel_buttons = build_auction_panel(self, view)
@@ -1892,14 +1940,16 @@ local function draw_centre(self, view, region)
         love.graphics.print(t("scene.table.talon.label"), talon_label_x, talon_label_y)
 
         -- Phase 3.6 talon-variants: hidden-on-minimum-100 hides the
-        -- talon from defenders once the rule is active. The active
-        -- viewer is the most recently revealed seat (or the current
-        -- turn when no curtain has fired yet); when the viewer is not
-        -- the declarer, the talon renders face-down.
+        -- talon from defenders once the rule is active. Phase 4.2: when
+        -- the viewer is locked to a human (single-player or mixed
+        -- multi-human), the visibility decision uses that persistent
+        -- seat instead of whichever bot is on turn — defenders should
+        -- not get a peek just because a bot is currently passing
+        -- talon cards.
         local hide_to_defender = false
         if talon.hidden_to_defenders then
             local declarer = view.talon_phase and view.talon_phase.declarer
-            local viewer = self._last_revealed_seat or view.turn_player
+            local viewer = self._viewer_seat or self._last_revealed_seat or view.turn_player
             if declarer and viewer and viewer ~= declarer then
                 hide_to_defender = true
             end
