@@ -299,7 +299,13 @@ function Driver:_maintain_marriage_skip_latch(session, seat)
     end
 end
 
-function Driver:tick(session, seat_kinds)
+-- Phase 4.2: per-seat bot difficulty defaults to "normal" when the caller
+-- (table scene, journey harness) does not pass a per-seat array. Centralised
+-- here so the chooser side never has to handle nil — heuristics in Phase 4.3+
+-- can read the third arg directly.
+local DEFAULT_DIFFICULTY = "normal"
+
+function Driver:tick(session, seat_kinds, seat_difficulties)
     if self._pending then
         if self._now_fn() >= self._pending.fire_at then
             local pending = self._pending
@@ -336,7 +342,8 @@ function Driver:tick(session, seat_kinds)
     end
 
     local view = contract.make_view(session)
-    local action = chooser(view, seat)
+    local difficulty = (seat_difficulties and seat_difficulties[seat]) or DEFAULT_DIFFICULTY
+    local action = chooser(view, seat, difficulty)
     if type(action) ~= "table" or action.kind == nil then
         error("bot driver: chooser '" .. chooser_name .. "' returned no descriptor", 2)
     end

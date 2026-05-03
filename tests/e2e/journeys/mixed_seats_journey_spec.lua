@@ -64,14 +64,18 @@ end
 -- Drive the New Game picker to {human, human, bot}: row 1 is human by
 -- default, row 2 needs to flip from Bot to Human, row 3 stays as Bot.
 -- Then activate Start. Mirrors the keyboard nav used in
--- new_game_journey_spec.lua's mixed-composition test.
+-- new_game_journey_spec.lua's mixed-composition test. The Tab path
+-- accounts for the per-row difficulty toggle (Phase 4.2): only enabled
+-- for bot seats, so once row 2 flips to human the only reachable
+-- difficulty toggle is row 3's.
 local function start_human_human_bot(j)
     click_button(j, j:find_localised("scene.menu.new_game"))
     j:step()
-    j:press_key("tab") -- focus row 1
-    j:press_key("tab") -- focus row 2
+    j:press_key("tab") -- focus kind row 1
+    j:press_key("tab") -- focus kind row 2 (diff row 1 disabled, skipped)
     j:press_key("return") -- cycle row 2 from Bot to Human
-    j:press_key("tab") -- focus row 3
+    j:press_key("tab") -- focus kind row 3
+    j:press_key("tab") -- focus diff row 3 (row 3 still bot)
     j:press_key("tab") -- focus Start
     j:press_key("return")
     j:step()

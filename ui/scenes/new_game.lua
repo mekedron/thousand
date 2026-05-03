@@ -1,12 +1,14 @@
 -- New-game picker scene. Lets the player choose which seats are human
 -- and which are bots before a fresh deal opens. The active rule
 -- template's `players.count` decides how many rows render; each row
--- exposes a Human / Bot segmented toggle. Defaults to seat 1 = human and
--- the rest = bots — the same composition the menu's "Single Player"
--- entry produces in one click — so the most common path is just
--- "press Start". An all-bot composition is permitted on purpose: it's
--- a legitimate way to spectate Phase 4.3+ play under any built-in
--- template without a code change.
+-- exposes a Human / Bot segmented toggle plus an Easy / Normal / Hard
+-- difficulty toggle that disables itself for human seats. Defaults to
+-- seat 1 = human, the rest = bots, and every difficulty = "normal" —
+-- the same composition the menu's "Single Player" entry produces in
+-- one click — so the most common path is just "press Start". An
+-- all-bot composition is permitted on purpose: it's a legitimate way
+-- to spectate Phase 4.3+ play under any built-in template without a
+-- code change.
 --
 -- Layout follows the menu / template-picker convention: one centred
 -- column, fixed widths, vertically reflowed by `compute_layout` from
@@ -15,9 +17,10 @@
 -- their rects change per layout pass.
 --
 -- The scene never reaches into engine state directly. Pressing Start
--- builds a fresh `Session` with the chosen `seat_kinds` and hands it
--- to the manager; the table scene reads the binding off the session
--- (auto-save Continue path) or off the switch params (this path).
+-- builds a fresh `Session` with the chosen `seat_kinds` and
+-- `seat_difficulties` and hands it to the manager; the table scene
+-- reads the bindings off the session (auto-save Continue path) or off
+-- the switch params (this path).
 
 local i18n = require("app.i18n")
 local Button = require("ui.button")
@@ -27,6 +30,7 @@ local Session = require("app.session")
 local auto_save = require("app.auto_save")
 local app_templates = require("app.templates")
 local rule_config = require("core.rule_config")
+local difficulty_module = require("app.bot.difficulty")
 local t = i18n.t
 
 local M = {}
@@ -41,6 +45,7 @@ local SUBTITLE_Y = 120
 local ROWS_TOP = 200
 local ROW_LABEL_W = 140
 local ROW_TOGGLE_W = 240
+local ROW_DIFFICULTY_W = 270
 local ROW_GAP_X = 24
 local ROW_HEIGHT = 56
 local ROW_VGAP = 16
@@ -56,11 +61,29 @@ local SAFE_MARGIN = 16
 local SEAT_KIND_VALUES = { "human", "bot" } -- i18n-ok: enum values
 local SEAT_KIND_LABELS = { "scene.new_game.kind.human", "scene.new_game.kind.bot" } -- i18n-ok: keys
 
+-- Difficulty enum sourced from `app.bot.difficulty` so the new-game
+-- scene, the session, the auto-save, and Phase 7's character presets
+-- all read the same canonical list.
+local DIFFICULTY_VALUES = difficulty_module.VALUES
+local DIFFICULTY_LABELS = {
+    "scene.new_game.difficulty.easy", -- i18n-ok: keys
+    "scene.new_game.difficulty.normal", -- i18n-ok: keys
+    "scene.new_game.difficulty.hard", -- i18n-ok: keys
+}
+
 local function default_seat_kinds(count)
     local out = {}
     out[1] = "human"
     for i = 2, count do
         out[i] = "bot"
+    end
+    return out
+end
+
+local function default_seat_difficulties(count)
+    local out = {}
+    for i = 1, count do
+        out[i] = difficulty_module.DEFAULT
     end
     return out
 end
@@ -83,6 +106,7 @@ function M.new(manager)
     return setmetatable({
         _manager = manager,
         _seat_toggles = {},
+        _difficulty_toggles = {},
         _start_button = nil,
         _back_button = nil,
         _focus = nil,
@@ -99,33 +123,68 @@ function M:_collect_seat_kinds()
     return out
 end
 
+function M:_collect_seat_difficulties()
+    local out = {}
+    for i, toggle in ipairs(self._difficulty_toggles) do
+        out[i] = toggle.current
+    end
+    return out
+end
+
 function M:_start_game()
     auto_save.clear()
     local config = app_templates.resolve_active_config()
     local seat_kinds = self:_collect_seat_kinds()
-    local session = Session.new({ config = config, seat_kinds = seat_kinds })
+    local seat_difficulties = self:_collect_seat_difficulties()
+    local session = Session.new({
+        config = config,
+        seat_kinds = seat_kinds,
+        seat_difficulties = seat_difficulties,
+    })
     self._manager:set_session(session)
-    self._manager:switch_to("table", { seat_kinds = seat_kinds })
+    self._manager:switch_to("table", {
+        seat_kinds = seat_kinds,
+        seat_difficulties = seat_difficulties,
+    })
 end
 
 function M:_build_widgets(count)
     self._seat_toggles = {}
-    local defaults = default_seat_kinds(count)
+    self._difficulty_toggles = {}
+    local kind_defaults = default_seat_kinds(count)
+    local difficulty_defaults = default_seat_difficulties(count)
     for i = 1, count do
-        local toggle = Toggle.new({
+        local difficulty_toggle = Toggle.new({
+            id = "new_game_difficulty_" .. tostring(i), -- i18n-ok: composes id
+            values = DIFFICULTY_VALUES,
+            value_labels = DIFFICULTY_LABELS,
+            current = difficulty_defaults[i],
+            -- Difficulty is meaningful only for bot seats; the default
+            -- composition has seat 1 human, rest bots, so seat 1's
+            -- difficulty toggle starts disabled. The kind toggle's
+            -- on_change keeps this in sync as the player flips seats.
+            enabled = kind_defaults[i] == "bot",
+        })
+        difficulty_toggle.on_press = function()
+            difficulty_toggle:activate()
+        end
+
+        local kind_toggle = Toggle.new({
             id = "new_game_seat_" .. tostring(i), -- i18n-ok: composes id
             values = SEAT_KIND_VALUES,
             value_labels = SEAT_KIND_LABELS,
-            current = defaults[i],
+            current = kind_defaults[i],
             enabled = true,
+            on_change = function(new_value)
+                difficulty_toggle:set_enabled(new_value == "bot")
+            end,
         })
-        -- Adapter so FocusGroup's Enter / Space activation (which
-        -- expects an `on_press` callable) cycles the segmented control,
-        -- matching the documented keyboard behaviour in ui/toggle.lua.
-        toggle.on_press = function()
-            toggle:activate()
+        kind_toggle.on_press = function()
+            kind_toggle:activate()
         end
-        self._seat_toggles[i] = toggle
+
+        self._seat_toggles[i] = kind_toggle
+        self._difficulty_toggles[i] = difficulty_toggle
     end
     self._start_button = Button.new({
         id = "new_game_start", -- i18n-ok: id
@@ -143,9 +202,13 @@ function M:_build_widgets(count)
             self._manager:switch_to("menu")
         end,
     })
+    -- Tab order: kind -> difficulty within a row, then row to row, then
+    -- Start, then Back. Pairs each seat's choice cluster so keyboard
+    -- nav reads top-to-bottom in the same order the eyes do.
     local list = {}
-    for _, tg in ipairs(self._seat_toggles) do
-        list[#list + 1] = tg
+    for i = 1, count do
+        list[#list + 1] = self._seat_toggles[i]
+        list[#list + 1] = self._difficulty_toggles[i]
     end
     list[#list + 1] = self._start_button
     list[#list + 1] = self._back_button
@@ -162,13 +225,15 @@ local function compute_layout(self, w, h)
     self._last_h = h
     self._back_button:set_rect(w - BACK_BTN_W - SAFE_MARGIN, SAFE_MARGIN, BACK_BTN_W, BACK_BTN_H)
 
-    local row_total_w = ROW_LABEL_W + ROW_GAP_X + ROW_TOGGLE_W
+    local row_total_w = ROW_LABEL_W + ROW_GAP_X + ROW_TOGGLE_W + ROW_GAP_X + ROW_DIFFICULTY_W
     local row_x = math.floor(w * 0.5 - row_total_w * 0.5)
     self._row_label_x = row_x
     local toggle_x = row_x + ROW_LABEL_W + ROW_GAP_X
+    local difficulty_x = toggle_x + ROW_TOGGLE_W + ROW_GAP_X
     local y = ROWS_TOP
-    for _, tg in ipairs(self._seat_toggles) do
+    for i, tg in ipairs(self._seat_toggles) do
         tg:set_rect(toggle_x, y, ROW_TOGGLE_W, ROW_HEIGHT)
+        self._difficulty_toggles[i]:set_rect(difficulty_x, y, ROW_DIFFICULTY_W, ROW_HEIGHT)
         y = y + ROW_HEIGHT + ROW_VGAP
     end
     self._row_label_top = ROWS_TOP
@@ -207,8 +272,9 @@ function M:draw(w, h)
         row_y = row_y + ROW_HEIGHT + ROW_VGAP
     end
 
-    for _, tg in ipairs(self._seat_toggles) do
+    for i, tg in ipairs(self._seat_toggles) do
         tg:draw()
+        self._difficulty_toggles[i]:draw()
     end
     self._start_button:draw()
     self._back_button:draw()
@@ -217,16 +283,20 @@ function M:draw(w, h)
 end
 
 function M:mousemoved(x, y, _dx, _dy)
-    for _, tg in ipairs(self._seat_toggles) do
+    for i, tg in ipairs(self._seat_toggles) do
         tg:on_mousemoved(x, y)
+        self._difficulty_toggles[i]:on_mousemoved(x, y)
     end
     self._start_button:on_mousemoved(x, y)
     self._back_button:on_mousemoved(x, y)
 end
 
 function M:mousepressed(x, y, button)
-    for _, tg in ipairs(self._seat_toggles) do
+    for i, tg in ipairs(self._seat_toggles) do
         if tg:on_mousepressed(x, y, button) then
+            return
+        end
+        if self._difficulty_toggles[i]:on_mousepressed(x, y, button) then
             return
         end
     end
@@ -237,8 +307,9 @@ function M:mousepressed(x, y, button)
 end
 
 function M:mousereleased(x, y, button)
-    for _, tg in ipairs(self._seat_toggles) do
+    for i, tg in ipairs(self._seat_toggles) do
         tg:on_mousereleased(x, y, button)
+        self._difficulty_toggles[i]:on_mousereleased(x, y, button)
     end
     self._start_button:on_mousereleased(x, y, button)
     self._back_button:on_mousereleased(x, y, button)

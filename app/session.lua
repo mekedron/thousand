@@ -45,6 +45,7 @@ local scoring = require("core.scoring")
 local rule_config = require("core.rule_config")
 local card_module = require("core.card")
 local redeal = require("core.redeal")
+local difficulty_module = require("app.bot.difficulty")
 
 local Session = {}
 Session.__index = Session
@@ -438,6 +439,8 @@ function M.new(opts)
     local dealer = opts.dealer or 1
     local seed = opts.seed or os.time()
     local seat_kinds = validate_seat_kinds(opts.seat_kinds, config.players.count, "session.new")
+    local seat_difficulties =
+        difficulty_module.validate(opts.seat_difficulties, config.players.count, "session.new")
 
     local initial_running_totals = zero_totals(config.players.count)
     local deal_result, auction, marriages, golden_active, bottom_card =
@@ -641,6 +644,10 @@ function M.new(opts)
         -- new-game flow and Single Player menu entry both supply it;
         -- the auto-save round-trips it.
         _seat_kinds = seat_kinds,
+        -- Phase 4.2 per-seat bot difficulty (easy / normal / hard). Optional
+        -- and parallel to `_seat_kinds`; nil means the driver defaults each
+        -- seat to `app.bot.difficulty.DEFAULT` at chooser-call time.
+        _seat_difficulties = seat_difficulties,
     }, Session)
     -- Phase 3.8: open the cut phase before any auction-side
     -- transition. Forced redeals and the golden-deal auction-end hook
@@ -739,6 +746,11 @@ function M.from_state(state)
         -- player count so a tampered save or stale test fixture fails
         -- at restore time rather than mid-deal.
         _seat_kinds = validate_seat_kinds(state.seat_kinds, player_count, "session.from_state"),
+        _seat_difficulties = difficulty_module.validate(
+            state.seat_difficulties,
+            player_count,
+            "session.from_state"
+        ),
     }, Session)
     -- Phase 3.6: when from_state restores a tricks-phase session and
     -- the active variant is pre_first_trick, re-open the queue from
@@ -774,6 +786,24 @@ end
 function Session:set_seat_kinds(value)
     self._seat_kinds =
         validate_seat_kinds(value, self._config.players.count, "session.set_seat_kinds")
+end
+
+-- Phase 4.2 per-seat bot difficulty accessors. Mirror `seat_kinds`: nil when
+-- unset, defensive copy on read, full-array replace on set with validation
+-- against the active `players.count`.
+function Session:seat_difficulties()
+    if self._seat_difficulties == nil then
+        return nil
+    end
+    return copy_list(self._seat_difficulties)
+end
+
+function Session:set_seat_difficulties(value)
+    self._seat_difficulties = difficulty_module.validate(
+        value,
+        self._config.players.count,
+        "session.set_seat_difficulties"
+    )
 end
 
 function Session:dealer()

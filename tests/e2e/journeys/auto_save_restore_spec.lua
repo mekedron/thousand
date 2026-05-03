@@ -185,8 +185,11 @@ describe("e2e: auto-save and restore", function()
     end)
 
     it("New Game clears any prior auto-save", function()
-        -- Seed a save on disk. Schema v2 (Phase 4.2) is the active version.
-        store["auto_save.json"] = '{"schemaVersion":2,"templateName":"canonical_russian"}'
+        -- Seed a save on disk. Schema v3 (Phase 4.2 difficulty plumbing) is
+        -- the active version; v2 saves are dropped on load by the schema
+        -- guard, but for this test all that matters is that the file
+        -- content changes after a new game starts.
+        store["auto_save.json"] = '{"schemaVersion":3,"templateName":"canonical_russian"}'
         j = journey.start({ locale = "en", auto_save_store = store })
         j:step()
         -- Starting a new game discards the leftover save so the next
@@ -256,5 +259,32 @@ describe("e2e: auto-save and restore", function()
         j:lose_focus()
         local decoded_after = app_json.decode(store["auto_save.json"])
         assert.are.same({ "human", "bot", "bot" }, decoded_after.seatKinds)
+    end)
+
+    it("preserves the seat_difficulties binding across save and restore", function()
+        j = journey.start({ locale = "en", auto_save_store = store })
+        j:step()
+        -- Single Player defaults every seat's difficulty to "normal".
+        j:start_single_player_game()
+        j:lose_focus()
+        assert.is_string(store["auto_save.json"])
+
+        local app_json = require("app.json")
+        local decoded = app_json.decode(store["auto_save.json"])
+        assert.are.same({ "normal", "normal", "normal" }, decoded.seatDifficulties)
+
+        j:stop()
+        j = nil
+
+        -- Relaunch via Continue; re-save and confirm the binding survived
+        -- the round-trip end-to-end (driver still receives "normal" for
+        -- each bot seat).
+        j = journey.start({ locale = "en", auto_save_store = store })
+        j:step()
+        click_button(j, j:find_localised("scene.menu.continue"))
+        j:step()
+        j:lose_focus()
+        local decoded_after = app_json.decode(store["auto_save.json"])
+        assert.are.same({ "normal", "normal", "normal" }, decoded_after.seatDifficulties)
     end)
 end)

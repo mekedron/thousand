@@ -308,4 +308,73 @@ describe("app.bot.stubs", function()
             assert.are.equal("raise", s:talon_substate())
         end)
     end)
+
+    describe("difficulty arg", function()
+        -- Phase 4.2: every stub accepts (view, seat, difficulty). Stubs
+        -- intentionally ignore the third arg — heuristic divergence is
+        -- Phase 4.3+ work — but the contract has to hold so the driver
+        -- can pass it without per-chooser special-casing.
+        local IGNORED = {
+            choose_bid = "pass",
+            choose_contra = "skip_contra",
+            choose_cut_deck = "cut_deck",
+            choose_redeal = "decline_redeal",
+            choose_bad_talon_redeal = "decline_bad_talon_redeal",
+            choose_rebuy = "decline_rebuy",
+            choose_forced_bid_concession = "decline_forced_bid",
+            choose_write_off = "accept_play",
+            choose_marriage = "skip_declare_marriage",
+            choose_pre_first_trick_marriage = "skip_announce_marriage",
+            choose_talon_action = "take_talon",
+            choose_raise = "skip_raise",
+            choose_next_deal = "start_next_deal",
+        }
+
+        for name, expected_kind in pairs(IGNORED) do
+            it("is invariant to difficulty for " .. name, function()
+                local stub = stubs[name]
+                local easy = stub(fake_view({}), 2, "easy")
+                local normal = stub(fake_view({}), 2, "normal")
+                local hard = stub(fake_view({}), 2, "hard")
+                assert.are.equal(expected_kind, easy.kind)
+                assert.are.equal(expected_kind, normal.kind)
+                assert.are.equal(expected_kind, hard.kind)
+            end)
+        end
+
+        it("is invariant to difficulty for choose_card", function()
+            local card = { suit = "spades", rank = "A" } -- i18n-ok: card enum
+            local view = fake_view({
+                legal_cards = function(_, _seat)
+                    return { card }
+                end,
+            })
+            for _, d in ipairs({ "easy", "normal", "hard" }) do
+                local action = stubs.choose_card(view, 2, d)
+                assert.are.equal("play", action.kind)
+                assert.are.equal(card, action.card)
+            end
+        end)
+
+        it("is invariant to difficulty for choose_talon_pass", function()
+            local card = { suit = "spades", rank = "A" } -- i18n-ok: card enum
+            local view = fake_view({
+                hands = function(_)
+                    return { {}, { card }, {} }
+                end,
+                talon_substate = function(_)
+                    return "pass" -- i18n-ok: substate enum
+                end,
+                talon_pass_targets = function(_)
+                    return { 1, 3 }
+                end,
+            })
+            for _, d in ipairs({ "easy", "normal", "hard" }) do
+                local action = stubs.choose_talon_pass(view, 2, d)
+                assert.are.equal("pass_talon", action.kind)
+                assert.are.equal(1, action.target)
+                assert.are.equal(card, action.card)
+            end
+        end)
+    end)
 end)

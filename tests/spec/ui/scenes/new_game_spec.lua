@@ -161,15 +161,48 @@ describe("ui.scenes.new_game", function()
             assert.are.equal(3, #scene._seat_toggles)
         end)
 
+        it("populates one difficulty toggle per seat", function()
+            assert.are.equal(3, #scene._difficulty_toggles)
+        end)
+
         it("defaults seat 1 to human and the rest to bot", function()
             assert.are.equal("human", scene._seat_toggles[1].current)
             assert.are.equal("bot", scene._seat_toggles[2].current)
             assert.are.equal("bot", scene._seat_toggles[3].current)
         end)
 
+        it("defaults every seat's difficulty to 'normal'", function()
+            assert.are.equal("normal", scene._difficulty_toggles[1].current)
+            assert.are.equal("normal", scene._difficulty_toggles[2].current)
+            assert.are.equal("normal", scene._difficulty_toggles[3].current)
+        end)
+
+        it("disables the difficulty toggle for the human seat by default", function()
+            assert.is_false(scene._difficulty_toggles[1].enabled)
+            assert.is_true(scene._difficulty_toggles[2].enabled)
+            assert.is_true(scene._difficulty_toggles[3].enabled)
+        end)
+
+        it("flipping a seat to bot enables its difficulty toggle", function()
+            press_segment(scene, scene._seat_toggles[1], 2) -- 2 = bot segment
+            assert.are.equal("bot", scene._seat_toggles[1].current)
+            assert.is_true(scene._difficulty_toggles[1].enabled)
+        end)
+
+        it("flipping a seat to human disables its difficulty toggle", function()
+            press_segment(scene, scene._seat_toggles[2], 1) -- 1 = human segment
+            assert.are.equal("human", scene._seat_toggles[2].current)
+            assert.is_false(scene._difficulty_toggles[2].enabled)
+        end)
+
         it("toggling seat 2 to human flips the binding", function()
             press_segment(scene, scene._seat_toggles[2], 1) -- 1 = human segment
             assert.are.equal("human", scene._seat_toggles[2].current)
+        end)
+
+        it("cycling a bot seat's difficulty changes its binding", function()
+            press_segment(scene, scene._difficulty_toggles[2], 3) -- 3 = hard segment
+            assert.are.equal("hard", scene._difficulty_toggles[2].current)
         end)
 
         it(
@@ -186,6 +219,18 @@ describe("ui.scenes.new_game", function()
                 assert.are.same({ "human", "human", "bot" }, last.params.seat_kinds)
             end
         )
+
+        it("Start dispatches the chosen seat_difficulties", function()
+            press_segment(scene, scene._difficulty_toggles[2], 1) -- easy
+            press_segment(scene, scene._difficulty_toggles[3], 3) -- hard
+            press(scene, scene._start_button)
+            local session = last_session()
+            assert.is_not_nil(session)
+            assert.are.same({ "normal", "easy", "hard" }, session:seat_difficulties())
+            local switches = last_switches()
+            local last = switches[#switches]
+            assert.are.same({ "normal", "easy", "hard" }, last.params.seat_difficulties)
+        end)
 
         it("Back routes to menu without starting a game", function()
             press(scene, scene._back_button)
@@ -238,16 +283,30 @@ describe("ui.scenes.new_game", function()
             scene:draw(1280, 800)
         end)
 
-        it("Tab seeds focus on the first widget then advances", function()
+        it("Tab seeds focus on the first kind toggle", function()
             scene:keypressed("tab")
             assert.is_true(scene._seat_toggles[1].focused)
-            scene:keypressed("tab")
+        end)
+
+        it("Tab skips the disabled difficulty toggle for a human seat", function()
+            scene:keypressed("tab") -- kind 1 (human)
+            scene:keypressed("tab") -- skips diff 1 (disabled), lands on kind 2
             assert.is_true(scene._seat_toggles[2].focused)
         end)
 
+        it("Tab visits every difficulty toggle once all seats are bots", function()
+            -- Flip seat 1 to bot so its difficulty is enabled.
+            press_segment(scene, scene._seat_toggles[1], 2)
+            scene:keypressed("tab") -- kind 1
+            scene:keypressed("tab") -- diff 1
+            assert.is_true(scene._difficulty_toggles[1].focused)
+        end)
+
         it("Enter activates the focused start button to launch the game", function()
-            for _ = 1, 4 do
-                scene:keypressed("tab") -- 3 toggles + 1 to land on Start
+            -- Enabled widgets in default 3-player layout (seat 1 human, rest bot):
+            -- kind1, kind2, diff2, kind3, diff3, Start, Back. 6 Tabs land on Start.
+            for _ = 1, 6 do
+                scene:keypressed("tab")
             end
             assert.is_true(scene._start_button.focused)
             scene:keypressed("return")

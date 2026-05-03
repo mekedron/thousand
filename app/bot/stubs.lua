@@ -2,76 +2,80 @@
 -- to until Phase 4.3 (baseline-legal play) and Phase 4.5 (Phase 3.6
 -- toggle behaviour) replace each chooser with a real heuristic.
 --
--- Every stub is a pure function `(view, seat) → action_descriptor` and
--- returns the deterministic minimum legal action — pass at every offer,
+-- Every stub is a pure function `(view, seat, difficulty) → action_descriptor`
+-- and returns the deterministic minimum legal action — pass at every offer,
 -- play `view:legal_cards(seat)[1]`, take the talon when offered. The
 -- aim is to make the engine-driver loop testable end-to-end before any
 -- bot strategy lands; the stubs intentionally never bid, never declare
 -- a marriage, and never accept a redeal.
+--
+-- Phase 4.2 added the `difficulty` arg (one of `"easy"` | `"normal"` |
+-- `"hard"`). Stubs ignore it on purpose — they're scaffolding, not
+-- strategy; Phase 4.3+ heuristics will branch on it.
 --
 -- Algorithm-vs-LLM firewall: this module imports nothing from `ui.*`
 -- or `app.llm.*`. Enforced by tests/spec/lint/firewall_spec.lua.
 
 local M = {}
 
-function M.choose_bid(_view, _seat)
+function M.choose_bid(_view, _seat, _difficulty)
     return { kind = "pass" } -- i18n-ok: action enum
 end
 
-function M.choose_contra(_view, _seat)
+function M.choose_contra(_view, _seat, _difficulty)
     return { kind = "skip_contra" } -- i18n-ok: action enum
 end
 
-function M.choose_cut_deck(_view, _seat)
+function M.choose_cut_deck(_view, _seat, _difficulty)
     return { kind = "cut_deck" } -- i18n-ok: action enum
 end
 
-function M.choose_redeal(_view, _seat)
+function M.choose_redeal(_view, _seat, _difficulty)
     return { kind = "decline_redeal" } -- i18n-ok: action enum
 end
 
-function M.choose_bad_talon_redeal(_view, _seat)
+function M.choose_bad_talon_redeal(_view, _seat, _difficulty)
     return { kind = "decline_bad_talon_redeal" } -- i18n-ok: action enum
 end
 
-function M.choose_rebuy(_view, _seat)
+function M.choose_rebuy(_view, _seat, _difficulty)
     return { kind = "decline_rebuy" } -- i18n-ok: action enum
 end
 
-function M.choose_forced_bid_concession(_view, _seat)
+function M.choose_forced_bid_concession(_view, _seat, _difficulty)
     return { kind = "decline_forced_bid" } -- i18n-ok: action enum
 end
 
-function M.choose_write_off(_view, _seat)
+function M.choose_write_off(_view, _seat, _difficulty)
     return { kind = "accept_play" } -- i18n-ok: action enum
 end
 
-function M.choose_marriage(_view, _seat)
+function M.choose_marriage(_view, _seat, _difficulty)
     return { kind = "skip_declare_marriage" } -- i18n-ok: action enum
 end
 
-function M.choose_pre_first_trick_marriage(_view, _seat)
+function M.choose_pre_first_trick_marriage(_view, _seat, _difficulty)
     return { kind = "skip_announce_marriage" } -- i18n-ok: action enum
 end
 
-function M.choose_card(view, seat)
+function M.choose_card(view, seat, _difficulty)
     local legal = view:legal_cards(seat)
     return { kind = "play", card = legal[1] } -- i18n-ok: action enum
 end
 
-function M.choose_talon_action(_view, _seat)
+function M.choose_talon_action(_view, _seat, _difficulty)
     return { kind = "take_talon" } -- i18n-ok: action enum
 end
 
-function M.choose_raise(_view, _seat)
+function M.choose_raise(_view, _seat, _difficulty)
     return { kind = "skip_raise" } -- i18n-ok: action enum
 end
 
-function M.choose_next_deal(_view, _seat)
+function M.choose_next_deal(_view, _seat, _difficulty)
     return { kind = "start_next_deal" } -- i18n-ok: action enum
 end
 
-function M.choose_talon_pass(view, seat)
+function M.choose_talon_pass(view, seat, _difficulty)
     local substate = view:talon_substate()
     local hand = view:hands()[seat] or {}
     if substate == "discard" then

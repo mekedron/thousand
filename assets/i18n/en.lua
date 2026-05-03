@@ -29,6 +29,9 @@ return {
     ["scene.new_game.seat_label"] = "Seat %{n}",
     ["scene.new_game.kind.human"] = "Human",
     ["scene.new_game.kind.bot"] = "Bot",
+    ["scene.new_game.difficulty.easy"] = "Easy",
+    ["scene.new_game.difficulty.normal"] = "Normal",
+    ["scene.new_game.difficulty.hard"] = "Hard",
     ["scene.new_game.start"] = "Start",
     ["scene.new_game.back"] = "Back",
 

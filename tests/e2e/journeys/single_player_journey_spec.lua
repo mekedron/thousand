@@ -99,6 +99,30 @@ describe("e2e: Single Player main-menu entry", function()
         )
     end)
 
+    it("defaults every seat's difficulty to 'normal' (Phase 4.2)", function()
+        -- Restart with an in-memory auto-save store so we can decode the
+        -- session blob and verify the difficulty binding without
+        -- touching manager internals.
+        if j then
+            j:stop()
+        end
+        local store = {}
+        j = journey.start({
+            locale = "en",
+            width = 1024,
+            height = 720,
+            auto_save_store = store,
+        })
+        j:step()
+        j:start_single_player_game()
+        j:lose_focus()
+        local app_json = require("app.json")
+        local decoded = app_json.decode(store["auto_save.json"] or "{}")
+        assert.is_table(decoded)
+        assert.are.same({ "human", "bot", "bot" }, decoded.seatKinds)
+        assert.are.same({ "normal", "normal", "normal" }, decoded.seatDifficulties)
+    end)
+
     it("locks the human's perspective for the entire deal (Phase 4.2)", function()
         j:start_single_player_game()
         -- Right after entry, forehand is the bot at seat 2. Phase 4.2

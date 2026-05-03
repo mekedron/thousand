@@ -90,7 +90,7 @@ describe("app.auto_save", function()
             local content = store["auto_save.json"]
             assert.is_string(content)
             local decoded = json.decode(content)
-            assert.are.equal(2, decoded.schemaVersion)
+            assert.are.equal(3, decoded.schemaVersion)
             assert.are.equal("canonical_russian", decoded.templateName)
         end)
 
@@ -103,6 +103,24 @@ describe("app.auto_save", function()
             assert.is_true(auto_save.save(s))
             local decoded = json.decode(store["auto_save.json"])
             assert.are.same({ "human", "bot", "bot" }, decoded.seatKinds)
+        end)
+
+        it("emits the seat_difficulties binding when the session carries one", function()
+            local s = Session.new({
+                seed = 7,
+                dealer = 1,
+                seat_difficulties = { "normal", "hard", "easy" },
+            })
+            assert.is_true(auto_save.save(s))
+            local decoded = json.decode(store["auto_save.json"])
+            assert.are.same({ "normal", "hard", "easy" }, decoded.seatDifficulties)
+        end)
+
+        it("omits seat_difficulties when the session has none", function()
+            local s = Session.new({ seed = 7, dealer = 1 })
+            assert.is_true(auto_save.save(s))
+            local decoded = json.decode(store["auto_save.json"])
+            assert.is_nil(decoded.seatDifficulties)
         end)
     end)
 
@@ -126,7 +144,7 @@ describe("app.auto_save", function()
 
         it("returns nil when the templateName is unknown", function()
             store["auto_save.json"] = json.encode({
-                schemaVersion = 2,
+                schemaVersion = 3,
                 templateName = "made_up_template",
             })
             assert.is_nil(auto_save.load())
@@ -135,6 +153,14 @@ describe("app.auto_save", function()
         it("returns nil for legacy v1 saves so a fresh game starts", function()
             store["auto_save.json"] = json.encode({
                 schemaVersion = 1,
+                templateName = "canonical_russian",
+            })
+            assert.is_nil(auto_save.load())
+        end)
+
+        it("returns nil for legacy v2 saves so a fresh game starts", function()
+            store["auto_save.json"] = json.encode({
+                schemaVersion = 2,
                 templateName = "canonical_russian",
             })
             assert.is_nil(auto_save.load())
@@ -197,6 +223,24 @@ describe("app.auto_save", function()
             assert.is_true(auto_save.save(s))
             local restored = auto_save.load()
             assert.is_nil(restored:seat_kinds())
+        end)
+
+        it("preserves the seat_difficulties binding across save and load", function()
+            local s = Session.new({
+                seed = 7,
+                dealer = 1,
+                seat_difficulties = { "easy", "normal", "hard" },
+            })
+            assert.is_true(auto_save.save(s))
+            local restored = auto_save.load()
+            assert.are.same({ "easy", "normal", "hard" }, restored:seat_difficulties())
+        end)
+
+        it("yields nil seat_difficulties for a saved session that never carried one", function()
+            local s = Session.new({ seed = 7, dealer = 1 })
+            assert.is_true(auto_save.save(s))
+            local restored = auto_save.load()
+            assert.is_nil(restored:seat_difficulties())
         end)
     end)
 

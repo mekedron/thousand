@@ -17,9 +17,14 @@
 --     returns to detect contract drift.
 --
 -- Action descriptors. Every chooser is a pure function over
--- (view, seat) returning a plain Lua table:
+-- (view, seat, difficulty) returning a plain Lua table:
 --
 --     { kind = "<engine_action>", ... }
+--
+-- `difficulty` is one of `"easy"` | `"normal"` | `"hard"` (per
+-- `app.bot.difficulty`); the driver substitutes the per-seat default
+-- so choosers never receive nil. Stubs ignore the arg; future Phase
+-- 4.3+ heuristics branch on it.
 --
 -- where the additional fields match the corresponding Session
 -- mutator's signature, e.g.:

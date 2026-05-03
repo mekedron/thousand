@@ -90,7 +90,7 @@ end
 describe("core.auto_save", function()
     describe("schema metadata", function()
         it("exposes its schema version", function()
-            assert.are.equal(2, auto_save.schema_version())
+            assert.are.equal(3, auto_save.schema_version())
         end)
 
         it("exposes its template name", function()
@@ -108,7 +108,7 @@ describe("core.auto_save", function()
         it("stamps the current schemaVersion and templateName", function()
             local s = Session.new({ seed = 7, dealer = 1 })
             local blob = auto_save.serialize(s)
-            assert.are.equal(2, blob.schemaVersion)
+            assert.are.equal(3, blob.schemaVersion)
             assert.are.equal("canonical_russian", blob.templateName)
         end)
 
@@ -152,8 +152,15 @@ describe("core.auto_save", function()
 
         it("returns nil for an unknown templateName", function()
             assert.is_nil(auto_save.deserialize({
-                schemaVersion = 2,
+                schemaVersion = 3,
                 templateName = "made_up_template",
+            }))
+        end)
+
+        it("returns nil for a legacy v2 save", function()
+            assert.is_nil(auto_save.deserialize({
+                schemaVersion = 2,
+                templateName = "canonical_russian",
             }))
         end)
 

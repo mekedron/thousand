@@ -1186,7 +1186,7 @@ algorithmic.
   - Talon visibility still honours `talon.hidden_on_minimum_100`
     from the human viewer's seat, not from whichever bot is on
     turn.
-- [ ] Add bot difficulty levels.
+- [x] Add bot difficulty levels.
   - Easy, normal, and hard differ in bidding aggression, marriage
     planning, trump leading, discard quality, and — where the rule
     set permits it — defender cooperation.

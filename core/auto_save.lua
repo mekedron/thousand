@@ -23,6 +23,12 @@
 -- field is always either present or absent together with the rest of
 -- the v2 shape.
 --
+-- v3 (Phase 4.2) adds `seatDifficulties`: a per-seat "easy"/"normal"/"hard"
+-- binding parallel to `seatKinds`. The bot driver passes the per-seat
+-- value to each chooser at tick time so future heuristics can vary on it.
+-- v2 saves are dropped on load via the schemaVersion guard, matching the
+-- v1 → v2 convention.
+--
 -- The save shape includes every field `Session.from_state` expects, with
 -- the engine `config` references stripped out (they all reference the
 -- same RuleConfig and re-attach on deserialize). Each engine state
@@ -36,7 +42,7 @@ local rule_config = require("core.rule_config")
 
 local M = {}
 
-local SCHEMA_VERSION = 2
+local SCHEMA_VERSION = 3
 local TEMPLATE_NAME = "canonical_russian"
 
 -- Type markers replicated from each core/ module. Reading them through
@@ -234,6 +240,11 @@ function M.serialize(session)
         -- sessions (and tests) leave it nil so the bot driver no-ops on
         -- restore — preserving Phase 2 hot-seat semantics.
         seatKinds = data_clone(session._seat_kinds),
+        -- Phase 4.2 per-seat bot difficulty. Parallel to `seatKinds`; nil
+        -- when the session was built without an explicit binding (the
+        -- driver defaults each seat to `app.bot.difficulty.DEFAULT` at
+        -- chooser-call time).
+        seatDifficulties = data_clone(session._seat_difficulties),
     }
 end
 
@@ -290,11 +301,15 @@ function M.deserialize(blob)
         awaiting_write_off_decision = blob.awaiting_write_off_decision,
         write_off_decision_resolved = blob.write_off_decision_resolved or false,
         -- Phase 4.2 seat composition. Older saves never reach this branch
-        -- because the v1 schemaVersion guard drops them above; a v2 save
+        -- because the v1/v2 schemaVersion guard drops them above; a v3 save
         -- without the field (e.g. a future legitimate Phase 2 path)
         -- hydrates with nil so the bot driver and table scene fall back
         -- to all-human behaviour.
         seat_kinds = blob.seatKinds,
+        -- Phase 4.2 per-seat bot difficulty. Same nil-friendly contract
+        -- as seat_kinds: missing in the blob → nil on the session →
+        -- driver defaults at use time.
+        seat_difficulties = blob.seatDifficulties,
     }
 end
 

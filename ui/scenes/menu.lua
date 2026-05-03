@@ -24,6 +24,7 @@ local FocusGroup = require("ui.focus_group")
 local Session = require("app.session")
 local auto_save = require("app.auto_save")
 local app_templates = require("app.templates")
+local difficulty_module = require("app.bot.difficulty")
 local t = i18n.t
 
 local M = {}
@@ -56,17 +57,25 @@ function M:_build_buttons()
                 -- seat is a bot under the active template's player count.
                 -- Mirrors the New Game picker's default composition so
                 -- the most common path skips the picker entirely.
+                -- Bot seats default to "normal" difficulty; the picker
+                -- is the way to vary it.
                 auto_save.clear()
                 local config = app_templates.resolve_active_config()
                 local seat_kinds = { "human" }
+                local seat_difficulties = { difficulty_module.DEFAULT }
                 for _ = 2, config.players.count do
                     seat_kinds[#seat_kinds + 1] = "bot"
+                    seat_difficulties[#seat_difficulties + 1] = difficulty_module.DEFAULT
                 end
                 self._manager:set_session(Session.new({
                     config = config,
                     seat_kinds = seat_kinds,
+                    seat_difficulties = seat_difficulties,
                 }))
-                self._manager:switch_to("table", { seat_kinds = seat_kinds })
+                self._manager:switch_to("table", {
+                    seat_kinds = seat_kinds,
+                    seat_difficulties = seat_difficulties,
+                })
             end,
         }),
         Button.new({

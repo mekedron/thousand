@@ -242,6 +242,62 @@ describe("app.bot.driver", function()
             assert.is_false(d:is_thinking())
             assert.are.equal(1, #s._calls)
         end)
+
+        it("passes the per-seat difficulty as the chooser's third arg", function()
+            local s = make_fake_session({ phase = "auction", turn = 2 })
+            local clock = fake_clock(0)
+            local captured
+            local d = driver.new({
+                choosers = {
+                    choose_bid = function(_view, seat, difficulty)
+                        captured = { seat = seat, difficulty = difficulty }
+                        return { kind = "pass" }
+                    end,
+                },
+                now_fn = clock.now,
+                delay = 0,
+            })
+            d:tick(s, { "human", "bot", "bot" }, { "normal", "hard", "easy" })
+            assert.are.equal(2, captured.seat)
+            assert.are.equal("hard", captured.difficulty)
+        end)
+
+        it("defaults difficulty to 'normal' when seat_difficulties is omitted", function()
+            local s = make_fake_session({ phase = "auction", turn = 2 })
+            local clock = fake_clock(0)
+            local captured
+            local d = driver.new({
+                choosers = {
+                    choose_bid = function(_view, _seat, difficulty)
+                        captured = difficulty
+                        return { kind = "pass" }
+                    end,
+                },
+                now_fn = clock.now,
+                delay = 0,
+            })
+            d:tick(s, { "human", "bot", "bot" })
+            assert.are.equal("normal", captured)
+        end)
+
+        it("defaults difficulty to 'normal' when seat_difficulties[seat] is nil", function()
+            local s = make_fake_session({ phase = "auction", turn = 3 })
+            local clock = fake_clock(0)
+            local captured
+            local d = driver.new({
+                choosers = {
+                    choose_bid = function(_view, _seat, difficulty)
+                        captured = difficulty
+                        return { kind = "pass" }
+                    end,
+                },
+                now_fn = clock.now,
+                delay = 0,
+            })
+            -- Sparse array: only seats 1 and 2 have explicit difficulties.
+            d:tick(s, { "human", "bot", "bot" }, { "easy", "hard" })
+            assert.are.equal("normal", captured)
+        end)
     end)
 
     describe(":reset", function()

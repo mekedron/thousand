@@ -158,6 +158,10 @@ function M.new(manager)
         -- path. A nil binding leaves the driver no-op'd — Phase 2
         -- hot-seat semantics.
         _seat_kinds = nil,
+        -- Phase 4.2 per-seat bot difficulty parallel to `_seat_kinds`.
+        -- The driver passes the per-seat value to each chooser at tick
+        -- time; nil means the driver defaults each seat to "normal".
+        _seat_difficulties = nil,
         _bot_driver = nil,
         -- Phase 4.2 viewer lock. When `_seat_kinds` is set, the view-model
         -- treats `_viewer_seat` as "self" instead of following
@@ -250,6 +254,8 @@ function M:enter(_prev_id, params)
     -- supply one.
     local session = self:_session()
     self._seat_kinds = (params and params.seat_kinds) or (session and session:seat_kinds())
+    self._seat_difficulties = (params and params.seat_difficulties)
+        or (session and session:seat_difficulties())
     self._bot_driver = bot_driver.new({})
     self:_refresh_view_model()
 end
@@ -3106,7 +3112,7 @@ function M:update(dt)
     if self._bot_driver and self._seat_kinds then
         local session = self:_session()
         if session then
-            self._bot_driver:tick(session, self._seat_kinds)
+            self._bot_driver:tick(session, self._seat_kinds, self._seat_difficulties)
         end
     end
 end

@@ -309,6 +309,110 @@ describe("app.session", function()
         end)
     end)
 
+    describe("Session.new seat_difficulties", function()
+        it("defaults seat_difficulties to nil when opts omit it", function()
+            local s = Session.new({ seed = 1, dealer = 1 })
+            assert.is_nil(s:seat_difficulties())
+        end)
+
+        it("accepts a seat_difficulties binding under the active player count", function()
+            local s = Session.new({
+                seed = 1,
+                dealer = 1,
+                seat_difficulties = { "normal", "hard", "easy" },
+            })
+            assert.are.same({ "normal", "hard", "easy" }, s:seat_difficulties())
+        end)
+
+        it("rejects seat_difficulties whose length disagrees with players.count", function()
+            assert.has_error(function()
+                Session.new({
+                    seed = 1,
+                    dealer = 1,
+                    seat_difficulties = { "normal", "hard" },
+                })
+            end)
+        end)
+
+        it("rejects seat_difficulties with an unknown value", function()
+            assert.has_error(function()
+                Session.new({
+                    seed = 1,
+                    dealer = 1,
+                    seat_difficulties = { "normal", "hard", "wizard" },
+                })
+            end)
+        end)
+
+        it("accepts seat_difficulties independently of seat_kinds", function()
+            local s = Session.new({
+                seed = 1,
+                dealer = 1,
+                seat_kinds = { "human", "bot", "bot" },
+                seat_difficulties = { "normal", "hard", "easy" },
+            })
+            assert.are.same({ "human", "bot", "bot" }, s:seat_kinds())
+            assert.are.same({ "normal", "hard", "easy" }, s:seat_difficulties())
+        end)
+    end)
+
+    describe("Session.from_state seat_difficulties", function()
+        it("round-trips seat_difficulties when state provides it", function()
+            local s = Session.from_state({
+                config = config,
+                seat_difficulties = { "easy", "normal", "hard" },
+            })
+            assert.are.same({ "easy", "normal", "hard" }, s:seat_difficulties())
+        end)
+
+        it("yields nil seat_difficulties when state omits the field", function()
+            local s = Session.from_state({ config = config })
+            assert.is_nil(s:seat_difficulties())
+        end)
+
+        it("rejects a state with a wrong-length seat_difficulties binding", function()
+            assert.has_error(function()
+                Session.from_state({
+                    config = config,
+                    seat_difficulties = { "easy", "normal" },
+                })
+            end)
+        end)
+    end)
+
+    describe("Session:set_seat_difficulties", function()
+        it("replaces the binding when the array is valid", function()
+            local s = Session.new({ seed = 1, dealer = 1 })
+            s:set_seat_difficulties({ "easy", "easy", "hard" })
+            assert.are.same({ "easy", "easy", "hard" }, s:seat_difficulties())
+        end)
+
+        it("rejects a binding with the wrong length", function()
+            local s = Session.new({ seed = 1, dealer = 1 })
+            assert.has_error(function()
+                s:set_seat_difficulties({ "normal", "hard" })
+            end)
+        end)
+
+        it("rejects a binding with an unknown value", function()
+            local s = Session.new({ seed = 1, dealer = 1 })
+            assert.has_error(function()
+                s:set_seat_difficulties({ "normal", "hard", "wizard" })
+            end)
+        end)
+
+        it("returns a defensive copy from seat_difficulties()", function()
+            local s = Session.new({
+                seed = 1,
+                dealer = 1,
+                seat_difficulties = { "easy", "normal", "hard" },
+            })
+            local copy = s:seat_difficulties()
+            copy[2] = "easy"
+            assert.are.same({ "easy", "normal", "hard" }, s:seat_difficulties())
+        end)
+    end)
+
     describe("auction mutators", function()
         it("Session:bid records a legal bid and advances the turn", function()
             local s = Session.new({ seed = 42, dealer = 1 })
