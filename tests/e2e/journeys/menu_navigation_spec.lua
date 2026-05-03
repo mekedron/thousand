@@ -124,9 +124,10 @@ describe("e2e: menu navigation", function()
     end)
 
     describe("main menu", function()
-        it("renders title, subtitle and the four buttons", function()
+        it("renders title, subtitle and the buttons", function()
             assert.is_not_nil(j:find_text(j:find_localised("scene.menu.title")))
             assert.is_not_nil(j:find_text(j:find_localised("scene.menu.subtitle")))
+            assert.is_not_nil(j:find_text(j:find_localised("scene.menu.single_player")))
             assert.is_not_nil(j:find_text(j:find_localised("scene.menu.new_game")))
             assert.is_not_nil(j:find_text(j:find_localised("scene.menu.continue")))
             assert.is_not_nil(j:find_text(j:find_localised("scene.menu.abandon")))
@@ -145,9 +146,22 @@ describe("e2e: menu navigation", function()
     end)
 
     describe("New Game", function()
-        it("transitions to the table scene", function()
+        it("routes through the per-seat picker before reaching the table", function()
             click_button(j, j:find_localised("scene.menu.new_game"))
             j:step()
+            -- Phase 4.2 picker is now between the menu and the table.
+            assert.is_not_nil(j:find_text(j:find_localised("scene.new_game.title")))
+            assert.is_not_nil(j:find_text(j:find_localised("scene.new_game.start")))
+        end)
+
+        it("Single Player jumps straight to the table with one human seat", function()
+            j:start_single_player_game()
+            assert.is_not_nil(j:find_text(j:find_localised("scene.table.scoreboard.title")))
+            assert.is_not_nil(j:find_text(j:find_localised("scene.table.back_to_menu")))
+        end)
+
+        it("Picker → Start with all-human composition lands on the table", function()
+            j:start_hot_seat_game()
             assert.is_not_nil(j:find_text(j:find_localised("scene.table.scoreboard.title")))
             assert.is_not_nil(j:find_text(j:find_localised("scene.table.bid.label")))
             assert.is_not_nil(j:find_text(j:find_localised("scene.table.back_to_menu")))
@@ -156,8 +170,7 @@ describe("e2e: menu navigation", function()
 
     describe("table back-to-menu paths", function()
         it("Esc returns to the menu and leaves the session active", function()
-            click_button(j, j:find_localised("scene.menu.new_game"))
-            j:step()
+            j:start_hot_seat_game()
             j:press_key("escape")
             j:step()
             assert.is_not_nil(j:find_text(j:find_localised("scene.menu.title")))
@@ -168,8 +181,7 @@ describe("e2e: menu navigation", function()
         end)
 
         it("clicking the touch Menu button returns to the menu", function()
-            click_button(j, j:find_localised("scene.menu.new_game"))
-            j:step()
+            j:start_hot_seat_game()
             dismiss_table_curtain(j)
             click_button(j, j:find_localised("scene.table.back_to_menu"))
             j:step()
@@ -185,8 +197,7 @@ describe("e2e: menu navigation", function()
         end)
 
         it("becomes enabled after a New Game and routes back into the table", function()
-            click_button(j, j:find_localised("scene.menu.new_game"))
-            j:step()
+            j:start_hot_seat_game()
             dismiss_table_curtain(j)
             click_button(j, j:find_localised("scene.table.back_to_menu"))
             j:step()
@@ -200,8 +211,7 @@ describe("e2e: menu navigation", function()
         end)
 
         it("greys out again after Abandon → Yes", function()
-            click_button(j, j:find_localised("scene.menu.new_game"))
-            j:step()
+            j:start_hot_seat_game()
             j:press_key("escape")
             j:step()
             click_button(j, j:find_localised("scene.menu.abandon"))
@@ -222,16 +232,17 @@ describe("e2e: menu navigation", function()
         end)
 
         it("paints the pressed background while mouse is held down", function()
-            local rect = smallest_rect_under_text(j, j:find_localised("scene.menu.new_game"))
+            local rect = smallest_rect_under_text(j, j:find_localised("scene.menu.single_player"))
             local cx, cy = rect_center(rect)
             j:hover(cx, cy)
             j:press(cx, cy)
             j:step()
-            local rect2 = smallest_rect_under_text(j, j:find_localised("scene.menu.new_game"))
+            local rect2 = smallest_rect_under_text(j, j:find_localised("scene.menu.single_player"))
             assert.is_true(color_matches(rect_bg_color(j, rect2), PRESSED_BG))
             j:release(cx, cy)
             j:step()
-            -- After release inside, transition fires; we land on the table.
+            -- After release inside, transition fires; Single Player is the
+            -- one-click menu→table path so the scoreboard is rendered now.
             assert.is_not_nil(j:find_text(j:find_localised("scene.table.scoreboard.title")))
         end)
 
@@ -248,9 +259,11 @@ describe("e2e: menu navigation", function()
 
     describe("keyboard navigation", function()
         it("Tab + Enter activates the first enabled button on a fresh menu", function()
-            -- Tab seeds focus on the first enabled button (New Game).
-            -- Continue and Abandon are greyed and skipped; Quit would
-            -- exit the harness. Enter then activates New Game.
+            -- Tab seeds focus on the first enabled button. Phase 4.2
+            -- prepended Single Player above New Game, so Tab + Enter on
+            -- a fresh menu starts a single-player game directly. Continue
+            -- and Abandon are greyed and skipped; Quit would exit the
+            -- harness.
             j:press_key("tab")
             j:press_key("return")
             j:step()
@@ -290,8 +303,7 @@ describe("e2e: menu navigation", function()
 
         it("Left and Right move focus inside the horizontal modal", function()
             -- Start a game so Abandon is enabled, then open the modal.
-            click_button(j, j:find_localised("scene.menu.new_game"))
-            j:step()
+            j:start_hot_seat_game()
             j:press_key("escape")
             j:step()
             click_button(j, j:find_localised("scene.menu.abandon"))
@@ -310,8 +322,7 @@ describe("e2e: menu navigation", function()
         end)
 
         it("Right then Enter on the modal hits Cancel from the default focus", function()
-            click_button(j, j:find_localised("scene.menu.new_game"))
-            j:step()
+            j:start_hot_seat_game()
             j:press_key("escape")
             j:step()
             click_button(j, j:find_localised("scene.menu.abandon"))
@@ -332,8 +343,7 @@ describe("e2e: menu navigation", function()
 
     describe("Abandon confirm modal", function()
         local function start_table_then_back_to_menu(jr)
-            click_button(jr, jr:find_localised("scene.menu.new_game"))
-            jr:step()
+            jr:start_hot_seat_game()
             jr:press_key("escape")
             jr:step()
         end
@@ -391,8 +401,7 @@ describe("e2e: menu navigation", function()
 
         it("table back button reflows to the top-right corner across sizes", function()
             local layout = require("ui.layout")
-            click_button(j, j:find_localised("scene.menu.new_game"))
-            j:step()
+            j:start_hot_seat_game()
             for _, size in ipairs({ { 800, 600 }, { 1280, 720 }, { 1600, 900 }, { 1024, 768 } }) do
                 local w, h = size[1], size[2]
                 j:resize(w, h)

@@ -90,8 +90,19 @@ describe("app.auto_save", function()
             local content = store["auto_save.json"]
             assert.is_string(content)
             local decoded = json.decode(content)
-            assert.are.equal(1, decoded.schemaVersion)
+            assert.are.equal(2, decoded.schemaVersion)
             assert.are.equal("canonical_russian", decoded.templateName)
+        end)
+
+        it("emits the seat_kinds binding when the session carries one", function()
+            local s = Session.new({
+                seed = 7,
+                dealer = 1,
+                seat_kinds = { "human", "bot", "bot" },
+            })
+            assert.is_true(auto_save.save(s))
+            local decoded = json.decode(store["auto_save.json"])
+            assert.are.same({ "human", "bot", "bot" }, decoded.seatKinds)
         end)
     end)
 
@@ -115,8 +126,16 @@ describe("app.auto_save", function()
 
         it("returns nil when the templateName is unknown", function()
             store["auto_save.json"] = json.encode({
-                schemaVersion = 1,
+                schemaVersion = 2,
                 templateName = "made_up_template",
+            })
+            assert.is_nil(auto_save.load())
+        end)
+
+        it("returns nil for legacy v1 saves so a fresh game starts", function()
+            store["auto_save.json"] = json.encode({
+                schemaVersion = 1,
+                templateName = "canonical_russian",
             })
             assert.is_nil(auto_save.load())
         end)
@@ -160,6 +179,24 @@ describe("app.auto_save", function()
             assert.is_table(restored)
             assert.are.equal("tricks", restored:current_phase())
             assert.are.equal(s:current_turn(), restored:current_turn())
+        end)
+
+        it("preserves the seat_kinds binding across save and load", function()
+            local s = Session.new({
+                seed = 7,
+                dealer = 1,
+                seat_kinds = { "human", "bot", "bot" },
+            })
+            assert.is_true(auto_save.save(s))
+            local restored = auto_save.load()
+            assert.are.same({ "human", "bot", "bot" }, restored:seat_kinds())
+        end)
+
+        it("yields nil seat_kinds for a saved session that never carried one", function()
+            local s = Session.new({ seed = 7, dealer = 1 })
+            assert.is_true(auto_save.save(s))
+            local restored = auto_save.load()
+            assert.is_nil(restored:seat_kinds())
         end)
     end)
 

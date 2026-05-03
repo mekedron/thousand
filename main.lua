@@ -24,6 +24,7 @@
 
 local scene_manager = require("ui.scene_manager")
 local menu_scene = require("ui.scenes.menu")
+local new_game_scene = require("ui.scenes.new_game")
 local table_scene = require("ui.scenes.table")
 local end_of_game_scene = require("ui.scenes.end_of_game")
 local settings_scene = require("ui.scenes.settings")
@@ -44,6 +45,7 @@ local OFFSCREEN = -1e6
 
 function love.load()
     manager:register("menu", menu_scene.new(manager))
+    manager:register("new_game", new_game_scene.new(manager))
     manager:register("table", table_scene.new(manager))
     manager:register("end_of_game", end_of_game_scene.new(manager))
     manager:register("settings", settings_scene.new(manager))

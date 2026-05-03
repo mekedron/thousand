@@ -48,17 +48,37 @@ function M:_build_buttons()
     -- string to its regex; the strings themselves are ids and i18n keys.
     self._buttons = {
         Button.new({
+            id = "single_player", -- i18n-ok
+            label_key = "scene.menu.single_player",
+            enabled = true,
+            on_press = function()
+                -- One-click single-player: seat 1 is human, every other
+                -- seat is a bot under the active template's player count.
+                -- Mirrors the New Game picker's default composition so
+                -- the most common path skips the picker entirely.
+                auto_save.clear()
+                local config = app_templates.resolve_active_config()
+                local seat_kinds = { "human" }
+                for _ = 2, config.players.count do
+                    seat_kinds[#seat_kinds + 1] = "bot"
+                end
+                self._manager:set_session(Session.new({
+                    config = config,
+                    seat_kinds = seat_kinds,
+                }))
+                self._manager:switch_to("table", { seat_kinds = seat_kinds })
+            end,
+        }),
+        Button.new({
             id = "new_game", -- i18n-ok
             label_key = "scene.menu.new_game",
             enabled = true,
             on_press = function()
-                -- Starting a new game discards any restored auto-save so
-                -- a half-played deal from the previous session does not
-                -- silently overwrite the fresh shuffle.
-                auto_save.clear()
-                local config = app_templates.resolve_active_config()
-                self._manager:set_session(Session.new({ config = config }))
-                self._manager:switch_to("table")
+                -- Phase 4.2: New Game routes through the picker so the
+                -- player can place humans on any seat (mixed comps,
+                -- spectator-mode all-bot, etc.). The picker handles
+                -- auto_save.clear and Session.new itself.
+                self._manager:switch_to("new_game")
             end,
         }),
         Button.new({

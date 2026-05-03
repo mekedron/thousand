@@ -122,8 +122,7 @@ describe("e2e: auto-save and restore", function()
     it("save on suspend and restore on next launch enables Continue", function()
         j = journey.start({ locale = "en", auto_save_store = store })
         j:step()
-        click_button(j, j:find_localised("scene.menu.new_game"))
-        j:step()
+        j:start_hot_seat_game()
         dismiss_curtain(j)
         -- One bid so the auction state is non-trivial; this gives the
         -- restored journey something distinctive to verify against.
@@ -150,8 +149,7 @@ describe("e2e: auto-save and restore", function()
     it("save on graceful quit also enables Continue on next launch", function()
         j = journey.start({ locale = "en", auto_save_store = store })
         j:step()
-        click_button(j, j:find_localised("scene.menu.new_game"))
-        j:step()
+        j:start_hot_seat_game()
         dismiss_curtain(j)
         click_button(j, j:find_localised("scene.table.auction.pass_button"))
         j:step()
@@ -168,8 +166,7 @@ describe("e2e: auto-save and restore", function()
     it("Abandon Game clears the save", function()
         j = journey.start({ locale = "en", auto_save_store = store })
         j:step()
-        click_button(j, j:find_localised("scene.menu.new_game"))
-        j:step()
+        j:start_hot_seat_game()
         dismiss_curtain(j)
         j:lose_focus()
         assert.is_string(store["auto_save.json"])
@@ -188,14 +185,13 @@ describe("e2e: auto-save and restore", function()
     end)
 
     it("New Game clears any prior auto-save", function()
-        -- Seed a save on disk.
-        store["auto_save.json"] = '{"schemaVersion":1,"templateName":"canonical_russian"}'
+        -- Seed a save on disk. Schema v2 (Phase 4.2) is the active version.
+        store["auto_save.json"] = '{"schemaVersion":2,"templateName":"canonical_russian"}'
         j = journey.start({ locale = "en", auto_save_store = store })
         j:step()
         -- Starting a new game discards the leftover save so the next
         -- relaunch can't surface a stale half-played hand.
-        click_button(j, j:find_localised("scene.menu.new_game"))
-        j:step()
+        j:start_hot_seat_game()
         dismiss_curtain(j)
         -- The freshly-saved blob from the new game has the default
         -- shape, not the seed payload. We don't have a deal_index in
@@ -225,5 +221,40 @@ describe("e2e: auto-save and restore", function()
         j = journey.start({ locale = "en", auto_save_store = store })
         j:step()
         assert.is_true(color_matches(continue_state(j), DISABLED_BG))
+    end)
+
+    it("preserves the seat_kinds binding across save and restore", function()
+        local Session = require("app.session")
+        j = journey.start({ locale = "en", auto_save_store = store })
+        j:step()
+        -- Single Player produces seat_kinds = {"human","bot","bot"}.
+        j:start_single_player_game()
+        j:lose_focus()
+        assert.is_string(store["auto_save.json"])
+
+        -- Decode the saved blob and confirm the binding is on disk.
+        local app_json = require("app.json")
+        local decoded = app_json.decode(store["auto_save.json"])
+        assert.are.same({ "human", "bot", "bot" }, decoded.seatKinds)
+
+        j:stop()
+        j = nil
+
+        -- Relaunch and restore the session via Continue. The restored
+        -- session must carry the same binding so the bot driver still
+        -- runs on seats 2 and 3.
+        j = journey.start({ locale = "en", auto_save_store = store })
+        j:step()
+        click_button(j, j:find_localised("scene.menu.continue"))
+        j:step()
+        local session = j._mock and Session -- keep require, no warning
+        local _ = session
+        -- Pull the active session off the manager via main's globals
+        -- — there's no direct API, so we settle for a behavioural
+        -- assertion: re-saving after Continue must round-trip the
+        -- same binding.
+        j:lose_focus()
+        local decoded_after = app_json.decode(store["auto_save.json"])
+        assert.are.same({ "human", "bot", "bot" }, decoded_after.seatKinds)
     end)
 end)

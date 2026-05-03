@@ -46,12 +46,6 @@ local t = i18n.t
 local M = {}
 M.__index = M
 
--- Phase 4.1 test seam: e2e journeys set this to a seat_kinds list (e.g.
--- {"human","bot","bot"}) before navigating to the table so the new-game
--- flow's lack of bot-binding UI does not block the bot-driver journey.
--- Phase 4.2 deletes this hook once the menu owns the binding.
-M._test_seat_kinds = nil
-
 local MENU_BTN_W = 120
 local MENU_BTN_H = 48
 
@@ -155,12 +149,14 @@ function M.new(manager)
         _last_revealed_seat = nil,
         _curtain_button = nil,
         _curtain_focus = nil,
-        -- Phase 4.1 bot driver wiring. _seat_kinds is one entry per
+        -- Phase 4.2 bot driver wiring. `_seat_kinds` is one entry per
         -- seat ("human" | "bot"); the driver's tick polls current_turn
         -- and asks the bot module for an action when the responsible
-        -- seat is a bot. Phase 4.2 plumbs seat_kinds through the
-        -- new-game flow; today the scene defaults to all-human and
-        -- tests / journeys override via the enter() params.
+        -- seat is a bot. The binding is supplied by the new-game picker
+        -- (and the Single Player menu entry) via switch_to params, with
+        -- a fallback to `session:seat_kinds()` for the auto-save Continue
+        -- path. A nil binding leaves the driver no-op'd — Phase 2
+        -- hot-seat semantics.
         _seat_kinds = nil,
         _bot_driver = nil,
     }, M)
@@ -216,13 +212,16 @@ function M:enter(_prev_id, params)
     self._last_revealed_seat = nil
     self._curtain_button = nil
     self._curtain_focus = nil
-    -- Phase 4.1: read the per-seat human/bot binding off the params,
-    -- defaulting to all-human. Phase 4.2 plumbs this through the new-
-    -- game flow and the save format; today only journeys / tests pass
-    -- it explicitly. The `_test_seat_kinds` hook lets e2e journeys
-    -- pre-configure the binding before the menu hands off to this
-    -- scene without ever-present production plumbing.
-    self._seat_kinds = (params and params.seat_kinds) or M._test_seat_kinds
+    -- Phase 4.2: per-seat human/bot binding flows from the new-game
+    -- picker (or Single Player one-click) via switch_to params. The
+    -- Continue path comes through main.lua → manager:set_session(...) →
+    -- switch_to("table") with no params, so we fall back to whatever
+    -- binding the restored session carries (auto_save round-trips it).
+    -- A nil binding leaves the bot driver no-op'd, preserving Phase 2
+    -- hot-seat semantics for any pre-4.2 save and any test that didn't
+    -- supply one.
+    local session = self:_session()
+    self._seat_kinds = (params and params.seat_kinds) or (session and session:seat_kinds())
     self._bot_driver = bot_driver.new({})
     self:_refresh_view_model()
 end

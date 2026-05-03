@@ -67,6 +67,42 @@ local function copy_hands(hands)
     return copy
 end
 
+-- Phase 4.2 seat composition: per-seat human/bot binding. The session
+-- carries the array so the auto-save round-trips it and the bot driver
+-- has a single source of truth at tick time. Validation happens at
+-- both `Session.new` and `Session.from_state` so a bad save or test
+-- fixture surfaces the failure right at the entrypoint, not later when
+-- the driver tries to dispatch a chooser.
+local SEAT_KIND_VALUES = { human = true, bot = true }
+
+local function validate_seat_kinds(value, count, where)
+    if value == nil then
+        return nil
+    end
+    if type(value) ~= "table" then
+        error(where .. ": seat_kinds must be a table or nil", 3)
+    end
+    if #value ~= count then
+        error(
+            where
+                .. ": seat_kinds length " -- i18n-ok: developer assertion
+                .. tostring(#value)
+                .. " disagrees with players.count " -- i18n-ok: developer assertion
+                .. tostring(count),
+            3
+        )
+    end
+    local out = {}
+    for i = 1, count do
+        local kind = value[i]
+        if not SEAT_KIND_VALUES[kind] then
+            error(where .. ": seat_kinds[" .. tostring(i) .. "] must be 'human' or 'bot'", 3)
+        end
+        out[i] = kind
+    end
+    return out
+end
+
 local function zero_totals(player_count)
     local out = {}
     for i = 1, player_count do
@@ -401,6 +437,7 @@ function M.new(opts)
 
     local dealer = opts.dealer or 1
     local seed = opts.seed or os.time()
+    local seat_kinds = validate_seat_kinds(opts.seat_kinds, config.players.count, "session.new")
 
     local initial_running_totals = zero_totals(config.players.count)
     local deal_result, auction, marriages, golden_active, bottom_card =
@@ -598,6 +635,12 @@ function M.new(opts)
         --       deal opens cleanly.
         _cut_phase = nil,
         _cut_deck_log = {},
+        -- Phase 4.2 seat composition: per-seat "human"/"bot" binding.
+        -- Optional — Session.new without `seat_kinds` produces a session
+        -- the bot driver treats as all-human (no chooser dispatch). The
+        -- new-game flow and Single Player menu entry both supply it;
+        -- the auto-save round-trips it.
+        _seat_kinds = seat_kinds,
     }, Session)
     -- Phase 3.8: open the cut phase before any auction-side
     -- transition. Forced redeals and the golden-deal auction-end hook
@@ -692,6 +735,10 @@ function M.from_state(state)
         -- has nothing to render.
         _cut_phase = state.cut_phase,
         _cut_deck_log = state.cut_deck_log or {},
+        -- Phase 4.2 seat composition. Validated against the active
+        -- player count so a tampered save or stale test fixture fails
+        -- at restore time rather than mid-deal.
+        _seat_kinds = validate_seat_kinds(state.seat_kinds, player_count, "session.from_state"),
     }, Session)
     -- Phase 3.6: when from_state restores a tricks-phase session and
     -- the active variant is pre_first_trick, re-open the queue from
@@ -709,6 +756,24 @@ end
 
 function Session:config()
     return self._config
+end
+
+-- Phase 4.2 seat composition accessors. `seat_kinds` returns nil when
+-- the session was constructed without a binding (legacy Phase 2/3 paths,
+-- pre-4.2 saves), and a defensive copy of the array otherwise so callers
+-- cannot mutate engine state via the returned table. `set_seat_kinds`
+-- replaces the binding wholesale and validates against the active player
+-- count.
+function Session:seat_kinds()
+    if self._seat_kinds == nil then
+        return nil
+    end
+    return copy_list(self._seat_kinds)
+end
+
+function Session:set_seat_kinds(value)
+    self._seat_kinds =
+        validate_seat_kinds(value, self._config.players.count, "session.set_seat_kinds")
 end
 
 function Session:dealer()

@@ -223,6 +223,93 @@ function Journey:find_text(needle)
     return self._mock.graphics.find_text(needle)
 end
 
+-- Phase 4.2: walks main menu → New Game → picker → Start with every
+-- seat set to Human, landing on the table scene with all-human
+-- composition. Phase 2 / 3 journeys that previously did
+-- `click "New Game"` and expected to be on the table use this instead,
+-- because the new-game flow now passes through a per-seat picker.
+function Journey:start_hot_seat_game()
+    local function smallest_rect_under_text(text)
+        local best
+        local draws = self:draws()
+        for _, op in ipairs(draws) do
+            if op.op == "rectangle" and op.mode == "fill" then
+                for _, t in ipairs(draws) do
+                    if
+                        t.op == "text"
+                        and t.text == text
+                        and t.x >= op.x
+                        and t.x <= op.x + op.w
+                        and t.y >= op.y
+                        and t.y <= op.y + op.h
+                    then
+                        if not best or (op.w * op.h) < (best.w * best.h) then
+                            best = op
+                        end
+                    end
+                end
+            end
+        end
+        return best
+    end
+    local function click_button_by_label(label)
+        local rect = smallest_rect_under_text(label)
+        assert(rect, "no button rectangle found for label: " .. label)
+        self:click(rect.x + rect.w * 0.5, rect.y + rect.h * 0.5)
+    end
+
+    click_button_by_label(self:find_localised("scene.menu.new_game"))
+    self:step()
+    -- Flip rows 2..N from Bot to Human via keyboard nav. The picker
+    -- defaults to row 1 = Human, rows 2..N = Bot. Tab seeds focus on
+    -- row 1; subsequent Tab + Enter cycles each Bot row to Human;
+    -- final Tab + Enter activates Start.
+    local app_templates = require("app.templates")
+    local seat_count = app_templates.resolve_active_config().players.count
+    self:press_key("tab")
+    for _ = 2, seat_count do
+        self:press_key("tab")
+        self:press_key("return")
+    end
+    self:press_key("tab")
+    self:press_key("return")
+    self:step()
+end
+
+-- Phase 4.2: one-click Single Player — seat 1 = human, every other
+-- seat = bot under the active template's player count. The bot driver
+-- runs the rest. Useful for journeys that don't care about seat
+-- composition specifics, only about reaching the table from the menu.
+function Journey:start_single_player_game()
+    local function smallest_rect_under_text(text)
+        local best
+        local draws = self:draws()
+        for _, op in ipairs(draws) do
+            if op.op == "rectangle" and op.mode == "fill" then
+                for _, t in ipairs(draws) do
+                    if
+                        t.op == "text"
+                        and t.text == text
+                        and t.x >= op.x
+                        and t.x <= op.x + op.w
+                        and t.y >= op.y
+                        and t.y <= op.y + op.h
+                    then
+                        if not best or (op.w * op.h) < (best.w * best.h) then
+                            best = op
+                        end
+                    end
+                end
+            end
+        end
+        return best
+    end
+    local rect = smallest_rect_under_text(self:find_localised("scene.menu.single_player"))
+    assert(rect, "no button rectangle found for label: Single Player")
+    self:click(rect.x + rect.w * 0.5, rect.y + rect.h * 0.5)
+    self:step()
+end
+
 function Journey:find_localised(key, params)
     return self._i18n.t(key, params)
 end

@@ -66,8 +66,10 @@ describe("e2e: hot-seat play wiring", function()
     before_each(function()
         j = journey.start({ locale = "en", width = 1024, height = 720 })
         j:step()
-        click_button(j, j:find_localised("scene.menu.new_game"))
-        j:step()
+        -- Phase 4.2: drive the picker to all-Human so existing hot-seat
+        -- assertions stand. The picker default after this step lands us
+        -- on the table with seat_kinds = {"human","human","human"}.
+        j:start_hot_seat_game()
         -- The first curtain greets the forehand on every fresh game.
         -- Dismiss it so existing test bodies can act as if the table is
         -- already open. Tests that probe the curtain itself live in the

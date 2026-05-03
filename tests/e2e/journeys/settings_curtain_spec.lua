@@ -77,8 +77,7 @@ describe("e2e: hot-seat privacy settings toggle", function()
 
         click_button(j, j:find_localised("scene.settings.back_to_menu"))
         j:step()
-        click_button(j, j:find_localised("scene.menu.new_game"))
-        j:step()
+        j:start_hot_seat_game()
         -- No curtain — the bid panel is reachable directly.
         assert.is_nil(
             find_text(j, j:find_localised("scene.table.privacy.prompt", { n = 2 })),
@@ -94,8 +93,7 @@ describe("e2e: hot-seat privacy settings toggle", function()
         -- The default IS on, so just start a new game and assert the
         -- curtain is up. This is a regression guard — we want the
         -- toggle's default to remain protective.
-        click_button(j, j:find_localised("scene.menu.new_game"))
-        j:step()
+        j:start_hot_seat_game()
         assert.is_not_nil(
             find_text(j, j:find_localised("scene.table.privacy.prompt", { n = 2 })),
             "expected curtain on a fresh game with default settings"

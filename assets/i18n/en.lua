@@ -13,6 +13,7 @@ return {
 
     ["scene.menu.title"] = "Thousand",
     ["scene.menu.subtitle"] = "A digital implementation of the Russian card game",
+    ["scene.menu.single_player"] = "Single Player",
     ["scene.menu.new_game"] = "New Game",
     ["scene.menu.continue"] = "Continue",
     ["scene.menu.abandon"] = "Abandon Game",
@@ -22,6 +23,14 @@ return {
     ["scene.menu.confirm_abandon.prompt"] = "Abandon the current game?",
     ["scene.menu.confirm_abandon.yes"] = "Yes, abandon",
     ["scene.menu.confirm_abandon.no"] = "Cancel",
+
+    ["scene.new_game.title"] = "Start a new game",
+    ["scene.new_game.template"] = "Playing under %{name}",
+    ["scene.new_game.seat_label"] = "Seat %{n}",
+    ["scene.new_game.kind.human"] = "Human",
+    ["scene.new_game.kind.bot"] = "Bot",
+    ["scene.new_game.start"] = "Start",
+    ["scene.new_game.back"] = "Back",
 
     ["scene.table.back_to_menu"] = "Menu",
     ["scene.table.player_label.you"] = "Your hand",

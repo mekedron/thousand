@@ -9,42 +9,11 @@ local function find_text(j, needle)
     return j._mock.graphics.find_text(needle)
 end
 
-local function smallest_rect_under_text(j, text)
-    local best
-    for _, op in ipairs(j:draws()) do
-        if op.op == "rectangle" and op.mode == "fill" then
-            for _, t in ipairs(j:draws()) do
-                if t.op == "text" and t.text == text then
-                    if
-                        t.x >= op.x
-                        and t.x <= op.x + op.w
-                        and t.y >= op.y
-                        and t.y <= op.y + op.h
-                    then
-                        if not best or (op.w * op.h) < (best.w * best.h) then
-                            best = op
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return best
-end
-
-local function rect_center(rect)
-    return rect.x + rect.w * 0.5, rect.y + rect.h * 0.5
-end
-
-local function click_button(j, label)
-    local rect = smallest_rect_under_text(j, label)
-    assert(rect, "no button rectangle for label: " .. label)
-    j:click(rect_center(rect))
-end
-
 local function go_to_table(j)
-    click_button(j, j:find_localised("scene.menu.new_game"))
-    j:step()
+    -- Phase 4.2: New Game now passes through the per-seat picker.
+    -- start_hot_seat_game flips every row to Human and presses Start so
+    -- this helper preserves the Phase 2 hot-seat semantics.
+    j:start_hot_seat_game()
 end
 
 describe("e2e: render playable table state", function()

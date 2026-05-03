@@ -173,6 +173,36 @@ describe("app.session", function()
                 Session.new({ config = { players = { count = 3 } } })
             end)
         end)
+
+        it("defaults seat_kinds to nil when opts omit it", function()
+            local s = Session.new({ seed = 1, dealer = 1 })
+            assert.is_nil(s:seat_kinds())
+        end)
+
+        it("accepts a seat_kinds binding under the active player count", function()
+            local s = Session.new({
+                seed = 1,
+                dealer = 1,
+                seat_kinds = { "human", "bot", "bot" },
+            })
+            assert.are.same({ "human", "bot", "bot" }, s:seat_kinds())
+        end)
+
+        it("rejects seat_kinds whose length disagrees with players.count", function()
+            assert.has_error(function()
+                Session.new({ seed = 1, dealer = 1, seat_kinds = { "human", "bot" } })
+            end)
+        end)
+
+        it("rejects seat_kinds with an unknown kind value", function()
+            assert.has_error(function()
+                Session.new({
+                    seed = 1,
+                    dealer = 1,
+                    seat_kinds = { "human", "bot", "alien" },
+                })
+            end)
+        end)
     end)
 
     describe("Session.from_state", function()
@@ -221,6 +251,61 @@ describe("app.session", function()
         it("accepts the canonical config when none is given", function()
             local s = Session.from_state({})
             assert.are.equal(rule_config.canonical_russian, s:config())
+        end)
+
+        it("round-trips seat_kinds when state provides it", function()
+            local s = Session.from_state({
+                config = config,
+                seat_kinds = { "human", "bot", "bot" },
+            })
+            assert.are.same({ "human", "bot", "bot" }, s:seat_kinds())
+        end)
+
+        it("yields nil seat_kinds when state omits the field", function()
+            local s = Session.from_state({ config = config })
+            assert.is_nil(s:seat_kinds())
+        end)
+
+        it("rejects a state with a wrong-length seat_kinds binding", function()
+            assert.has_error(function()
+                Session.from_state({
+                    config = config,
+                    seat_kinds = { "human", "bot" },
+                })
+            end)
+        end)
+    end)
+
+    describe("Session:set_seat_kinds", function()
+        it("replaces the binding when the array is valid", function()
+            local s = Session.new({ seed = 1, dealer = 1 })
+            s:set_seat_kinds({ "human", "human", "bot" })
+            assert.are.same({ "human", "human", "bot" }, s:seat_kinds())
+        end)
+
+        it("rejects a binding with the wrong length", function()
+            local s = Session.new({ seed = 1, dealer = 1 })
+            assert.has_error(function()
+                s:set_seat_kinds({ "human", "bot" })
+            end)
+        end)
+
+        it("rejects a binding with an unknown kind value", function()
+            local s = Session.new({ seed = 1, dealer = 1 })
+            assert.has_error(function()
+                s:set_seat_kinds({ "human", "bot", "alien" })
+            end)
+        end)
+
+        it("returns a defensive copy from seat_kinds()", function()
+            local s = Session.new({
+                seed = 1,
+                dealer = 1,
+                seat_kinds = { "human", "bot", "bot" },
+            })
+            local copy = s:seat_kinds()
+            copy[2] = "human"
+            assert.are.same({ "human", "bot", "bot" }, s:seat_kinds())
         end)
     end)
 

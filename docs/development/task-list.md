@@ -1155,7 +1155,7 @@ algorithmic.
 
 ### 4.2 Single-player mode and seat assignment
 
-- [ ] Add single-player mode and per-seat bot/human assignment.
+- [x] Add single-player mode and per-seat bot/human assignment.
   - Single-player is selectable from the main menu and starts a
     game with one human seat and the rest filled by bots under the
     active `RuleConfig`.

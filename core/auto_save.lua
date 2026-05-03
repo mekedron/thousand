@@ -17,6 +17,12 @@
 -- here. A save written under a template the running build doesn't know
 -- about is also treated as "no save" — same fail-soft posture.
 --
+-- v2 (Phase 4.2) adds `seatKinds`: a per-seat "human"/"bot" binding.
+-- The new-game flow and Single Player menu entry both write it; older
+-- (v1) saves are dropped on load via the schemaVersion guard, so the
+-- field is always either present or absent together with the rest of
+-- the v2 shape.
+--
 -- The save shape includes every field `Session.from_state` expects, with
 -- the engine `config` references stripped out (they all reference the
 -- same RuleConfig and re-attach on deserialize). Each engine state
@@ -30,7 +36,7 @@ local rule_config = require("core.rule_config")
 
 local M = {}
 
-local SCHEMA_VERSION = 1
+local SCHEMA_VERSION = 2
 local TEMPLATE_NAME = "canonical_russian"
 
 -- Type markers replicated from each core/ module. Reading them through
@@ -223,6 +229,11 @@ function M.serialize(session)
         -- re-prompt a declarer who has already chosen this deal.
         awaiting_write_off_decision = data_clone(session._awaiting_write_off_decision),
         write_off_decision_resolved = session._write_off_decision_resolved or false,
+        -- Phase 4.2 seat composition. Nil unless the session was built
+        -- through the new-game flow / Single Player menu entry; legacy
+        -- sessions (and tests) leave it nil so the bot driver no-ops on
+        -- restore — preserving Phase 2 hot-seat semantics.
+        seatKinds = data_clone(session._seat_kinds),
     }
 end
 
@@ -278,6 +289,12 @@ function M.deserialize(blob)
         -- missing fields.
         awaiting_write_off_decision = blob.awaiting_write_off_decision,
         write_off_decision_resolved = blob.write_off_decision_resolved or false,
+        -- Phase 4.2 seat composition. Older saves never reach this branch
+        -- because the v1 schemaVersion guard drops them above; a v2 save
+        -- without the field (e.g. a future legitimate Phase 2 path)
+        -- hydrates with nil so the bot driver and table scene fall back
+        -- to all-human behaviour.
+        seat_kinds = blob.seatKinds,
     }
 end
 
