@@ -972,6 +972,14 @@ realise the contract is dead, and concede mid-deal.
     trick is dealt. Declarer chooses *Play* or *Write off*; *Play*
     transitions to tricks normally. *Write off* fires the existing
     half-bid distribution and the every-third-write-off counter.
+  - Position the prompt **between talon take and the pass step**,
+    not between talon discard and the first trick. The declarer
+    has full hand information from the moment they pick up the
+    talon; forcing the pass (and any 2-player B discard) before
+    the write-off is wasted ceremony when the declarer is going
+    to concede. The Polish `pass_without_taking` distribution has
+    no take step — there the prompt fires after the talon reveal
+    and before the two opponent passes.
   - Session API: `Session:write_off()` already exists; gate it on
     the new phase only. Add `Session:accept_play()` (or rename) for
     the *Play* branch.
