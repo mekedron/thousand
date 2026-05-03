@@ -2689,10 +2689,10 @@ end
 -- The session never auto-decides an optional redeal offer on the
 -- player's behalf — accept_redeal / decline_redeal are caller-driven.
 -- The Phase 2 hot-seat scene drives them through the redeal modal in
--- `ui/scenes/table.lua`; the future Phase 4 AI player layer
--- (`app/ai/`) will call them from its decision routine when an AI
+-- `ui/scenes/table.lua`; the future Phase 4 bot player layer
+-- (`app/bot/`) will call them from its decision routine when a bot
 -- seat is the entitled player. The decision heuristic ("hold this
--- weak hand or take the redeal?") belongs to `app/ai/`, not here.
+-- weak hand or take the redeal?") belongs to `app/bot/`, not here.
 -- Mandatory entitlements (e.g. four_nine_redeal = "mandatory") are
 -- already auto-applied by `evaluate_entitlement_with_forced_loop`
 -- and never reach a decision routine — they show up in

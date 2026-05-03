@@ -90,7 +90,7 @@ in [Architecture](./architecture.md).
 - Touch only the files needed for this one task.
 - Match the layering: `core/` stays pure Lua (no `love.*`);
   platform-conditional code stays in `ui/` or `platform/`;
-  `app/ai/` and `app/llm/` never import each other.
+  `app/bot/` and `app/llm/` never import each other.
 - Every player-visible string goes through `t()` — no literals, even in
   placeholder UI.
 - Never hard-code a rule constant the engine reads from `RuleConfig`.
@@ -181,7 +181,7 @@ End your turn with exactly this report:
 
 These override anything you might infer otherwise.
 
-- **Algorithm-vs-LLM firewall.** `app/ai/` and `app/llm/` may
+- **Algorithm-vs-LLM firewall.** `app/bot/` and `app/llm/` may
   not import each other. CI lint guards this — do not silence it.
 - **No hard-coded rule constants.** Everything variable across
   templates reads from `RuleConfig`.
