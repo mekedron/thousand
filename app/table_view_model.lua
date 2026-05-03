@@ -292,14 +292,14 @@ local function build_named_contract_buttons(session, auction)
         buttons[#buttons + 1] = {
             id = "named_mizere", -- i18n-ok
             kind = "mizere",
-            contract_value = 120,
+            contract_value = config.specials.mizere_contract_value,
         }
     end
     if config.specials.slam_contract == "on" then
         buttons[#buttons + 1] = {
             id = "named_slam", -- i18n-ok
             kind = "slam",
-            contract_value = session:slam_contract_value(),
+            contract_value = config.specials.slam_contract_value,
         }
     end
     if config.specials.open_hand == "on" then
@@ -1135,6 +1135,36 @@ function M.from_session(session)
         }
     end
 
+    -- Phase 3.6 special contracts: active-contract banner + open-hand
+    -- visibility flag. The banner surfaces during talon and tricks
+    -- phases (i.e. once the auction has named the contract); the
+    -- view-model exposes the kind, value, and a fully-formed i18n key
+    -- the table scene can pass through `t()`.
+    local active_named = session:active_named_contract()
+    local active_contract_banner
+    local declarer_hand_open = false
+    local open_hand_seat
+    if active_named then
+        local banner_key = "scene.table.special_contract." -- i18n-ok: localisation-key prefix
+            .. active_named.kind
+            .. "_banner" -- i18n-ok: localisation-key suffix
+        active_contract_banner = {
+            kind = active_named.kind,
+            value = active_named.value,
+            i18n_key = banner_key,
+        }
+        if active_named.kind == "open_hand" then
+            declarer_hand_open = true
+            local talon_state = session._talon
+            local auction_state = session._auction
+            if talon_state and talon_state.declarer then
+                open_hand_seat = talon_state.declarer
+            elseif auction_state and auction_state.declarer then
+                open_hand_seat = auction_state.declarer
+            end
+        end
+    end
+
     return {
         phase = session:current_phase(),
         turn_player = turn,
@@ -1171,6 +1201,9 @@ function M.from_session(session)
         bad_talon_prompt = build_bad_talon_prompt_block(session),
         buyback_banner = build_buyback_banner_block(session),
         rebuy_prompt = build_rebuy_prompt_block(session),
+        active_contract_banner = active_contract_banner,
+        declarer_hand_open = declarer_hand_open,
+        open_hand_seat = open_hand_seat,
     }
 end
 

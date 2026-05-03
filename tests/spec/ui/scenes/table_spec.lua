@@ -889,7 +889,9 @@ local function canonical_with_bidding(bidding_overrides, extra_overrides)
         },
         specials = {
             mizere = extra_overrides.mizere or "off",
+            mizere_contract_value = extra_overrides.mizere_contract_value or 120,
             slam_contract = extra_overrides.slam_contract or "off",
+            slam_contract_value = extra_overrides.slam_contract_value or 240,
             open_hand = extra_overrides.open_hand or "off",
         },
         penalties = {

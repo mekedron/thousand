@@ -132,7 +132,9 @@ local function valid_table()
         },
         specials = {
             mizere = "off",
+            mizere_contract_value = 120,
             slam_contract = "off",
+            slam_contract_value = 240,
             open_hand = "off",
         },
         penalties = {
@@ -427,7 +429,9 @@ describe("core.rule_config", function()
 
         it("encodes the canonical special-contract toggles at their defaults", function()
             assert.are.equal("off", config.specials.mizere)
+            assert.are.equal(120, config.specials.mizere_contract_value)
             assert.are.equal("off", config.specials.slam_contract)
+            assert.are.equal(240, config.specials.slam_contract_value)
             assert.are.equal("off", config.specials.open_hand)
         end)
 
@@ -875,7 +879,16 @@ describe("core.rule_config", function()
                         "dump_truck",
                     },
                 },
-                { "specials", { "mizere", "slam_contract", "open_hand" } },
+                {
+                    "specials",
+                    {
+                        "mizere",
+                        "mizere_contract_value",
+                        "slam_contract",
+                        "slam_contract_value",
+                        "open_hand",
+                    },
+                },
                 {
                     "penalties",
                     {
@@ -4561,6 +4574,82 @@ describe("core.rule_config", function()
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
             assert.are.equal("on", res.config.specials.open_hand)
+        end)
+    end)
+
+    describe("specials.mizere_contract_value", function()
+        it("exposes a selectable bounded number-leaf descriptor", function()
+            local d = rule_config.schema_for("specials.mizere_contract_value")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(120, d.default)
+            assert.are.equal(1, d.min)
+            assert.are.equal(240, d.max)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("accepts numeric values inside the bound", function()
+            local t = valid_table()
+            t.specials.mizere_contract_value = 100
+            local res = rule_config.try_new(t)
+            assert.is_true(res.ok)
+            assert.are.equal(100, res.config.specials.mizere_contract_value)
+        end)
+
+        it("rejects out-of-bound values", function()
+            for _, bad in ipairs({ 0, -1, 241, 500 }) do
+                local t = valid_table()
+                t.specials.mizere_contract_value = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. tostring(bad) .. " must be rejected")
+            end
+        end)
+
+        it("survives a JSON round trip with a non-default value", function()
+            local t = valid_table()
+            t.specials.mizere_contract_value = 80
+            local config = rule_config.new(t)
+            local res = rule_config.from_json(rule_config.to_json(config))
+            assert.is_true(res.ok)
+            assert.are.equal(80, res.config.specials.mizere_contract_value)
+        end)
+    end)
+
+    describe("specials.slam_contract_value", function()
+        it("exposes a selectable bounded number-leaf descriptor", function()
+            local d = rule_config.schema_for("specials.slam_contract_value")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(240, d.default)
+            assert.are.equal(1, d.min)
+            assert.are.equal(600, d.max)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("accepts numeric values inside the bound", function()
+            local t = valid_table()
+            t.specials.slam_contract_value = 300
+            local res = rule_config.try_new(t)
+            assert.is_true(res.ok)
+            assert.are.equal(300, res.config.specials.slam_contract_value)
+        end)
+
+        it("rejects out-of-bound values", function()
+            for _, bad in ipairs({ 0, -1, 601, 1200 }) do
+                local t = valid_table()
+                t.specials.slam_contract_value = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. tostring(bad) .. " must be rejected")
+            end
+        end)
+
+        it("survives a JSON round trip with a non-default value", function()
+            local t = valid_table()
+            t.specials.slam_contract_value = 300
+            local config = rule_config.new(t)
+            local res = rule_config.from_json(rule_config.to_json(config))
+            assert.is_true(res.ok)
+            assert.are.equal(300, res.config.specials.slam_contract_value)
         end)
     end)
 

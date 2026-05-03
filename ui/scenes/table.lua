@@ -1568,10 +1568,32 @@ local function draw_opponents(self, view, region)
         local stack_x = rect.x + 8
         local stack_y = rect.y + 32
 
+        local is_open_hand_declarer = view.declarer_hand_open
+            and view.open_hand_seat
+            and hand.player == view.open_hand_seat
         if hand.sits_out then
             love.graphics.setColor(SITS_OUT_DIM)
             love.graphics.print(t("scene.table.seat.sits_out"), stack_x, stack_y + 18)
             love.graphics.setColor(1, 1, 1, 1)
+        elseif is_open_hand_declarer and hand.cards then
+            -- Phase 3.6 open-hand visibility: the declarer's hand
+            -- renders face-up to all seats for the duration of the
+            -- deal. Lay the cards out as a row so the defenders can
+            -- read every face.
+            local card_x = stack_x
+            for _, c in ipairs(hand.cards) do
+                cards.draw_face_up(c, card_x, stack_y, OPPONENT_CARD_W, OPPONENT_CARD_H)
+                card_x = card_x + OPPONENT_CARD_W + 4
+            end
+            if hand.is_turn then
+                draw_turn_ring(stack_x, stack_y, OPPONENT_CARD_W, OPPONENT_CARD_H)
+            end
+            love.graphics.setColor(DIM_COLOR)
+            love.graphics.print(
+                t("scene.table.deck.size", { n = hand.count }),
+                stack_x,
+                stack_y + OPPONENT_CARD_H + 4
+            )
         else
             cards.draw_stack(hand.count, stack_x, stack_y, OPPONENT_CARD_W, OPPONENT_CARD_H)
             if hand.is_turn then
@@ -2344,6 +2366,27 @@ local function draw_raspassy_status_banner(view, regions)
     love.graphics.print(t("scene.table.all_pass_banner.raspassy"), centre.x + 12, y + 4)
 end
 
+-- Phase 3.6 special-contracts banner. Surfaces the active named
+-- contract (mizère / slam / open hand) above the table during the
+-- talon and tricks phases so every seat can see what's been
+-- declared. The view-model carries the i18n key so this scene only
+-- routes through `t()`.
+local function draw_active_contract_banner(view, regions)
+    if not view or not view.active_contract_banner then
+        return
+    end
+    local centre = regions.centre
+    local y = centre.y - 72
+    love.graphics.setColor(0.20, 0.10, 0.45, 0.85)
+    love.graphics.rectangle("fill", centre.x, y, centre.w, 22)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.print(
+        t(view.active_contract_banner.i18n_key, { value = view.active_contract_banner.value }),
+        centre.x + 12,
+        y + 4
+    )
+end
+
 local function draw_marriage_modal(self, w, h)
     if self._modal ~= "marriage" or not self._marriage_payload then
         return
@@ -2593,6 +2636,7 @@ function M:draw(w, h)
     -- input on the panel area.
     draw_misdeal_banner(self._view_model, regions)
     draw_raspassy_status_banner(self._view_model, regions)
+    draw_active_contract_banner(self._view_model, regions)
     draw_dealer_forced_banner(self._view_model, regions)
     draw_golden_deal_banner(self._view_model, regions)
     draw_contract_multiplier_badge(self, self._view_model, regions)

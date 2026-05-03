@@ -95,7 +95,9 @@ local function build_config(overrides, specials_overrides)
     if specials_overrides then
         local specials = {
             mizere = base.specials.mizere,
+            mizere_contract_value = base.specials.mizere_contract_value,
             slam_contract = base.specials.slam_contract,
+            slam_contract_value = base.specials.slam_contract_value,
             open_hand = base.specials.open_hand,
         }
         for k, v in pairs(specials_overrides) do

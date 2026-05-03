@@ -344,7 +344,9 @@ describe("core.scoring", function()
                 },
                 specials = {
                     mizere = "off",
+                    mizere_contract_value = 120,
                     slam_contract = "off",
+                    slam_contract_value = 240,
                     open_hand = "off",
                 },
                 penalties = {
@@ -2306,6 +2308,175 @@ describe("core.scoring", function()
             -- check uses the raw 118.
             assert.are.equal(120, r.scoring.deal_scores[1])
             assert.are.equal(120, r.scoring.card_points_rounded[1])
+        end)
+    end)
+
+    describe("score_deal() named contracts (Phase 3.6 specials)", function()
+        local function named_opts(overrides)
+            local opts = {
+                declarer = 1,
+                bid = { kind = "named", contract = "mizere", value = 120 },
+                named_contract_made = true,
+                captured_points = { 0, 60, 60 },
+                running_totals = { 0, 0, 0 },
+            }
+            if overrides then
+                for k, v in pairs(overrides) do
+                    opts[k] = v
+                end
+            end
+            return opts
+        end
+
+        it("rejects a structured bid without kind = 'named'", function()
+            local r =
+                scoring.score_deal(config, named_opts({ bid = { kind = "blind", value = 120 } }))
+            assert.is_false(r.ok)
+            assert.are.equal("bad_bid", r.error.code)
+        end)
+
+        it("rejects a named bid missing a string contract", function()
+            local r = scoring.score_deal(
+                config,
+                named_opts({ bid = { kind = "named", contract = 42, value = 120 } })
+            )
+            assert.is_false(r.ok)
+            assert.are.equal("bad_bid", r.error.code)
+        end)
+
+        it("rejects a named bid with non-positive integer value", function()
+            for _, bad in ipairs({ 0, -1, 1.5, "120" }) do
+                local r = scoring.score_deal(
+                    config,
+                    named_opts({ bid = { kind = "named", contract = "mizere", value = bad } })
+                )
+                assert.is_false(r.ok)
+                assert.are.equal("bad_bid", r.error.code)
+            end
+        end)
+
+        it("rejects a named contract without named_contract_made boolean", function()
+            -- Build opts without the helper so we can omit the field outright.
+            local opts_missing = {
+                declarer = 1,
+                bid = { kind = "named", contract = "mizere", value = 120 },
+                captured_points = { 0, 60, 60 },
+                running_totals = { 0, 0, 0 },
+            }
+            local r = scoring.score_deal(config, opts_missing)
+            assert.is_false(r.ok)
+            assert.are.equal("bad_named_contract_made", r.error.code)
+
+            local r2 = scoring.score_deal(config, named_opts({ named_contract_made = "yes" }))
+            assert.is_false(r2.ok)
+            assert.are.equal("bad_named_contract_made", r2.error.code)
+        end)
+
+        it("scores a successful mizère as +value to declarer, 0 to defenders", function()
+            local s = score_ok(named_opts({
+                bid = { kind = "named", contract = "mizere", value = 120 },
+                named_contract_made = true,
+                captured_points = { 0, 60, 60 },
+            }))
+            assert.are.equal(120, s.deltas[1])
+            assert.are.equal(0, s.deltas[2])
+            assert.are.equal(0, s.deltas[3])
+            assert.are.equal(120, s.running_totals[1])
+            assert.are.equal(0, s.running_totals[2])
+            assert.are.equal(0, s.running_totals[3])
+            assert.is_true(s.made_contract)
+            assert.are.equal(120, s.effective_bid)
+            assert.are.equal("mizere", s.bid.contract)
+            assert.are.equal(120, s.bid.value)
+            assert.are.same({ kind = "mizere", value = 120 }, s.named_contract)
+        end)
+
+        it("scores a failed mizère as -value to declarer, 0 to defenders", function()
+            local s = score_ok(named_opts({
+                bid = { kind = "named", contract = "mizere", value = 120 },
+                named_contract_made = false,
+                captured_points = { 20, 50, 50 },
+            }))
+            assert.are.equal(-120, s.deltas[1])
+            assert.are.equal(0, s.deltas[2])
+            assert.are.equal(0, s.deltas[3])
+            assert.are.equal(-120, s.running_totals[1])
+            assert.is_false(s.made_contract)
+        end)
+
+        it("scores a successful slam as +value to declarer", function()
+            local s = score_ok(named_opts({
+                bid = { kind = "named", contract = "slam", value = 240 },
+                named_contract_made = true,
+                captured_points = { 120, 0, 0 },
+            }))
+            assert.are.equal(240, s.deltas[1])
+            assert.are.equal(0, s.deltas[2])
+            assert.are.equal(0, s.deltas[3])
+            assert.are.equal(240, s.effective_bid)
+        end)
+
+        it("scores a failed slam as -value to declarer", function()
+            local s = score_ok(named_opts({
+                bid = { kind = "named", contract = "slam", value = 240 },
+                named_contract_made = false,
+                captured_points = { 105, 10, 5 },
+            }))
+            assert.are.equal(-240, s.deltas[1])
+            assert.are.equal(0, s.deltas[2])
+            assert.are.equal(0, s.deltas[3])
+        end)
+
+        it("scores a successful open hand as +value (already-doubled) to declarer", function()
+            local s = score_ok(named_opts({
+                bid = { kind = "named", contract = "open_hand", value = 200 },
+                named_contract_made = true,
+                captured_points = { 80, 30, 10 },
+            }))
+            assert.are.equal(200, s.deltas[1])
+            assert.are.equal(0, s.deltas[2])
+            assert.are.equal(0, s.deltas[3])
+            assert.are.equal("open_hand", s.bid.contract)
+        end)
+
+        it("scores a failed open hand as -value to declarer", function()
+            local s = score_ok(named_opts({
+                bid = { kind = "named", contract = "open_hand", value = 200 },
+                named_contract_made = false,
+                captured_points = { 30, 50, 40 },
+            }))
+            assert.are.equal(-200, s.deltas[1])
+            assert.are.equal(0, s.deltas[2])
+            assert.are.equal(0, s.deltas[3])
+        end)
+
+        it("preserves the score-state shape with zeroed bonus arrays", function()
+            local s = score_ok(named_opts({
+                bid = { kind = "named", contract = "mizere", value = 120 },
+                named_contract_made = true,
+                captured_points = { 0, 60, 60 },
+            }))
+            assert.are.same({ 0, 0, 0 }, s.marriage_bonuses)
+            assert.are.same({ 0, 0, 0 }, s.half_marriage_capture_bonuses)
+            assert.are.same({ 0, 0, 0 }, s.ace_marriage_bonuses)
+            assert.are.same({ 0, 0, 0 }, s.last_trick_bonus)
+            assert.are.same({ 0, 0, 0 }, s.slam_bonus)
+            assert.are.same({ 0, 0, 0 }, s.slam_against_penalty)
+            assert.are.same({ 0, 0, 0 }, s.deal_scores)
+            assert.are.same({ 0, 0, 0 }, s.failed_contract_distribution_extras)
+            assert.is_nil(s.defender_pool_total)
+            assert.are.equal(1, s.bid_multiplier)
+        end)
+
+        it("rounds captured points for the state's card_points_rounded array", function()
+            local s = score_ok(named_opts({
+                bid = { kind = "named", contract = "mizere", value = 120 },
+                named_contract_made = true,
+                captured_points = { 0, 73, 47 },
+            }))
+            assert.are.equal(0, s.card_points_rounded[1])
+            assert.are.equal(75, s.card_points_rounded[2])
+            assert.are.equal(45, s.card_points_rounded[3])
         end)
     end)
 end)

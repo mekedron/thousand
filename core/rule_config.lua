@@ -1521,13 +1521,20 @@ local SCHEMA = {
     -- Special-contract toggles. Each named contract is a single
     -- on/off here; the bidding-section umbrella `named_contracts`
     -- gates whether any of them are admissible at the auction. The
-    -- contract values (mizère = 120, slam = 240/300/double, etc.)
-    -- are sibling fields that land with the gameplay task. See
-    -- docs/variations/house-rules.md "Special contracts" and the
-    -- bidding.named_contracts comment.
+    -- contract values for mizère and slam live in sibling
+    -- `*_contract_value` fields below; open-hand carries no sibling
+    -- because its `value = 200` is already doubled per the house-
+    -- rules definition. See docs/variations/house-rules.md "Special
+    -- contracts" and the bidding.named_contracts comment.
     specials = {
         kind = "section",
-        field_order = { "mizere", "slam_contract", "open_hand" },
+        field_order = {
+            "mizere",
+            "mizere_contract_value",
+            "slam_contract",
+            "slam_contract_value",
+            "open_hand",
+        },
         fields = {
             -- Mizère / минимум: declarer commits to taking zero
             -- tricks in a no-trump deal. Fixed contract value
@@ -1540,6 +1547,19 @@ local SCHEMA = {
                 default = "off",
                 status = "selectable",
             },
+            -- Score change applied to the declarer on a successful or
+            -- failed mizère. Inert under `mizere = "off"`; carried in
+            -- the schema so saved templates round-trip cleanly.
+            -- Bounded in [1, 240] — the canonical 120 sits at the
+            -- midpoint with headroom for stricter house conventions.
+            mizere_contract_value = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 1,
+                max = 240,
+                default = 120,
+                status = "selectable",
+            },
             -- Slam: declarer commits to taking all 8 tricks. Common
             -- contract values are 240, 300, or simply double the
             -- highest numeric bid. See
@@ -1549,6 +1569,20 @@ local SCHEMA = {
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
+                status = "selectable",
+            },
+            -- Score change applied to the declarer on a successful or
+            -- failed slam. Inert under `slam_contract = "off"`;
+            -- carried in the schema so saved templates round-trip
+            -- cleanly. Bounded in [1, 600] — covers the documented
+            -- "240 / 300 / double the highest numeric bid" range
+            -- (max numeric bid is 300 today; 2× = 600).
+            slam_contract_value = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 1,
+                max = 600,
+                default = 240,
                 status = "selectable",
             },
             -- Open hand: declarer plays the entire deal face-up.
@@ -2579,7 +2613,9 @@ local function canonical_russian_blob()
         },
         specials = {
             mizere = "off",
+            mizere_contract_value = 120,
             slam_contract = "off",
+            slam_contract_value = 240,
             open_hand = "off",
         },
         penalties = {

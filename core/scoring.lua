@@ -114,6 +114,144 @@ local function validate_player_list(name, list, count)
     return nil
 end
 
+-- Phase 3.6 special-contract scoring path. A named-contract bid is a
+-- structured `{ kind = "named", contract = "mizere"|"slam"|"open_hand",
+-- value = N }` table carrying the score change to apply. Defenders score
+-- zero on every named contract — the documented Russian/Polish/Ukrainian
+-- wording treats these as declarer-vs-bid only. The returned state
+-- preserves `score_deal`'s shape (zero-filled bonus arrays, structured
+-- `bid` echo, named_contract block) so the session and view-model can
+-- read the same fields without branching on contract type. Open-hand's
+-- documented "doubled scoring" is encoded at the schema level: the
+-- structured bid carries `value = 200` (= 2 × the canonical 100 base),
+-- so this helper applies no further multiplier.
+local function score_named_contract(config, opts, declarer, player_count, nearest)
+    local bid = opts.bid
+    if bid.kind ~= "named" then
+        return failure("bad_bid", "structured bid requires kind = 'named'", {
+            actual_kind = bid.kind,
+        })
+    end
+    if type(bid.contract) ~= "string" then
+        return failure("bad_bid", "named bid requires a string contract", {
+            actual = type(bid.contract),
+        })
+    end
+    if not is_integer(bid.value) or bid.value <= 0 then
+        return failure("bad_bid", "named bid requires a positive integer value", {
+            actual = bid.value,
+        })
+    end
+    if type(opts.named_contract_made) ~= "boolean" then
+        return failure(
+            "bad_named_contract_made",
+            "named contract requires boolean opts.named_contract_made",
+            { actual = type(opts.named_contract_made) }
+        )
+    end
+
+    local captured_err = validate_player_list("captured_points", opts.captured_points, player_count)
+    if captured_err then
+        return captured_err
+    end
+    for i = 1, player_count do
+        if opts.captured_points[i] < 0 then
+            return failure(
+                "bad_captured_points",
+                "captured_points entries must be non-negative",
+                { player = i, actual = opts.captured_points[i] }
+            )
+        end
+    end
+    local totals_err = validate_player_list("running_totals", opts.running_totals, player_count)
+    if totals_err then
+        return totals_err
+    end
+
+    local effective_bid = bid.value
+    local made_contract = opts.named_contract_made
+
+    local zeros = {}
+    for i = 1, player_count do
+        zeros[i] = 0
+    end
+
+    local card_points_rounded = {}
+    for i = 1, player_count do
+        card_points_rounded[i] = round_to_nearest(opts.captured_points[i], nearest)
+    end
+
+    local deltas = {}
+    for i = 1, player_count do
+        if i == declarer then
+            deltas[i] = made_contract and effective_bid or -effective_bid
+        else
+            deltas[i] = 0
+        end
+    end
+
+    local running_totals_after = {}
+    for i = 1, player_count do
+        running_totals_after[i] = opts.running_totals[i] + deltas[i]
+    end
+
+    local partnership_mode = config.players.partnership_mode
+    local sides
+    local side_deal_scores
+    local side_deltas
+    local side_running_totals_before
+    local side_running_totals_after
+    if partnership_mode == "fixed_across_table" and player_count == 4 then
+        sides = { 1, 2, 1, 2 }
+        side_deal_scores = { 0, 0 }
+        side_deltas = { 0, 0 }
+        side_running_totals_before = { 0, 0 }
+        for i = 1, player_count do
+            local s = sides[i]
+            side_deltas[s] = side_deltas[s] + deltas[i]
+            side_running_totals_before[s] = side_running_totals_before[s] + opts.running_totals[i]
+        end
+        side_running_totals_after = {
+            side_running_totals_before[1] + side_deltas[1],
+            side_running_totals_before[2] + side_deltas[2],
+        }
+    end
+
+    local state = tag_as_scoring({
+        schema_version = M.SCHEMA_VERSION,
+        config = config,
+        declarer = declarer,
+        bid = { kind = "named", contract = bid.contract, value = bid.value },
+        bid_multiplier = 1,
+        effective_bid = effective_bid,
+        captured_points = copy_int_list(opts.captured_points, player_count),
+        card_points_rounded = card_points_rounded,
+        marriage_bonuses = copy_int_list(zeros, player_count),
+        half_marriage_capture_bonuses = copy_int_list(zeros, player_count),
+        ace_marriage_bonuses = copy_int_list(zeros, player_count),
+        last_trick_bonus = copy_int_list(zeros, player_count),
+        slam_bonus = copy_int_list(zeros, player_count),
+        slam_against_penalty = copy_int_list(zeros, player_count),
+        deal_scores = copy_int_list(zeros, player_count),
+        made_contract = made_contract,
+        contract_check_value = made_contract and effective_bid or 0,
+        success_payout = effective_bid,
+        defender_pool_total = nil,
+        failed_contract_distribution_extras = copy_int_list(zeros, player_count),
+        deltas = deltas,
+        running_totals_before = copy_int_list(opts.running_totals, player_count),
+        running_totals = running_totals_after,
+        partnership_mode = partnership_mode,
+        sides = sides,
+        side_deal_scores = side_deal_scores,
+        side_deltas = side_deltas,
+        side_running_totals_before = side_running_totals_before,
+        side_running_totals = side_running_totals_after,
+        named_contract = { kind = bid.contract, value = bid.value },
+    })
+    return { ok = true, scoring = state }
+end
+
 function M.score_deal(config, opts)
     if not rule_config.is_rule_config(config) then
         return failure("not_a_rule_config", "scoring.score_deal requires a RuleConfig", {
@@ -146,6 +284,12 @@ function M.score_deal(config, opts)
     end
 
     local bid = opts.bid
+    -- Phase 3.6 named-contract dispatch. Structured bids carry
+    -- `{ kind = "named", contract, value }` from `core.auction`'s
+    -- `bid_named` path; route them to the dedicated scorer.
+    if type(bid) == "table" then
+        return score_named_contract(config, opts, declarer, player_count, nearest)
+    end
     if not is_integer(bid) then
         return failure("bad_bid", "bid must be an integer", { actual = bid })
     end

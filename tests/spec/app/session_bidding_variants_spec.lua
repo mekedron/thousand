@@ -146,7 +146,9 @@ local function canonical_with_bidding(overrides)
         },
         specials = {
             mizere = "off",
+            mizere_contract_value = 120,
             slam_contract = "off",
+            slam_contract_value = 240,
             open_hand = "off",
         },
         penalties = {
@@ -167,7 +169,9 @@ local function named_contract_config(specials_overrides)
     specials_overrides = specials_overrides or {}
     local sp = {
         mizere = "off",
+        mizere_contract_value = 120,
         slam_contract = "off",
+        slam_contract_value = 240,
         open_hand = "off",
     }
     for k, v in pairs(specials_overrides) do
@@ -186,7 +190,9 @@ local function make_named_contract_cfg(specials_overrides)
     specials_overrides = specials_overrides or {}
     local sp = {
         mizere = "off",
+        mizere_contract_value = 120,
         slam_contract = "off",
+        slam_contract_value = 240,
         open_hand = "off",
     }
     for k, v in pairs(specials_overrides) do
@@ -1004,28 +1010,23 @@ describe("app.session bidding variants", function()
             assert.is_true(type(slam_val) == "number")
         end)
 
-        it(
-            "on_auction_end returns not_yet_supported_named_contract when a named contract wins",
-            function()
-                local cfg = make_named_contract_cfg({ mizere = "on" })
-                local hands, talon = hands_without_marriage()
-                local s = session_at_auction(cfg, hands, talon)
-                -- Forehand bids mizere; others pass; named contract wins.
-                assert.is_true(s:bid_named_contract(2, "mizere").ok)
-                assert.is_true(s:pass(3).ok)
-                -- The final pass triggers on_auction_end with a named winner.
-                local res = s:pass(1)
-                local phase = s:current_phase()
-                -- Error may surface on the triggering call or via deal_done.
-                assert.is_true(
-                    (not res.ok and res.error.code == "not_yet_supported_named_contract")
-                        or (
-                            phase == "deal_done"
-                            and s:deal_done().reason == "not_yet_supported_named_contract"
-                        )
-                )
-            end
-        )
+        it("on_auction_end records the active named contract and proceeds to talon", function()
+            local cfg = make_named_contract_cfg({ mizere = "on" })
+            local hands, talon = hands_without_marriage()
+            local s = session_at_auction(cfg, hands, talon)
+            -- Forehand bids mizere; others pass; named contract wins.
+            assert.is_true(s:bid_named_contract(2, "mizere").ok)
+            assert.is_true(s:pass(3).ok)
+            assert.is_true(s:pass(1).ok)
+            -- The auction has terminated with a structured winning bid;
+            -- the session records the active contract and the talon
+            -- phase opens just as it does for a numeric bid.
+            local active = s:active_named_contract()
+            assert.is_not_nil(active)
+            assert.are.equal("mizere", active.kind)
+            assert.are.equal(120, active.value)
+            assert.are.equal("talon", s:current_phase())
+        end)
     end)
 
     -- ------------------------------------------------------------------ --

@@ -476,7 +476,9 @@ describe("app.table_view_model", function()
                 },
                 specials = {
                     mizere = "off",
+                    mizere_contract_value = 120,
                     slam_contract = "off",
+                    slam_contract_value = 240,
                     open_hand = "off",
                 },
                 penalties = {
@@ -893,5 +895,186 @@ describe("app.table_view_model", function()
             assert.are.equal(1, #view.talon_phase.polish_pass_remaining_seats)
             assert.are.equal(1, view.talon_phase.polish_pass_remaining_seats[1])
         end)
+    end)
+
+    describe("Phase 3.6 special contracts", function()
+        local card = require("core.card")
+        local json = require("app.json")
+        local marriages_module = require("core.marriages")
+        local auction_module = require("core.auction")
+        local tricks_module = require("core.tricks")
+
+        local function specials_config(specials_overrides)
+            local blob = json.decode(rule_config.to_json(rule_config.canonical_russian))
+            blob.bidding.named_contracts = "on"
+            for k, v in pairs(specials_overrides or {}) do
+                blob.specials[k] = v
+            end
+            return rule_config.new(blob)
+        end
+
+        local function balanced_hands()
+            return {
+                {
+                    card.new("hearts", "9"),
+                    card.new("hearts", "J"),
+                    card.new("diamonds", "9"),
+                    card.new("diamonds", "J"),
+                    card.new("clubs", "9"),
+                    card.new("clubs", "J"),
+                    card.new("spades", "9"),
+                    card.new("spades", "J"),
+                },
+                {
+                    card.new("hearts", "A"),
+                    card.new("hearts", "10"),
+                    card.new("diamonds", "A"),
+                    card.new("diamonds", "10"),
+                    card.new("clubs", "A"),
+                    card.new("clubs", "10"),
+                    card.new("spades", "A"),
+                    card.new("spades", "10"),
+                },
+                {
+                    card.new("hearts", "Q"),
+                    card.new("hearts", "K"),
+                    card.new("diamonds", "Q"),
+                    card.new("diamonds", "K"),
+                    card.new("clubs", "Q"),
+                    card.new("clubs", "K"),
+                    card.new("spades", "Q"),
+                    card.new("spades", "K"),
+                },
+            }
+        end
+
+        local function build_named_session(cfg, hands, named)
+            local pc = cfg.players.count
+            local dealer = 1
+            local declarer = 2
+            local running = { 0, 0, 0 }
+            local holdings = {}
+            for seat = 1, pc do
+                holdings[seat] = { marriage_total = 0 }
+            end
+            local auction = auction_module.new(
+                cfg,
+                dealer,
+                { holdings = holdings, running_totals = running }
+            ).auction
+            auction = auction_module.bid(auction, 2, named).auction
+            auction = auction_module.pass(auction, 3).auction
+            auction = auction_module.pass(auction, 1).auction
+            local marriages = marriages_module.new(cfg).marriages
+            local tricks = tricks_module.new(
+                cfg,
+                hands,
+                declarer,
+                { dealer = dealer, declarer = declarer }
+            ).tricks
+            return Session.from_state({
+                config = cfg,
+                seed = 1,
+                dealer = dealer,
+                hands = hands,
+                auction = auction,
+                marriages = marriages,
+                tricks = tricks,
+                talon = {
+                    declarer = declarer,
+                    final_bid = named,
+                    status = "done",
+                    hands = hands,
+                },
+                running_totals = running,
+                deal_index = 1,
+                active_named_contract = { kind = named.contract, value = named.value },
+            })
+        end
+
+        it("active_contract_banner is nil on a vanilla session", function()
+            local s = Session.new({ seed = 42, dealer = 1 })
+            local view = view_model.from_session(s)
+            assert.is_nil(view.active_contract_banner)
+            assert.is_false(view.declarer_hand_open)
+            assert.is_nil(view.open_hand_seat)
+        end)
+
+        it("active_contract_banner surfaces under mizère with the right i18n key", function()
+            local cfg = specials_config({ mizere = "on" })
+            local s = build_named_session(
+                cfg,
+                balanced_hands(),
+                { kind = "named", contract = "mizere", value = 120 }
+            )
+            local view = view_model.from_session(s)
+            assert.is_table(view.active_contract_banner)
+            assert.are.equal("mizere", view.active_contract_banner.kind)
+            assert.are.equal(120, view.active_contract_banner.value)
+            assert.are.equal(
+                "scene.table.special_contract.mizere_banner",
+                view.active_contract_banner.i18n_key
+            )
+            assert.is_false(view.declarer_hand_open)
+            assert.is_nil(view.open_hand_seat)
+        end)
+
+        it("active_contract_banner surfaces under slam", function()
+            local cfg = specials_config({ slam_contract = "on" })
+            local s = build_named_session(
+                cfg,
+                balanced_hands(),
+                { kind = "named", contract = "slam", value = 240 }
+            )
+            local view = view_model.from_session(s)
+            assert.are.equal("slam", view.active_contract_banner.kind)
+            assert.are.equal(240, view.active_contract_banner.value)
+            assert.are.equal(
+                "scene.table.special_contract.slam_banner",
+                view.active_contract_banner.i18n_key
+            )
+            assert.is_false(view.declarer_hand_open)
+        end)
+
+        it("declarer_hand_open and open_hand_seat populate under open hand", function()
+            local cfg = specials_config({ open_hand = "on" })
+            local s = build_named_session(
+                cfg,
+                balanced_hands(),
+                { kind = "named", contract = "open_hand", value = 200 }
+            )
+            local view = view_model.from_session(s)
+            assert.are.equal("open_hand", view.active_contract_banner.kind)
+            assert.are.equal(200, view.active_contract_banner.value)
+            assert.are.equal(
+                "scene.table.special_contract.open_hand_banner",
+                view.active_contract_banner.i18n_key
+            )
+            assert.is_true(view.declarer_hand_open)
+            assert.are.equal(2, view.open_hand_seat)
+        end)
+
+        it(
+            "named-contract auction buttons read contract_value from the schema sibling fields",
+            function()
+                local cfg = specials_config({
+                    mizere = "on",
+                    mizere_contract_value = 100,
+                    slam_contract = "on",
+                    slam_contract_value = 320,
+                    open_hand = "on",
+                })
+                local s = Session.new({ config = cfg, seed = 7, dealer = 1 })
+                local view = view_model.from_session(s)
+                assert.is_table(view.auction.named_contract_buttons)
+                local by_kind = {}
+                for _, btn in ipairs(view.auction.named_contract_buttons) do
+                    by_kind[btn.kind] = btn.contract_value
+                end
+                assert.are.equal(100, by_kind.mizere)
+                assert.are.equal(320, by_kind.slam)
+                assert.are.equal(200, by_kind.open_hand)
+            end
+        )
     end)
 end)

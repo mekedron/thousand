@@ -568,7 +568,9 @@ describe("core.auction", function()
                 },
                 specials = {
                     mizere = "off",
+                    mizere_contract_value = 120,
                     slam_contract = "off",
+                    slam_contract_value = 240,
                     open_hand = "off",
                 },
                 penalties = {
@@ -719,7 +721,9 @@ describe("core.auction", function()
                 },
                 specials = {
                     mizere = "off",
+                    mizere_contract_value = 120,
                     slam_contract = "off",
+                    slam_contract_value = 240,
                     open_hand = "off",
                 },
                 penalties = {
@@ -964,7 +968,9 @@ describe("core.auction", function()
             },
             specials = {
                 mizere = "off",
+                mizere_contract_value = 120,
                 slam_contract = "off",
+                slam_contract_value = 240,
                 open_hand = "off",
             },
             penalties = {

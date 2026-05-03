@@ -183,6 +183,10 @@ function M.serialize(session)
         effective_target = session._effective_target,
         in_golden_deal = session._in_golden_deal,
         golden_deal_failures = session._golden_deal_failures,
+        -- Phase 3.6 special-contracts persistence. Carries the
+        -- active named contract record so a saved deal restores
+        -- with the same mizère / slam / open-hand semantics.
+        active_named_contract = data_clone(session._active_named_contract),
     }
 end
 
@@ -224,6 +228,7 @@ function M.deserialize(blob)
         effective_target = blob.effective_target,
         in_golden_deal = blob.in_golden_deal,
         golden_deal_failures = blob.golden_deal_failures,
+        active_named_contract = blob.active_named_contract,
     }
 end
 

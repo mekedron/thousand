@@ -646,7 +646,7 @@ ships scripted engine tests covering every value.
     the active rule.
   - All eight fields flip to selectable.
   - Scoring and state-machine tests cover every variant value.
-- [ ] Implement special contracts.
+- [x] Implement special contracts.
   - `mizere` `on` admits the zero-tricks no-trump contract; the
     contract value lives in a new sibling field.
   - `slam_contract` `on` admits the all-tricks contract; the contract
@@ -693,7 +693,7 @@ ships scripted engine tests covering every value.
     once the same task lifts the guard for `count = 4`.
   - Tests live alongside `tests/spec/core/builtins_spec.lua` and
     replace the existing typed-error pins.
-- [ ] Implement named-contract scoring & play.
+- [x] Implement named-contract scoring & play.
   - Follow-up to the Phase 3.6 bidding-house-rules wiring: the
     auction now accepts mizère / slam / open-hand bids and the table
     scene renders the buttons, but `Session:on_auction_end` returns

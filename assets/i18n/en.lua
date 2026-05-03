@@ -110,6 +110,9 @@ return {
     ["scene.table.scoreboard.effective_target"] = "Target: %{target}",
     ["scene.table.golden_deal.banner"] = "Golden deal — Player %{seat} forced to %{amount}",
     ["scene.table.golden_deal.subtitle"] = "Deal %{deal} of %{count}",
+    ["scene.table.special_contract.mizere_banner"] = "Mizère — declarer must take 0 tricks (%{value})",
+    ["scene.table.special_contract.slam_banner"] = "Slam — declarer must take all 8 tricks (%{value})",
+    ["scene.table.special_contract.open_hand_banner"] = "Open hand — declarer plays face-up (%{value})",
     ["scene.table.banner.drowned_marriage"] = "Marriage drowned in %{suit}",
     ["scene.table.banner.one_trump_per_deal_subsequent"] = "Trump locked (first marriage rule)",
     ["scene.table.toast.ace_marriage_requires_four_aces"] = "Need all four Aces in hand to declare",
@@ -501,7 +504,11 @@ return {
 
     -- Specials.
     ["templates.field.specials.mizere.label"] = "Mizère / no-tricks",
+    ["templates.field.specials.mizere_contract_value.label"] = "Mizère contract value",
+    ["templates.field.specials.mizere_contract_value.help"] = "Score change applied to the declarer on a successful or failed mizère.",
     ["templates.field.specials.slam_contract.label"] = "Slam contract",
+    ["templates.field.specials.slam_contract_value.label"] = "Slam contract value",
+    ["templates.field.specials.slam_contract_value.help"] = "Score change applied to the declarer on a successful or failed slam.",
     ["templates.field.specials.open_hand.label"] = "Open hand",
     ["templates.field.specials.revoke.label"] = "Revoke penalty",
 

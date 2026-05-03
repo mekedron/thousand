@@ -177,6 +177,11 @@ local function reset_deal_state(self, dealer, seed_bump)
     -- golden deal so on_tricks_end can attribute failures and the
     -- view-model can render the banner.
     self._in_golden_deal = golden_active and true or false
+    -- Phase 3.6 special contracts: cleared on every deal start; set by
+    -- on_auction_end when a winning bid is structured. Read by the
+    -- marriage-block guard, the open-hand visibility flag, and the
+    -- named-contract scoring path.
+    self._active_named_contract = nil
     if golden_active then
         -- Drive the auction-end transition immediately so the talon
         -- (or no-talon trick start, under templates with `talon.size =
@@ -412,6 +417,12 @@ function M.new(opts)
         _half_marriage_captures = {},
         _half_marriage_capture_bonuses = {},
         _drowned_marriage_log = {},
+        -- Phase 3.6 special contracts: nil unless the auction
+        -- terminated with a structured named bid this deal. Carries
+        -- `{ kind = "mizere"|"slam"|"open_hand", value }` for the
+        -- marriage-block guard, the open-hand visibility flag, and
+        -- the named-contract scoring path.
+        _active_named_contract = nil,
     }, Session)
     evaluate_entitlement_with_forced_loop(self)
     -- Phase 3.6 opening-game: drive the auction-end transition so the
@@ -484,6 +495,7 @@ function M.from_state(state)
         _half_marriage_captures = state.half_marriage_captures or {},
         _half_marriage_capture_bonuses = state.half_marriage_capture_bonuses or {},
         _drowned_marriage_log = state.drowned_marriage_log or {},
+        _active_named_contract = state.active_named_contract,
     }, Session)
     -- Phase 3.6: when from_state restores a tricks-phase session and
     -- the active variant is pre_first_trick, re-open the queue from
@@ -1006,19 +1018,17 @@ function on_auction_end(self)
     if effective_status == "doubling" then
         effective_status = "done"
     end
-    -- Phase 3.6 named-contracts wiring is auction-only in this
-    -- commit. A winning structured (named) bid leaves the deal
-    -- unplayable until the follow-up "Implement named-contract
-    -- scoring & play" task lands; mark the deal done with a
-    -- stub-error reason rather than constructing a talon the
-    -- gameplay engine can't progress.
+    -- Phase 3.6 named-contracts wiring: a winning structured (named)
+    -- bid records the active contract on the session so downstream
+    -- play (marriage block under mizère, open-hand visibility,
+    -- named-contract scoring) can branch on it. The talon, tricks,
+    -- and scoring flows continue through the same code paths a
+    -- numeric bid uses.
     if effective_status == "done" and type(a.final_bid) == "table" then -- i18n-ok: status enums
-        self._deal_done = {
-            reason = "not_yet_supported_named_contract",
-            declarer = a.declarer,
-            contract = a.final_bid.contract,
+        self._active_named_contract = {
+            kind = a.final_bid.contract,
+            value = a.final_bid.value,
         }
-        return
     end
     -- Phase 3.6 forced-bid concession: the dealer-forced-bid path
     -- (the only path that triggers concession) leaves a flag on the
@@ -1254,8 +1264,51 @@ local function on_tricks_end(self)
     end
     local declarer = self._talon.declarer
     local bid = self._talon.final_bid
+    local is_named = type(bid) == "table"
 
     local player_count = self._config.players.count
+
+    -- Phase 3.6 named-contract dispatch. Structured bids
+    -- (`{ kind = "named", contract, value }`) reach scoring through the
+    -- dedicated named-contract path: declarer +/-value, defenders 0,
+    -- bonus arrays zeroed. Success criteria are contract-specific:
+    -- mizère = took zero tricks; slam = took every trick; open_hand =
+    -- captured points cleared the contract value (rounded per
+    -- `scoring.round_to_nearest`). The numeric-bid bonus pipeline below
+    -- is skipped for named contracts.
+    local sd_opts
+    if is_named then
+        local declarer_tricks_won = t.tricks_won[declarer] or 0
+        local named_contract_made
+        if bid.contract == "mizere" then
+            named_contract_made = declarer_tricks_won == 0
+        elseif bid.contract == "slam" then
+            named_contract_made = declarer_tricks_won == t.tricks_per_deal
+        elseif bid.contract == "open_hand" then
+            -- Open-hand is a face-up numeric contract with doubled
+            -- scoring: declarer must clear `bidding.opening_min`
+            -- (canonically 100) in captured points, and the score
+            -- change applied is the doubled-effective `bid.value`
+            -- carried in the structured bid (200 by default).
+            local opening_min = self._config.bidding.opening_min
+            local nearest = self._config.scoring.round_to_nearest
+            local rounded = math.floor((t.captured_points[declarer] + nearest / 2) / nearest)
+                * nearest
+            named_contract_made = rounded >= opening_min
+        else
+            local msg = "session: unknown named-contract kind: " -- i18n-ok
+                .. tostring(bid.contract)
+            error(msg, 2)
+        end
+        sd_opts = {
+            declarer = declarer,
+            bid = bid,
+            named_contract_made = named_contract_made,
+            captured_points = t.captured_points,
+            running_totals = self._running_totals,
+        }
+    end
+
     local half_capture_bonuses = {}
     local ace_marriage_bonuses = {}
     for i = 1, player_count do
@@ -1331,19 +1384,22 @@ local function on_tricks_end(self)
         end
     end
 
-    local sd = scoring.score_deal(self._config, {
-        declarer = declarer,
-        bid = bid,
-        bid_multiplier = bid_multiplier,
-        captured_points = t.captured_points,
-        marriage_bonuses = kq_bonuses,
-        half_marriage_capture_bonuses = half_capture_bonuses,
-        ace_marriage_bonuses = ace_marriage_bonuses,
-        last_trick_bonus = last_trick_bonus,
-        slam_bonus = slam_bonus,
-        slam_against_penalty = slam_against_penalty,
-        running_totals = self._running_totals,
-    })
+    if not is_named then
+        sd_opts = {
+            declarer = declarer,
+            bid = bid,
+            bid_multiplier = bid_multiplier,
+            captured_points = t.captured_points,
+            marriage_bonuses = kq_bonuses,
+            half_marriage_capture_bonuses = half_capture_bonuses,
+            ace_marriage_bonuses = ace_marriage_bonuses,
+            last_trick_bonus = last_trick_bonus,
+            slam_bonus = slam_bonus,
+            slam_against_penalty = slam_against_penalty,
+            running_totals = self._running_totals,
+        }
+    end
+    local sd = scoring.score_deal(self._config, sd_opts)
     if not sd.ok then
         error("session: score_deal failed: " .. tostring(sd.error.message), 2)
     end
@@ -1415,6 +1471,11 @@ local function on_tricks_end(self)
             effective_target_after = g.game.effective_target_after,
             tiebreaker_continuation_event = g.game.tiebreaker_continuation_event,
             in_golden_deal = self._in_golden_deal,
+            -- Phase 3.6 named-contract output. Surfaces the kind /
+            -- value pair so the deal-done scoreboard renders the
+            -- right contract row (mizère / slam / open hand) instead
+            -- of the standard captured-points + bonuses breakdown.
+            named_contract = sd.scoring.named_contract,
         }
     end
 end
@@ -1932,6 +1993,13 @@ function Session:declare_marriage(player, suit)
             phase = self:current_phase(),
         })
     end
+    if self._active_named_contract and self._active_named_contract.kind == "mizere" then
+        return failure(
+            "marriages_disabled_in_mizere",
+            "mizere plays without trump or marriages", -- i18n-ok: internal error message
+            { phase = self:current_phase() }
+        )
+    end
     if self._config.marriages.marriage_announcement_timing == "pre_first_trick" then
         return failure(
             "marriage_announcement_phase_closed",
@@ -1974,6 +2042,13 @@ function Session:announce_marriage(player, suit)
         return failure("marriages_disabled_in_raspassy", "raspassy plays without marriages", {
             phase = self:current_phase(),
         })
+    end
+    if self._active_named_contract and self._active_named_contract.kind == "mizere" then
+        return failure(
+            "marriages_disabled_in_mizere",
+            "mizere plays without trump or marriages", -- i18n-ok: internal error message
+            { phase = self:current_phase() }
+        )
     end
     local mode = self._config.marriages.marriage_announcement_timing
     if mode == "on_lead" then
@@ -2684,13 +2759,34 @@ function Session:contract_multiplier()
     return mult
 end
 
--- The slam contract value resolved from `bidding.named_contracts_*`
--- and `specials.slam_contract`. When specials gameplay lands this
--- will read a real sibling field on `self._config`; for now the
--- canonical 240 is used.
+-- The slam contract value resolved from the
+-- `specials.slam_contract_value` sibling field. Defaults to 240
+-- (the canonical Russian value); house-rule templates can pick any
+-- positive integer in [1, 600] per the schema.
 function Session:slam_contract_value()
-    local _ = self
-    return 240
+    return self._config.specials.slam_contract_value
+end
+
+-- The mizère contract value resolved from the
+-- `specials.mizere_contract_value` sibling field. Defaults to 120
+-- per the canonical Russian / Polish wording.
+function Session:mizere_contract_value()
+    return self._config.specials.mizere_contract_value
+end
+
+-- The active named contract record `{ kind, value }`, or nil when
+-- the current deal is not a special-contract deal. Set by
+-- on_auction_end when a structured bid wins; consumed by the
+-- marriage-block guard, the open-hand visibility flag, and the
+-- named-contract scoring path. Cleared on every fresh deal.
+function Session:active_named_contract()
+    if not self._active_named_contract then
+        return nil
+    end
+    return {
+        kind = self._active_named_contract.kind,
+        value = self._active_named_contract.value,
+    }
 end
 
 -- Forced-bid concession state for the view-model.
@@ -2770,10 +2866,14 @@ function Session:bid_named_contract(player, kind)
     end
     local value
     if kind == "mizere" then
-        value = 120
+        value = self:mizere_contract_value()
     elseif kind == "slam" then
         value = self:slam_contract_value()
     elseif kind == "open_hand" then
+        -- Open-hand keeps the doubled-effective default at 200
+        -- (= 2 × the canonical 100 base) per the house-rules
+        -- definition. No sibling field — the value is pre-doubled
+        -- so the scoring path applies no further multiplier.
         value = 200
     else
         return failure("unknown_kind", "unknown named contract kind", { kind = kind })
