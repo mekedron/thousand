@@ -206,6 +206,15 @@ function M.serialize(session)
         -- because Session.from_state defaults missing fields.
         no_win_streak_counts = data_clone(session._no_win_streak_counts),
         barrel_fall_counts = data_clone(session._barrel_fall_counts),
+        -- Phase 3.8 cut-deck ritual: in-flight cut phase and the
+        -- per-deal cut event log. `cut_phase` is nil unless the
+        -- ritual is open (toggle on AND no cut yet); `bottom_card`
+        -- inside it is a frozen card whose {suit, rank} round-trip
+        -- through `data_clone`'s frozen-card branch. Old saves load
+        -- with both fields nil/empty and `Session.from_state`
+        -- defaults the log to {}.
+        cut_phase = data_clone(session._cut_phase),
+        cut_deck_log = data_clone(session._cut_deck_log),
     }
 end
 
@@ -254,6 +263,8 @@ function M.deserialize(blob)
         write_off_counts = blob.write_off_counts,
         no_win_streak_counts = blob.no_win_streak_counts,
         barrel_fall_counts = blob.barrel_fall_counts,
+        cut_phase = blob.cut_phase,
+        cut_deck_log = blob.cut_deck_log,
     }
 end
 

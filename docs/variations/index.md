@@ -38,29 +38,37 @@ Three forces drive variation in Thousand:
 
 The implementation aligns with the "common standard" Russian rules
 described in the canonical reference book (see Phase 3.7 of the
-project task list). Two items the book describes remain
+project task list). One item the book describes remains
 **deferred** in v1:
 
 - **32-card deck variant.** The book mentions an optional 6–A deck
   with sevens worth 7 points and eights worth 0. v1 ships the
   standard 24-card deck only; the 32-card variant is out of scope
   for the current release.
-- **Cut-deck nine/jack penalty.** The book's procedural rule —
-  "if a nine or jack ends up at the end of the deck, the deck is
-  cut again; on the third occurrence the dealer takes a penalty" —
-  is procedural rather than algorithmic and is not a good fit for
-  software simulation. The shuffle is reproducible from a seed in
-  v1, so the situation cannot arise the way it does at a physical
-  table.
 
-Every other rule the book lists as part of the standard penalty
-system (the 3-sticks penalty, the dump-truck reset, the
-marriage-trick-required precondition) is implemented and pinned on
-in the [Russian Thousand](./russian.md) canonical defaults. Rules
-the book frames as agreed-in-advance — write-off, every-third-write-
-off, no-win-streak, three-falls reset, dark-game stick doubling,
-two-nines-in-talon redeal, coexist barrel collision — ship as
-selectable [House Rules](./house-rules.md) toggles.
+Every rule the book lists as part of the standard 1000 ruleset is
+implemented and pinned on in the [Russian Thousand](./russian.md)
+canonical defaults: the soft-penalty misdeal redeal, the
+bottom-card guard (no 9 or J at the end of the deck), the
+marriage-trick-required precondition, the every-three-sticks
+(*болт* / *палка*) penalty, the no-win-streak penalty, the
+write-off mid-deal concession, the every-third-write-off penalty,
+the three-falls barrel reset, and the ±555 dump-truck reset.
+
+The book's procedural cut-deck nine/jack ritual (re-cut up to three
+times before penalising the dealer) ships as the selectable
+[Cut-deck nine/jack penalty](./house-rules.md#cut-deck-ninejack-penalty-procedural)
+toggle. The canonical defaults leave it off because the
+[Bottom-card guard](./house-rules.md#bottom-card-guard-cut-deck-safety)
+prevents the offending state from ever occurring; the two are
+mutually exclusive. Tables that want the cut to be a real moment of
+play opt the safety guard off and turn the procedural penalty on.
+
+Rules the book explicitly frames as agreed-in-advance — the four
+redeal triggers (4 nines, 3 nines, weak hand, 2 nines in widow),
+bad-talon redeal, ace marriage, golden deal, dark-game stick
+doubling, coexist barrel collision — ship as selectable
+[House Rules](./house-rules.md) toggles, off by default.
 
 ## How to read these pages
 

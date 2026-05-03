@@ -188,6 +188,7 @@ local SCHEMA = {
             "misdeal_flat_penalty",
             "all_pass_handling",
             "deck_size",
+            "cut_deck_safety",
             "cut_deck_nine_jack_penalty",
         },
         fields = {
@@ -324,20 +325,47 @@ local SCHEMA = {
                 default = "24",
                 status = "deferred",
             },
-            -- Book-rule, deferred: when the dealer cuts the deck and
-            -- a 9 (or, in some agreements, a J) lands at the bottom,
-            -- the deck is re-cut; the third occurrence assigns the
-            -- standard penalty to the dealer. Procedural — not
-            -- suitable for software simulation, where the cut is
-            -- replaced by a deterministic shuffle. The field is here
-            -- so saved templates round-trip cleanly. Only the
-            -- schema's default ("off") is accepted today.
+            -- Book-rule guard: the reference book forbids a 9 or J
+            -- from landing at the bottom of the cut deck (physical
+            -- play re-cuts up to three times before penalising the
+            -- dealer). Under "on" (canonical Russian default) the
+            -- session asks `core/deck.lua` to swap a safe partner
+            -- into the bottom slot at shuffle time, so the offence
+            -- never arises and the procedural penalty
+            -- (`cut_deck_nine_jack_penalty` below) cannot fire. Under
+            -- "off" the shuffle returns the raw Fisher-Yates ordering
+            -- and the bottom can be any rank — useful for tables that
+            -- want unmodified shuffles or for tests that want to
+            -- exercise the raw sequence. Determinism is preserved on
+            -- both branches: the post-shuffle swap is a pure function
+            -- of the Fisher-Yates output.
+            cut_deck_safety = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "on",
+                status = "implemented",
+            },
+            -- Book rule's procedural alternative to `cut_deck_safety`.
+            -- When "on", the session opens a pre-auction `cut` phase:
+            -- the seat counter-clockwise of the dealer cuts; if the
+            -- bottom is a 9 or J, the cutter rotates ccw and the deck
+            -- is re-shuffled. After three bad cuts the dealer pays a
+            -- fixed −120 penalty and the deal proceeds with the
+            -- current ordering. Mutually exclusive with
+            -- `cut_deck_safety = "on"` (the shuffle-time guard erases
+            -- the offence the ritual relies on) — enforced via the
+            -- `cut_deck_nine_jack_penalty_excludes_safety` invariant.
+            -- The canonical Russian template stays on
+            -- `cut_deck_safety = "on"` and leaves this off; tables
+            -- that want the cut to be a real moment of play opt in
+            -- explicitly.
             cut_deck_nine_jack_penalty = {
                 kind = "leaf",
                 lua_type = "string",
-                allowed = { "off", "redeal_after_three" },
+                allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
             },
         },
     },
@@ -2326,6 +2354,27 @@ local INVARIANTS = {
             }
         end,
     },
+    -- Phase 3.8 procedural cut-deck ritual: the penalty depends on a
+    -- 9 or J actually appearing at the bottom of a freshly cut deck.
+    -- `cut_deck_safety = "on"` guarantees this never happens, so
+    -- combining the two would produce silent dead code. Reject the
+    -- combination at validation time and force the user to pick
+    -- exactly one of the two strategies.
+    {
+        name = "cut_deck_nine_jack_penalty_excludes_safety",
+        predicate = function(blob)
+            if blob.dealing.cut_deck_nine_jack_penalty ~= "on" then
+                return true
+            end
+            return blob.dealing.cut_deck_safety == "off"
+        end,
+        context = function(blob)
+            return {
+                cut_deck_nine_jack_penalty = blob.dealing.cut_deck_nine_jack_penalty,
+                cut_deck_safety = blob.dealing.cut_deck_safety,
+            }
+        end,
+    },
 }
 
 -- Validation -------------------------------------------------------------
@@ -2858,10 +2907,18 @@ local function canonical_russian_blob()
             weak_hand_redeal = "off",
             weak_hand_threshold = 14,
             two_nines_in_talon_redeal = "off",
-            misdeal_handling = "standard",
+            -- Book's "common standard" Russian rule: a misdeal moves the
+            -- deal one seat clockwise so the next player redeals (book:
+            -- "If a penalty is received during dealing, the redeal is
+            -- done by the next player"). See
+            -- docs/variations/house-rules.md "Misdeal handling".
+            misdeal_handling = "soft_penalty",
             misdeal_flat_penalty = 20,
             all_pass_handling = "redeal",
             deck_size = "24",
+            -- Book guard: bottom of deck is never a 9 or J after
+            -- shuffle. See `cut_deck_safety` schema entry.
+            cut_deck_safety = "on",
             cut_deck_nine_jack_penalty = "off",
         },
         talon = {
@@ -2873,7 +2930,12 @@ local function canonical_russian_blob()
             buyback_penalty = 50,
             hidden_on_minimum_100 = "off",
             bad_talon_redeal = "off",
-            bad_talon_threshold = 5,
+            -- Book's "common standard" wording: redeal is offered when
+            -- the widow card-point sum is "less than 4", i.e. strictly
+            -- under 4. The threshold is inert until `bad_talon_redeal`
+            -- is flipped on but matches the book's prose for
+            -- round-tripping clarity.
+            bad_talon_threshold = 4,
             rebuy = "off",
             rebuy_contract_value = 240,
             open_discard = "off",
@@ -2895,7 +2957,14 @@ local function canonical_russian_blob()
             redouble_multiplier = 2,
             forced_bid_concession = "off",
             forced_bid_concession_preset_ratio = { 0.5, 0.5 },
-            write_off = "off",
+            -- Book's "common standard" Russian rule: a declarer who
+            -- sees the contract is unmakeable may write the deal off
+            -- mid-play (full bid off the declarer; half the bid to
+            -- each opponent). Pairs with the
+            -- `penalties.write_off_streak` every-third-write-off
+            -- penalty, also pinned on by default. See
+            -- docs/variations/house-rules.md "Write-off / Сдача".
+            write_off = "on",
             write_off_split = "half_to_each",
             no_contract_without_marriage = "off",
             negative_score_restriction = "off",
@@ -2955,7 +3024,13 @@ local function canonical_russian_blob()
             pit_score = 700,
             collision_rule = "last_mounter",
             overshoot_penalty = "off",
-            fall_count_resets_to_zero = "off",
+            -- Book's "common standard" Russian rule: a unit that has
+            -- fallen off the barrel three times has its running total
+            -- reset to zero on the third fall ("Reset to zero. Occurs
+            -- … if a player sat on the barrel 3 times and then fell
+            -- off it"). See docs/variations/house-rules.md
+            -- "Three-falls barrel reset".
+            fall_count_resets_to_zero = "on",
             reverse_barrel = "off",
             reverse_barrel_fallback = -760,
         },
@@ -2990,10 +3065,23 @@ local function canonical_russian_blob()
             zero_tricks_declarer_exempt = "off",
             zero_tricks_golden_deal_doubled = "off",
             zero_tricks_dark_game_doubled = "off",
-            write_off_streak = "off",
+            -- Book's "common standard" Russian rule: every third
+            -- write-off (across the whole game) earns the standard
+            -- 120 penalty and clears the counter — penalty system
+            -- entry #5. Pairs with `bidding.write_off = "on"`. See
+            -- docs/variations/house-rules.md "Every-third-write-off
+            -- penalty".
+            write_off_streak = "any_three",
             write_off_streak_threshold = 3,
             write_off_streak_penalty_amount = 120,
-            no_win_streak = "off",
+            -- Book's "common standard" Russian rule: a seat that
+            -- fails to win for three deals in a row or in total
+            -- earns the standard 120 penalty and the counter
+            -- resets — penalty system entry #4. Cumulative reading
+            -- ("any_three") matches the same accumulation pattern the
+            -- book uses for the every-third-stick penalty above. See
+            -- docs/variations/house-rules.md "No-win-streak penalty".
+            no_win_streak = "any_three",
             no_win_streak_threshold = 3,
             no_win_streak_penalty_amount = 120,
             cross = "off",
@@ -3048,6 +3136,7 @@ M.builtins = {
     -- see docs/variations/polish.md lines 40–50 and house-rules.md
     -- "Trick-play house rules".
     polish = M.new(with_overrides(canonical_russian_blob(), {
+        dealing = { misdeal_handling = "standard" },
         talon = {
             size = 2,
             distribution = "pass_without_taking",
@@ -3055,17 +3144,25 @@ M.builtins = {
         bidding = {
             increment_below_200 = 10,
             increment_from_200 = 10,
+            -- Russian book conventions (mid-deal write-off, every-third-
+            -- write-off penalty, no-win streak penalty, three-falls
+            -- barrel reset, ±555 dump-truck reset, every-three-sticks
+            -- penalty) are not part of standard Polish Tysiąc; opt out
+            -- here so the variant matches docs/variations/polish.md.
+            write_off = "off",
         },
         tricks = {
             must_overtake_strictness = "polish_strict",
             must_trump_strictness = "polish_strict",
             defender_must_overtrump_declarer = "on",
         },
-        -- The book's 3-stick penalty and ±555 dump-truck reset are
-        -- canonical Russian conventions; Polish play does not pin them
-        -- on by default. Keep them off here.
+        barrel = { fall_count_resets_to_zero = "off" },
         endgame = { dump_truck = "off" },
-        penalties = { zero_tricks = "off" },
+        penalties = {
+            zero_tricks = "off",
+            write_off_streak = "off",
+            no_win_streak = "off",
+        },
     })),
 
     -- Ukrainian Тисяча (docs/variations/ukrainian.md): tighter
@@ -3074,12 +3171,23 @@ M.builtins = {
     -- Ukrainian house rule but still deferred in Phase 3.2's schema;
     -- it lands in Phase 3.6's bidding-house-rules task.
     ukrainian = M.new(with_overrides(canonical_russian_blob(), {
-        barrel = { deal_count = 2 },
+        dealing = { misdeal_handling = "standard" },
+        bidding = { write_off = "off" },
+        barrel = {
+            deal_count = 2,
+            fall_count_resets_to_zero = "off",
+        },
         -- Canonical-Russian book defaults (3-stick penalty, ±555 dump-
-        -- truck reset) are not part of standard Ukrainian Тисяча; opt
-        -- out explicitly so the variant page and the engine agree.
+        -- truck reset, write-off mechanic, every-third-write-off and
+        -- no-win-streak penalties, three-falls barrel reset, soft-
+        -- penalty misdeal) are not part of standard Ukrainian Тисяча;
+        -- opt out explicitly so the variant page and the engine agree.
         endgame = { dump_truck = "off" },
-        penalties = { zero_tricks = "off" },
+        penalties = {
+            zero_tricks = "off",
+            write_off_streak = "off",
+            no_win_streak = "off",
+        },
     })),
 
     -- Two-player Variant A — closed talon, draw stock
@@ -3096,14 +3204,21 @@ M.builtins = {
             count = 2,
             two_player_config = "closed_talon_draw_stock",
         },
+        dealing = { misdeal_handling = "standard" },
         talon = {
             size = 0,
             distribution = "stock_draw",
         },
+        bidding = { write_off = "off" },
+        barrel = { fall_count_resets_to_zero = "off" },
         -- Canonical-Russian book defaults are not part of the standard
         -- two-player rule sets; pin them off explicitly.
         endgame = { dump_truck = "off" },
-        penalties = { zero_tricks = "off" },
+        penalties = {
+            zero_tricks = "off",
+            write_off_streak = "off",
+            no_win_streak = "off",
+        },
     })),
 
     -- Two-player Variant B — fixed deal, no draw, 7-card hands and the
@@ -3116,10 +3231,17 @@ M.builtins = {
             count = 2,
             two_player_config = "fixed_deal_no_draw",
         },
+        dealing = { misdeal_handling = "standard" },
+        bidding = { write_off = "off" },
+        barrel = { fall_count_resets_to_zero = "off" },
         -- Canonical-Russian book defaults are not part of the standard
         -- two-player rule sets; pin them off explicitly.
         endgame = { dump_truck = "off" },
-        penalties = { zero_tricks = "off" },
+        penalties = {
+            zero_tricks = "off",
+            write_off_streak = "off",
+            no_win_streak = "off",
+        },
     })),
 
     -- Four-player Variant A — dealer plays, no talon, 6 cards each;
@@ -3133,11 +3255,18 @@ M.builtins = {
             four_player_config = "dealer_plays_no_talon",
             partnership_mode = "fixed_across_table",
         },
+        dealing = { misdeal_handling = "standard" },
         talon = { size = 0 },
+        bidding = { write_off = "off" },
+        barrel = { fall_count_resets_to_zero = "off" },
         -- Canonical-Russian book defaults are not part of the standard
         -- four-player rule sets; pin them off explicitly.
         endgame = { dump_truck = "off" },
-        penalties = { zero_tricks = "off" },
+        penalties = {
+            zero_tricks = "off",
+            write_off_streak = "off",
+            no_win_streak = "off",
+        },
     })),
 
     -- Four-player Variant B — dealer sits out, otherwise standard
@@ -3151,10 +3280,17 @@ M.builtins = {
             four_player_config = "dealer_sits_out",
             partnership_mode = "fixed_across_table",
         },
+        dealing = { misdeal_handling = "standard" },
+        bidding = { write_off = "off" },
+        barrel = { fall_count_resets_to_zero = "off" },
         -- Canonical-Russian book defaults are not part of the standard
         -- four-player rule sets; pin them off explicitly.
         endgame = { dump_truck = "off" },
-        penalties = { zero_tricks = "off" },
+        penalties = {
+            zero_tricks = "off",
+            write_off_streak = "off",
+            no_win_streak = "off",
+        },
     })),
 }
 

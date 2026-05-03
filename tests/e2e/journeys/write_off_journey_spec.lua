@@ -185,8 +185,10 @@ describe("write-off journey", function()
     end)
 
     it("hides the Write off button when the toggle is off", function()
-        -- Default canonical_russian has bidding.write_off = "off".
-        local cfg = rule_config.canonical_russian
+        -- Phase 3.7 flipped bidding.write_off = "on" in canonical_russian;
+        -- this case explicitly opts back off to confirm the panel button
+        -- disappears when the toggle is off.
+        local cfg = build_config({ bidding = { write_off = "off" } })
         local s = session_at_tricks(cfg, generic_layout(), {
             dealer = 1,
             declarer = 2,
@@ -195,7 +197,7 @@ describe("write-off journey", function()
         local _, scene = build_table_scene_in_mock(s)
         scene:draw(1024, 720)
         local btn = find_panel_button(scene, "tricks_write_off")
-        assert.is_nil(btn, "Write-off button should be hidden under the default toggle")
+        assert.is_nil(btn, "Write-off button should be hidden when the toggle is off")
     end)
 
     it("renders the per-seat write-off counter when streak is any_three", function()

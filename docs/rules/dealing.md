@@ -37,9 +37,39 @@ quicker. Agree before the first hand which pattern you use.
 
 - The dealer must **not look at the talon** while dealing.
 - A misdeal — a card revealed, the wrong number of cards dealt, or a card
-  exposed in the talon — is normally **redealt by the same dealer** without
-  penalty. Some tables move the deal one position clockwise as a soft
-  penalty.
+  exposed in the talon — moves the deal **one seat clockwise** so the
+  next player redeals (book: *"If a penalty is received during dealing,
+  the redeal is done by the next player"*). House rules differ on
+  whether the same dealer redeals without penalty or pays a small flat
+  penalty instead — see
+  [House Rules — Misdeal handling](../variations/house-rules.md#misdeal-handling).
+
+## Cut-deck ritual (optional)
+
+The reference book describes a cut-and-recut ritual: after the shuffle,
+the participant **counter-clockwise of the dealer** cuts the deck. A
+**9 or J at the bottom is a bad cut** — the cutter rotates one seat
+counter-clockwise and the deck is cut again. After **three bad cuts**
+the dealer pays a fixed penalty (book default 120) and the deal
+proceeds with the current ordering.
+
+Two strategies model the same offence; pick exactly one per template:
+
+- **Bottom-card guard** (canonical Russian default,
+  `dealing.cut_deck_safety = "on"`): the shuffle deterministically
+  swaps a safe partner into the bottom slot whenever a 9 or J would
+  land there. The procedural penalty cannot fire; the cut is invisible
+  to the player.
+- **Procedural ritual** (`dealing.cut_deck_nine_jack_penalty = "on"`):
+  the engine opens a pre-auction *cut* phase. The active cutter calls
+  `Cut the deck`; a bad bottom rotates the cutter and re-shuffles, a
+  good bottom proceeds straight to the auction. The penalty fires on
+  the third bad cut.
+
+The two are **mutually exclusive** — combining them produces silent
+dead code, so the engine rejects the combination at validation time.
+See [House Rules — Bottom-card guard](../variations/house-rules.md#bottom-card-guard-cut-deck-safety)
+for the toggle wording.
 
 ## Redeal triggers
 

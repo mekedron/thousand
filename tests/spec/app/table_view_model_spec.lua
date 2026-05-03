@@ -414,6 +414,7 @@ describe("app.table_view_model", function()
                     misdeal_flat_penalty = 20,
                     all_pass_handling = "redeal",
                     deck_size = "24",
+                    cut_deck_safety = "on",
                     cut_deck_nine_jack_penalty = "off",
                 },
                 talon = {
@@ -592,6 +593,7 @@ describe("app.table_view_model", function()
                 misdeal_flat_penalty = 20,
                 all_pass_handling = "redeal",
                 deck_size = "24",
+                cut_deck_safety = "on",
                 cut_deck_nine_jack_penalty = "off",
             }
             for k, v in pairs(overrides) do
@@ -695,6 +697,51 @@ describe("app.table_view_model", function()
             assert.are.equal("flat_penalty", view.misdeal_banner.handling)
             assert.are.equal(2, view.misdeal_banner.dealer)
             assert.are.equal(30, view.misdeal_banner.penalty)
+        end)
+
+        -- Phase 3.8 cut-deck ritual blocks. Driven through a custom
+        -- config with the safety guard off and the procedural penalty
+        -- on; canonical_russian leaves both blocks nil.
+        it("populates cut_phase block while the cut ritual is open", function()
+            local cfg = canonical_with_dealing({
+                cut_deck_safety = "off",
+                cut_deck_nine_jack_penalty = "on",
+            })
+            local s = Session.new({ config = cfg, seed = 1, dealer = 1 })
+            local view = view_model.from_session(s)
+            assert.are.equal("cut", view.phase)
+            assert.is_table(view.cut_phase)
+            assert.are.equal(3, view.cut_phase.active_cutter)
+            assert.are.equal(0, view.cut_phase.bad_cut_count)
+            assert.are.equal(3, view.cut_phase.threshold)
+            assert.are.equal(1, view.cut_phase.dealer)
+        end)
+
+        it("populates cut_deck_banner after a threshold penalty fires", function()
+            local cfg = canonical_with_dealing({
+                cut_deck_safety = "off",
+                cut_deck_nine_jack_penalty = "on",
+            })
+            local card = require("core.card")
+            local s = Session.from_state({
+                config = cfg,
+                seed = 1,
+                dealer = 1,
+                running_totals = { 100, 0, 0 },
+                cut_phase = {
+                    active_cutter = 2,
+                    bad_cut_count = 2,
+                    bottom_card = card.new("hearts", "J"),
+                },
+                cut_deck_log = {},
+            })
+            assert.is_true(s:cut_deck().ok)
+            local view = view_model.from_session(s)
+            assert.is_nil(view.cut_phase)
+            assert.is_table(view.cut_deck_banner)
+            assert.are.equal("threshold_penalty", view.cut_deck_banner.kind)
+            assert.are.equal(120, view.cut_deck_banner.amount)
+            assert.are.equal(1, view.cut_deck_banner.dealer)
         end)
 
         it("renders an all_pass_banner with mode = redeal under the default", function()

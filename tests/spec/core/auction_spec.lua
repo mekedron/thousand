@@ -470,6 +470,7 @@ describe("core.auction", function()
                     misdeal_flat_penalty = 20,
                     all_pass_handling = "redeal",
                     deck_size = "24",
+                    cut_deck_safety = "on",
                     cut_deck_nine_jack_penalty = "off",
                 },
                 talon = {
@@ -644,6 +645,7 @@ describe("core.auction", function()
                     misdeal_flat_penalty = 20,
                     all_pass_handling = "redeal",
                     deck_size = "24",
+                    cut_deck_safety = "on",
                     cut_deck_nine_jack_penalty = "off",
                 },
                 talon = {
@@ -912,6 +914,7 @@ describe("core.auction", function()
                 misdeal_flat_penalty = 20,
                 all_pass_handling = "redeal",
                 deck_size = "24",
+                cut_deck_safety = "on",
                 cut_deck_nine_jack_penalty = "off",
             },
             talon = {

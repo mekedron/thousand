@@ -849,15 +849,32 @@ every-third-write-off counter in task 2 depends on it.
 
 - [x] Update `canonical_russian` defaults to match the book's standard
   and refresh the documentation.
-  - Flip `penalties.zero_tricks` from `"off"` to `"any_three"` (book
-    treats the every-3-sticks penalty as part of the standard
-    penalty system).
-  - Flip `endgame.dump_truck` from `"off"` to `"both_signs"` (book
-    describes ±555 reset as a standard rule).
-  - Land `marriages.trick_required` at `"on"` (default of the new
-    field; matches the book default).
-  - All other Phase 3.7 fields stay at their `"off"` defaults — the
-    book frames them as agreed-in-advance.
+  - Pin `dealing.misdeal_handling` at `"soft_penalty"` (book: "if a
+    penalty is received during dealing, the redeal is done by the
+    next player").
+  - Pin `bidding.write_off` at `"on"` (book describes the mid-deal
+    concession as part of the standard action set) with
+    `write_off_split = "half_to_each"` (book default).
+  - Pin `penalties.write_off_streak` at `"any_three"` (penalty
+    system entry #5: "at every third write-off").
+  - Pin `penalties.no_win_streak` at `"any_three"` (penalty system
+    entry #4: "no win for 3 rounds in a row or in total").
+  - Pin `barrel.fall_count_resets_to_zero` at `"on"` (book: "Reset
+    to zero. Occurs … if a player sat on the barrel 3 times and
+    then fell off it").
+  - Pin `penalties.zero_tricks` at `"any_three"` (penalty system
+    entry #3: every-three-sticks penalty across the game).
+  - Pin `endgame.dump_truck` at `"both_signs"` with
+    `dump_truck_threshold = 555` (book: ±555 reset to zero).
+  - Pin `marriages.trick_required` at `"on"` (book: marriage may
+    only be declared once the seat has taken a trick).
+  - Pin `talon.bad_talon_threshold` at `4` (book: "sum in the widow
+    is less than 4"); inert until `bad_talon_redeal` is flipped on.
+  - Leave `penalties.zero_tricks_dark_game_doubled`, the four
+    redeal triggers, ace marriage, golden deal, and coexist barrel
+    collision at their `"off"` defaults — the book either marks
+    them as agreed-in-advance or uses "may be" wording that frames
+    them as variants.
   - Non-Russian built-ins (`polish`, `ukrainian`, `two_player_a`,
     `two_player_b`, `four_player_a`, `four_player_b`) override any
     new default that would change their scripted scoring or
@@ -868,8 +885,8 @@ every-third-write-off counter in task 2 depends on it.
     naturally: widow / прикуп, stick / pole, boast / overboast,
     dump truck / самосвал, write-off / сдача.
   - `docs/variations/russian.md` lists the canonical defaults
-    explicitly (3-sticks penalty on, dump truck on, marriage
-    requires a trick) and the toggles that remain off-by-default.
+    explicitly (the eight book-standard rules above) and the
+    toggles that remain off-by-default.
   - `docs/variations/house-rules.md` gains entries for the new
     toggles introduced in tasks 1–3 (write-off, every-third-
     write-off, no-win-streak, three-falls reset, dark-game stick
@@ -878,6 +895,66 @@ every-third-write-off counter in task 2 depends on it.
   - `docs/variations/index.md` adds a "Comparison with the
     reference book" section that lists every gap that stays
     deferred after 3.7 (32-card deck, cut-deck procedural rule).
+
+### 3.8 Optional procedural deck-cut ritual
+
+Goal: turn the cut-deck nine/jack rule into an opt-in interactive
+pre-deal ritual. After the shuffle the participant counter-clockwise
+of the dealer cuts the deck; a 9 or J at the bottom is a bad cut,
+the next seat counter-clockwise takes the next attempt, and on the
+third bad cut the dealer takes the standard 120-point penalty.
+Distinct from the canonical Russian default `cut_deck_safety =
+"on"`, which deterministically swaps a safe partner into the bottom
+slot at shuffle time so the offence never arises — the procedural
+ritual is the alternative for tables that want the cut to be a real
+moment of play.
+
+- [x] Implement the cut-deck ritual and rotating cutter penalty.
+  - Book: the participant counter-clockwise of the dealer cuts the
+    deck; a 9 or J at the bottom is a bad cut and the deck must be
+    cut again; the third bad cut penalises the dealer.
+  - Flip `dealing.cut_deck_nine_jack_penalty` from deferred to
+    selectable: allowed `{"off", "on"}`, default `"off"`. The rule is
+    an agreed-in-advance variant; the canonical Russian template
+    stays on `cut_deck_safety = "on"` and leaves this off.
+  - Cross-field invariant: `cut_deck_nine_jack_penalty = "on"` is
+    incompatible with `cut_deck_safety = "on"`. The shuffle-time
+    guard erases the offence the ritual relies on, so the
+    combination is rejected at validation rather than producing
+    silent dead code.
+  - Engine: add a pre-auction `cut` phase. The active cutter starts
+    at the seat counter-clockwise of the dealer; on a bad cut the
+    cutter rotates one seat counter-clockwise and a per-deal
+    bad-cut counter increments. On the third bad cut the dealer
+    takes a fixed −120 penalty (book default; configurable amount
+    deferred to a follow-up if a table asks for it) and the deal
+    proceeds with the current ordering — no further re-cuts.
+    Counter resets per deal.
+  - Session: expose `Session:cut_deck()` as the active cutter's
+    action and `Session:active_cutter()` / `Session:bad_cut_count()`
+    for the UI and bot. Cut-phase state survives auto-save / resume.
+  - Bot: bots auto-cut as soon as the cut phase opens for their
+    seat; the action carries no decision so latency matches the
+    existing minimum "thinking" delay.
+  - UI (table scene): when the cut phase is active, show the deck
+    centered with a localised "Cut the deck" button on the active
+    cutter's side. Hover / focus / active states and keyboard
+    activation per project standard; hit target sized for touch.
+    Bad-cut counter visible to all seats; the threshold penalty
+    fires through the existing penalty-notification path. The
+    ritual lives inline before the deal animation — no new modal.
+  - Tests: cover the happy path (good cut → straight to dealing),
+    rotation on bad cut, threshold penalty firing on the third bad
+    cut, per-deal counter reset, the invariant rejecting
+    `cut_deck_safety = "on"` + `cut_deck_nine_jack_penalty = "on"`,
+    the bot auto-cut path, and an auto-save round-trip with the cut
+    phase mid-flight.
+  - Docs: `docs/rules/dealing.md` describes the optional ritual;
+    `docs/variations/house-rules.md` "Bottom-card guard (Cut-deck
+    safety)" cross-links the new toggle as the procedural
+    alternative; `docs/variations/index.md` "Comparison with the
+    reference book" drops cut-deck nine/jack from the deferred-rules
+    list (only the 32-card deck remains).
 
 ---
 

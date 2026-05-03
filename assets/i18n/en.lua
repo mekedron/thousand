@@ -46,6 +46,7 @@ return {
     ["scene.table.phase.auction"] = "Auction",
     ["scene.table.phase.talon"] = "Talon",
     ["scene.table.phase.tricks"] = "Tricks",
+    ["scene.table.phase.cut"] = "Cut",
     ["scene.table.phase.done"] = "Game Over",
 
     ["scene.table.auction.bid_button"] = "Bid %{amount}",
@@ -80,6 +81,12 @@ return {
     ["scene.table.tricks.your_turn"] = "Your turn — play a card",
     ["scene.table.tricks.led"] = "Led:",
     ["scene.table.tricks.write_off_button"] = "Write off",
+
+    ["scene.table.cut.cut_deck_button"] = "Cut the deck",
+    ["scene.table.cut.bad_cut_indicator"] = "Bad cuts: %{count} / %{threshold}",
+    ["scene.table.cut.your_turn"] = "Your turn — cut the deck",
+    ["scene.table.cut.waiting_for_cutter"] = "Player %{n} is cutting the deck",
+    ["scene.table.cut.threshold_penalty_banner"] = "Three bad cuts — Player %{seat} (dealer) takes %{amount}",
 
     ["scene.table.marriage.prompt"] = "Declare marriage in:",
     ["scene.table.marriage.yes"] = "Declare",
@@ -237,6 +244,7 @@ return {
     ["rule_config.invariant.two_player_b_requires_three_card_talon"] = "Variant B (fixed deal, no draw) requires the canonical 3-card talon (got %{talon_size}).",
     ["rule_config.invariant.pass_without_taking_requires_two_card_talon"] = "Polish 2-card talon (pass_without_taking) requires talon.size = 2 (got %{talon_size}).",
     ["rule_config.invariant.stock_draw_distribution_requires_variant_a"] = "talon.distribution = 'stock_draw' requires the 2-player Variant A layout (players.count = 2, players.two_player_config = 'closed_talon_draw_stock'). Got count=%{players_count}, two_player_config=%{two_player_config}.",
+    ["rule_config.invariant.cut_deck_nine_jack_penalty_excludes_safety"] = "Cut-deck nine/jack penalty cannot be on while the bottom-card guard is on — pick exactly one strategy. Got cut_deck_safety=%{cut_deck_safety}, cut_deck_nine_jack_penalty=%{cut_deck_nine_jack_penalty}.",
 
     ["templates.error.not_a_table"] = "Template must be a table, got %{actual}.",
     ["templates.error.unsupported_schema_version"] = "Unsupported template schema version %{version} (supported: %{supported}).",
@@ -396,8 +404,14 @@ return {
     ["templates.field.dealing.all_pass_handling.raspassy"] = "Raspassy (avoid tricks)",
     ["templates.field.dealing.deck_size.24"] = "24 cards (9-A)",
     ["templates.field.dealing.deck_size.32"] = "32 cards (6-A)",
+    ["templates.field.dealing.cut_deck_safety.label"] = "Bottom-card guard",
+    ["templates.field.dealing.cut_deck_safety.help"] = "Book rule: a 9 or J at the bottom of the cut deck triggers a re-cut. On (canonical Russian default): the shuffle deterministically swaps in a safe partner so the case never arises. Off: leaves the raw Fisher-Yates ordering untouched.",
+    ["templates.field.dealing.cut_deck_safety.off"] = "Off (raw shuffle)",
+    ["templates.field.dealing.cut_deck_safety.on"] = "On (no 9 or J at bottom)",
+    ["templates.field.dealing.cut_deck_nine_jack_penalty.label"] = "Cut-deck nine/jack penalty (procedural)",
+    ["templates.field.dealing.cut_deck_nine_jack_penalty.help"] = "Procedural alternative to the bottom-card guard: open a pre-auction cut phase. The seat counter-clockwise of the dealer cuts; a 9 or J at the bottom is a bad cut, the cutter rotates ccw, and the deck is re-shuffled. After three bad cuts the dealer pays a fixed −120 penalty and the deal proceeds. Cannot be combined with the bottom-card guard.",
     ["templates.field.dealing.cut_deck_nine_jack_penalty.off"] = "Off",
-    ["templates.field.dealing.cut_deck_nine_jack_penalty.redeal_after_three"] = "Redeal after three cuts",
+    ["templates.field.dealing.cut_deck_nine_jack_penalty.on"] = "On (procedural ritual)",
 
     -- Talon.
     ["templates.field.talon.size.label"] = "Talon size",

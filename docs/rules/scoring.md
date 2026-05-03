@@ -77,19 +77,42 @@ otherwise, the player with the **higher total** wins.
 
 ## Dump truck (Самосвал) and write-off (Сдача)
 
-The reference book documents two further canonical scoring events:
+The reference book documents two further canonical scoring events,
+both pinned **on** in the canonical Russian template:
 
 - **Dump truck (самосвал).** When a running total lands exactly on
   **+555** *or* **−555**, that seat's running total is reset to
-  zero. The canonical Russian template ships with this rule **on**;
-  see
+  zero. See
   [House Rules — Dump truck](../variations/house-rules.md#dump-truck--самосвал).
 - **Write-off (сдача).** A declarer who sees that the contract is
   unmakeable may write off the deal at any point before the eighth
   trick: the **full bid** is subtracted from the declarer, and
-  **half the bid** is credited to each opponent. Off by default;
-  see
+  **half the bid** is credited to each opponent. The cross-deal
+  [every-third-write-off penalty](../variations/house-rules.md#every-third-write-off-penalty)
+  is on as a sibling. See
   [House Rules — Write-off](../variations/house-rules.md#write-off--сдача).
+
+## Three-falls barrel reset
+
+A seat that has fallen off the barrel three times has its running
+total **reset to zero** on the third fall, instead of the standard
+−120 fall-off penalty. The book lists this alongside the dump truck
+under the umbrella *Reset to zero* rule:
+
+> **Reset to zero.** Occurs in two cases: during a dump truck, and
+> also if a player sat on the barrel 3 times and then fell off it.
+
+On in the canonical Russian template; see
+[House Rules — Three-falls barrel reset](../variations/house-rules.md#three-falls-barrel-reset).
+
+## No-win-streak penalty
+
+A seat that fails to win a deal for **three deals in a row or in
+total** takes the standard −120 penalty and the streak counter
+clears. *Winning* a deal means either the declarer making contract
+or a defender capturing positive deal points. On in the canonical
+Russian template; see
+[House Rules — No-win-streak penalty](../variations/house-rules.md#no-win-streak-penalty).
 
 ## Sample running scoresheet
 

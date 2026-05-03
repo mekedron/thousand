@@ -71,6 +71,7 @@ local function canonical_with_bidding(overrides)
             misdeal_flat_penalty = 20,
             all_pass_handling = "redeal",
             deck_size = "24",
+            cut_deck_safety = "on",
             cut_deck_nine_jack_penalty = "off",
         },
         talon = {
@@ -249,6 +250,7 @@ local function make_named_contract_cfg(specials_overrides)
             misdeal_flat_penalty = 20,
             all_pass_handling = "redeal",
             deck_size = "24",
+            cut_deck_safety = "on",
             cut_deck_nine_jack_penalty = "off",
         },
         talon = {

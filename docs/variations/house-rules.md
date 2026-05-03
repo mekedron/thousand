@@ -45,9 +45,52 @@ under [Bad talon redeal](#bad-talon-redeal)).
 ### Misdeal handling
 
 - **Standard**: same dealer redeals without penalty.
-- **Soft penalty**: deal moves clockwise.
+- **Soft penalty** (canonical Russian default): deal moves one seat
+  clockwise so the next player redeals (book: *"If a penalty is
+  received during dealing, the redeal is done by the next player"*).
 - **Flat penalty**: dealer pays a small fixed penalty (e.g. 20 points)
   and redeals.
+
+### Bottom-card guard (Cut-deck safety)
+
+The reference book forbids a 9 or J from landing at the very end of
+the cut deck: physical play re-cuts up to three times before
+penalising the dealer. Two strategies model the same offence;
+combine them at most one at a time — the cross-field invariant
+rejects turning both on.
+
+- **On** (canonical Russian default): the shuffle's final step
+  swaps the bottom card with the first non-{9, J} card it finds
+  whenever the offence applies, so the bottom slot is always a Q,
+  K, 10, or A. The procedural cut-and-recut penalty cannot fire.
+  Deterministic — the swap is a function of the post-Fisher-Yates
+  ordering, so the same seed produces the same deck.
+- **Off**: leaves the raw Fisher-Yates ordering untouched. A 9 or
+  J at the bottom is permitted; tables that want unmodified
+  shuffles or that simulate the procedural rule explicitly should
+  pin this off and turn the
+  [Cut-deck nine/jack penalty](#cut-deck-ninejack-penalty-procedural)
+  on.
+
+### Cut-deck nine/jack penalty (procedural)
+
+The procedural alternative to the bottom-card guard: turn the cut
+into a real interactive moment. After the shuffle the engine opens
+a pre-auction *cut* phase; the seat counter-clockwise of the dealer
+clicks `Cut the deck`. A 9 or J at the bottom is a bad cut, the
+cutter rotates one seat counter-clockwise, and the deck is
+re-shuffled. After three bad cuts the dealer takes a fixed −120
+penalty applied immediately and the deal proceeds with the current
+ordering — no further re-cuts.
+
+- **Off** (default): the cut is silent and instantaneous; the
+  shuffle's bottom card stays untouched. Use this with the
+  [Bottom-card guard](#bottom-card-guard-cut-deck-safety) on if you
+  want the canonical Russian "no offence ever" semantics.
+- **On**: opens the procedural ritual. Requires the bottom-card
+  guard to be off (the guard erases the offence the ritual relies
+  on). The penalty amount is fixed at 120 points; a configurable
+  amount is deferred until a table asks for it.
 
 ### All-pass handling (no forced-bid rule)
 
@@ -151,6 +194,9 @@ is unmakeable may **write off** the deal at any point before the
 eighth trick: the **full bid** is subtracted from the declarer's
 running total, and **half of the bid** is credited to each opponent.
 
+On in the canonical Russian template — the book describes write-off
+as a standard mid-deal action available to any declarer.
+
 Distinct from [forced-bid concession](#forced-bid-concession), which
 only fires on a forced minimum-100 contract pre-play.
 
@@ -163,8 +209,9 @@ Split variants:
   asymmetrically when partnerships are involved).
 
 Pairs naturally with the
-[every-third-write-off penalty](#every-third-write-off-penalty) — at
-many tables the two rules ride together.
+[every-third-write-off penalty](#every-third-write-off-penalty),
+also on in the canonical template — at most Russian tables the two
+rules ride together.
 
 ## Talon house rules
 
@@ -204,18 +251,23 @@ contract you didn't want.
 ### Bad talon redeal
 
 After winning the auction and revealing the talon, the declarer may
-demand a redeal if the talon is worthless by **card-point sum** —
-typically when it contains **fewer than 5 card-points**.
+demand a redeal if the talon is worthless by **card-point sum**. The
+book's canonical threshold is *"sum in the widow is less than 4"*,
+so the rule fires on talons with **fewer than 4 card-points**;
+tables that play with the looser "fewer than 5" cutoff configure
+the threshold accordingly.
 
 Some tables allow this only on a minimum 100 contract; others let any
-declarer request it before the pass-cards step.
+declarer request it before the pass-cards step. Listed in the book
+among the agreed-in-advance redeal conditions, so off in the
+canonical Russian template.
 
 ### Two nines in the talon redeal
 
 A sibling rule to **Bad talon redeal** with a different predicate:
 the declarer may demand a redeal when the **talon (widow / прикуп)
 contains exactly two 9s**, regardless of card-point sum. Distinct
-trigger from "fewer than 5 card-points" — a talon with 2 nines and an
+trigger from the card-point threshold — a talon with 2 nines and an
 Ace passes the bad-talon-points threshold but still qualifies under
 this rule. The book lists it among the agreed-upon redeal conditions.
 
@@ -469,11 +521,11 @@ it, all results are reset to zero" rule. The third fall **overrides**
 the standard [barrel penalty](#barrel-penalty) and zeroes the
 running total instead of deducting 120.
 
-- **Off** (canonical default): every fall applies the standard
-  barrel penalty; the seat keeps any other accrued points.
-- **On**: the engine tracks per-seat barrel-fall counters across
-  the game; on the third fall the running total drops to zero and
-  the counter clears.
+- **Off**: every fall applies the standard barrel penalty; the seat
+  keeps any other accrued points.
+- **On** (canonical Russian default): the engine tracks per-seat
+  barrel-fall counters across the game; on the third fall the
+  running total drops to zero and the counter clears.
 
 ### Barrel-jump penalty
 
@@ -633,8 +685,9 @@ a fixed −120 penalty fires and the write-off counter clears. The
 threshold is configurable in `[2, 5]`; the penalty amount is
 configurable in `[0, 240]`.
 
-Off-by-default in the canonical template — pin it on at any table
-that takes write-off seriously.
+On in the canonical Russian template (penalty system entry #5 in the
+reference book); pin it off at non-Russian tables that don't take
+write-off seriously.
 
 ### No-win-streak penalty
 
@@ -645,11 +698,13 @@ earns a fixed −120 penalty and the streak counter clears.
 
 Variants:
 
-- **Off** (canonical default).
+- **Off**.
 - **Consecutive three**: the counter resets on any winning deal;
   three losses in a row trip the penalty.
-- **Any three**: cumulative; only the penalty trigger resets the
-  counter.
+- **Any three** (canonical Russian default): cumulative across the
+  game; only the penalty trigger resets the counter. Matches the
+  book's "or in total" wording, mirroring the every-third-stick
+  accumulation pattern above.
 
 Threshold is configurable in `[2, 5]`; penalty amount in `[0, 240]`.
 

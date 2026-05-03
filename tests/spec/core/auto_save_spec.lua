@@ -314,5 +314,47 @@ describe("core.auto_save", function()
             local restored = Session.from_state(auto_save.deserialize(decoded))
             assert.are.same({ 0, 0, 0 }, restored:barrel_fall_counts())
         end)
+
+        -- Phase 3.8 cut-deck ritual: an in-progress cut phase must
+        -- survive serialize / decode / deserialize so a player can
+        -- suspend mid-ritual and resume without losing their place.
+        it("preserves an in-progress cut_phase across a round-trip", function()
+            local s = Session.new({ seed = 7 })
+            s._cut_phase = {
+                active_cutter = 2,
+                bad_cut_count = 1,
+                bottom_card = require("core.card").new("hearts", "J"),
+            }
+            s._cut_deck_log = {
+                {
+                    kind = "bad_cut",
+                    seat = 3,
+                    dealer = 1,
+                    bad_cut_count = 1,
+                    next_cutter = 2,
+                },
+            }
+            local restored = Session.from_state(round_trip(s))
+            local cut = restored:cut_phase()
+            assert.is_not_nil(cut)
+            assert.are.equal(2, cut.active_cutter)
+            assert.are.equal(1, cut.bad_cut_count)
+            assert.are.equal("hearts", cut.bottom_card.suit)
+            assert.are.equal("J", cut.bottom_card.rank)
+            assert.are.equal(1, #restored:cut_deck_log())
+            assert.are.equal("bad_cut", restored:cut_deck_log()[1].kind)
+        end)
+
+        it("defaults cut_phase to nil and cut_deck_log to {} when missing", function()
+            local s = Session.new({ seed = 7 })
+            local blob = auto_save.serialize(s)
+            blob.cut_phase = nil
+            blob.cut_deck_log = nil
+            local encoded = json.encode(blob)
+            local decoded = json.decode(encoded)
+            local restored = Session.from_state(auto_save.deserialize(decoded))
+            assert.is_nil(restored:cut_phase())
+            assert.are.same({}, restored:cut_deck_log())
+        end)
     end)
 end)

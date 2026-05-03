@@ -153,8 +153,9 @@ describe("app.session write-off", function()
 
     describe("guards", function()
         it("rejects when bidding.write_off is off", function()
-            -- Default canonical_russian has write_off = "off".
-            local cfg = rule_config.canonical_russian
+            -- Canonical Russian has write_off = "on" per the book; opt
+            -- it off here to exercise the disabled-action guard.
+            local cfg = config_with_overrides({ bidding = { write_off = "off" } })
             local s = session_at_tricks(cfg, generic_layout(), {
                 dealer = 1,
                 declarer = 2,
@@ -214,8 +215,12 @@ describe("app.session write-off", function()
         end)
 
         it("survives a JSON snapshot round-trip with the counter intact", function()
+            -- Pin the streak penalty off so the counter advances past
+            -- 2 without resetting; the threshold-fire path has its own
+            -- coverage in the every-third-write-off describe below.
             local cfg = config_with_overrides({
                 bidding = { write_off = "on", write_off_split = "half_to_each" },
+                penalties = { write_off_streak = "off" },
             })
             local s = session_at_tricks(cfg, generic_layout(), {
                 dealer = 1,

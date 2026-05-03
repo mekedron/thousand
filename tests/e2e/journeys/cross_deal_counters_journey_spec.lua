@@ -193,8 +193,15 @@ describe("cross-deal counters journey", function()
         assert.is_truthy(find_text(j, "Barrel falls: 2 / 3"))
     end)
 
-    it("hides both counters under canonical_russian defaults", function()
-        local cfg = rule_config.canonical_russian
+    it("hides both counters when both toggles are off", function()
+        -- Phase 3.7 flipped no_win_streak and fall_count_resets_to_zero
+        -- on under canonical_russian; this case explicitly opts both
+        -- back off to confirm the counters disappear from the
+        -- scoreboard rather than rendering 0/3 placeholders.
+        local cfg = build_config({
+            penalties = { no_win_streak = "off" },
+            barrel = { fall_count_resets_to_zero = "off" },
+        })
         local s = session_at_tricks(cfg, generic_layout(), {
             dealer = 1,
             declarer = 2,

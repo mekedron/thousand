@@ -732,6 +732,42 @@ local function build_misdeal_banner_block(session)
     }
 end
 
+-- Phase 3.8: the open cut phase, surfaced while the session is in
+-- `cut`. nil when the toggle is off or after the cutter has resolved
+-- the ritual. `threshold` is the fixed book threshold (3) so the UI
+-- doesn't have to know the constant.
+local function build_cut_phase_block(session)
+    local cut = session:cut_phase()
+    if not cut then
+        return nil
+    end
+    return {
+        active_cutter = cut.active_cutter,
+        bad_cut_count = cut.bad_cut_count or 0,
+        threshold = 3,
+        dealer = session:dealer(),
+    }
+end
+
+-- Phase 3.8: the latest cut-deck event row for the table banner.
+-- Mirrors `build_misdeal_banner_block` — the scene reads `kind` to
+-- pick the localised body text. Cleared on `start_next_deal`.
+local function build_cut_deck_banner_block(session)
+    local log = session:cut_deck_log()
+    if not log or #log == 0 then
+        return nil
+    end
+    local entry = log[#log]
+    return {
+        kind = entry.kind,
+        seat = entry.seat,
+        dealer = entry.dealer,
+        amount = entry.amount or 0,
+        bad_cut_count = entry.bad_cut_count or 0,
+        next_cutter = entry.next_cutter,
+    }
+end
+
 -- The all-pass banner: present when the deal ended on all-pass under
 -- one of the three handlings, OR while a raspassy_play deal is in
 -- progress. The scene reads `mode` to pick the localised body text.
@@ -1303,6 +1339,8 @@ function M.from_session(session)
         deal_done = build_deal_done_block(session),
         redeal_prompt = build_redeal_prompt_block(session),
         misdeal_banner = build_misdeal_banner_block(session),
+        cut_phase = build_cut_phase_block(session),
+        cut_deck_banner = build_cut_deck_banner_block(session),
         all_pass_banner = build_all_pass_banner_block(session),
         raspassy_active = raspassy_active,
         bad_talon_prompt = build_bad_talon_prompt_block(session),

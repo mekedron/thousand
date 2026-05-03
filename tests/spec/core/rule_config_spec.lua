@@ -34,6 +34,7 @@ local function valid_table()
             misdeal_flat_penalty = 20,
             all_pass_handling = "redeal",
             deck_size = "24",
+            cut_deck_safety = "on",
             cut_deck_nine_jack_penalty = "off",
         },
         talon = {
@@ -340,9 +341,13 @@ describe("core.rule_config", function()
             assert.are.equal("off", config.dealing.four_jack_redeal)
             assert.are.equal("off", config.dealing.weak_hand_redeal)
             assert.are.equal(14, config.dealing.weak_hand_threshold)
-            assert.are.equal("standard", config.dealing.misdeal_handling)
+            -- Book's "common standard" Russian rule: misdeal moves the
+            -- deal one seat clockwise (next-player redeal).
+            assert.are.equal("soft_penalty", config.dealing.misdeal_handling)
             assert.are.equal(20, config.dealing.misdeal_flat_penalty)
             assert.are.equal("redeal", config.dealing.all_pass_handling)
+            -- Book guard: bottom card never 9 or J.
+            assert.are.equal("on", config.dealing.cut_deck_safety)
         end)
 
         it("encodes the canonical talon-section defaults", function()
@@ -352,6 +357,10 @@ describe("core.rule_config", function()
             assert.are.equal("off", config.talon.buyback)
             assert.are.equal("off", config.talon.hidden_on_minimum_100)
             assert.are.equal("off", config.talon.bad_talon_redeal)
+            -- Book wording: bad-talon redeal is offered when the widow
+            -- card-point sum is "less than 4". Inert until the redeal
+            -- toggle flips on, but pinned to match the book's prose.
+            assert.are.equal(4, config.talon.bad_talon_threshold)
             assert.are.equal("off", config.talon.rebuy)
             assert.are.equal("off", config.talon.open_discard)
         end)
@@ -368,6 +377,10 @@ describe("core.rule_config", function()
             assert.are.equal("off", config.bidding.re_entry_after_pass)
             assert.are.equal("off", config.bidding.contra)
             assert.are.equal("off", config.bidding.forced_bid_concession)
+            -- Book's "common standard" Russian rule: write-off mid-deal
+            -- concession is part of the standard action set.
+            assert.are.equal("on", config.bidding.write_off)
+            assert.are.equal("half_to_each", config.bidding.write_off_split)
             assert.are.equal("off", config.bidding.no_contract_without_marriage)
             assert.are.equal("off", config.bidding.negative_score_restriction)
             assert.are.equal("off", config.bidding.named_contracts)
@@ -438,6 +451,9 @@ describe("core.rule_config", function()
             assert.are.equal("off", config.barrel.pit_lock_in)
             assert.are.equal("last_mounter", config.barrel.collision_rule)
             assert.are.equal("off", config.barrel.overshoot_penalty)
+            -- Book's "common standard" Russian rule: third fall off the
+            -- barrel zeroes the running total.
+            assert.are.equal("on", config.barrel.fall_count_resets_to_zero)
             assert.are.equal("off", config.barrel.reverse_barrel)
         end)
 
@@ -466,13 +482,27 @@ describe("core.rule_config", function()
             assert.are.equal(120, config.penalties.revoke_configurable_amount)
             assert.are.equal("standard", config.penalties.talon_look)
             assert.are.equal("standard", config.penalties.showing_hand)
-            -- Book's "common standard" Russian rule: every third stick (zero-
-            -- trick deal) earns a 120 penalty and clears the counter.
+            -- Book's "common standard" Russian rule: penalty system #3
+            -- — every third stick (zero-trick deal) earns a 120 penalty
+            -- and clears the counter.
             assert.are.equal("any_three", config.penalties.zero_tricks)
             assert.are.equal(3, config.penalties.zero_tricks_threshold)
             assert.are.equal(120, config.penalties.zero_tricks_penalty_amount)
             assert.are.equal("off", config.penalties.zero_tricks_declarer_exempt)
             assert.are.equal("off", config.penalties.zero_tricks_golden_deal_doubled)
+            -- Book's wording on dark-game stick doubling is "may be
+            -- doubled" — variant, not part of the common standard.
+            assert.are.equal("off", config.penalties.zero_tricks_dark_game_doubled)
+            -- Book's "common standard" Russian rule: penalty system #5
+            -- — every third write-off across the whole game.
+            assert.are.equal("any_three", config.penalties.write_off_streak)
+            assert.are.equal(3, config.penalties.write_off_streak_threshold)
+            assert.are.equal(120, config.penalties.write_off_streak_penalty_amount)
+            -- Book's "common standard" Russian rule: penalty system #4
+            -- — no win for 3 rounds in a row or in total.
+            assert.are.equal("any_three", config.penalties.no_win_streak)
+            assert.are.equal(3, config.penalties.no_win_streak_threshold)
+            assert.are.equal(120, config.penalties.no_win_streak_penalty_amount)
             assert.are.equal("off", config.penalties.cross)
             assert.are.equal(120, config.penalties.cross_penalty_amount)
         end)
@@ -1802,14 +1832,52 @@ describe("core.rule_config", function()
         end)
     end)
 
+    describe("dealing.cut_deck_safety", function()
+        it("exposes an implemented string-leaf descriptor", function()
+            local d = rule_config.schema_for("dealing.cut_deck_safety")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("on", d.default)
+            assert.are.equal("implemented", d.status)
+            assert.are.same({ "off", "on" }, d.allowed)
+        end)
+
+        it("accepts every selectable value", function()
+            for _, value in ipairs({ "off", "on" }) do
+                local t = valid_table()
+                t.dealing.cut_deck_safety = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " should be accepted")
+                assert.are.equal(value, res.config.dealing.cut_deck_safety)
+            end
+        end)
+
+        it("rejects unknown values with value_not_allowed", function()
+            local t = valid_table()
+            t.dealing.cut_deck_safety = "maybe"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("value_not_allowed", res.error.code)
+            assert.are.equal("dealing.cut_deck_safety", res.error.path)
+        end)
+
+        it("survives a JSON round trip at the canonical Russian default", function()
+            -- Book guard: bottom card never 9 or J.
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("on", res.config.dealing.cut_deck_safety)
+        end)
+    end)
+
     describe("dealing.cut_deck_nine_jack_penalty", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("dealing.cut_deck_nine_jack_penalty")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
-            assert.are.same({ "off", "redeal_after_three" }, d.allowed)
+            assert.are.equal("selectable", d.status)
+            assert.are.same({ "off", "on" }, d.allowed)
         end)
 
         it("accepts the default value", function()
@@ -1820,12 +1888,32 @@ describe("core.rule_config", function()
             assert.are.equal("off", res.config.dealing.cut_deck_nine_jack_penalty)
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
+        it("accepts 'on' when cut_deck_safety is 'off'", function()
+            local t = valid_table()
+            t.dealing.cut_deck_safety = "off"
+            t.dealing.cut_deck_nine_jack_penalty = "on"
+            local res = rule_config.try_new(t)
+            assert.is_true(res.ok)
+            assert.are.equal("on", res.config.dealing.cut_deck_nine_jack_penalty)
+            assert.are.equal("off", res.config.dealing.cut_deck_safety)
+        end)
+
+        it("rejects 'on' while cut_deck_safety is 'on' via the invariant", function()
+            local t = valid_table()
+            t.dealing.cut_deck_safety = "on"
+            t.dealing.cut_deck_nine_jack_penalty = "on"
+            local res = rule_config.try_new(t)
+            assert.is_false(res.ok)
+            assert.are.equal("incompatible_combination", res.error.code)
+            assert.are.equal("cut_deck_nine_jack_penalty_excludes_safety", res.error.invariant)
+        end)
+
+        it("rejects unknown values with value_not_allowed", function()
             local t = valid_table()
             t.dealing.cut_deck_nine_jack_penalty = "redeal_after_three"
             local res = rule_config.try_new(t)
             assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
+            assert.are.equal("value_not_allowed", res.error.code)
         end)
     end)
 
@@ -3091,11 +3179,13 @@ describe("core.rule_config", function()
             end
         end)
 
-        it("survives a JSON round trip at its default", function()
+        it("survives a JSON round trip at the canonical Russian default", function()
+            -- Book's "common standard" Russian rule: write-off is part
+            -- of the standard mid-deal action set, on by default.
             local s = rule_config.to_json(rule_config.canonical_russian)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.bidding.write_off)
+            assert.are.equal("on", res.config.bidding.write_off)
         end)
     end)
 
@@ -5223,11 +5313,13 @@ describe("core.rule_config", function()
             end
         end)
 
-        it("survives a JSON round trip at its default", function()
+        it("survives a JSON round trip at the canonical Russian default", function()
+            -- Book's "common standard" Russian rule: penalty system #5
+            -- — every third write-off across the whole game.
             local s = rule_config.to_json(rule_config.canonical_russian)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.penalties.write_off_streak)
+            assert.are.equal("any_three", res.config.penalties.write_off_streak)
         end)
     end)
 
@@ -5310,11 +5402,13 @@ describe("core.rule_config", function()
             end
         end)
 
-        it("survives a JSON round trip at its default", function()
+        it("survives a JSON round trip at the canonical Russian default", function()
+            -- Book's "common standard" Russian rule: penalty system #4
+            -- — no win for 3 rounds in a row or in total.
             local s = rule_config.to_json(rule_config.canonical_russian)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.penalties.no_win_streak)
+            assert.are.equal("any_three", res.config.penalties.no_win_streak)
         end)
     end)
 
@@ -5429,11 +5523,13 @@ describe("core.rule_config", function()
             end
         end)
 
-        it("survives a JSON round trip at its default", function()
+        it("survives a JSON round trip at the canonical Russian default", function()
+            -- Book's "common standard" Russian rule: third fall off the
+            -- barrel zeroes the running total and clears the counter.
             local s = rule_config.to_json(rule_config.canonical_russian)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.barrel.fall_count_resets_to_zero)
+            assert.are.equal("on", res.config.barrel.fall_count_resets_to_zero)
         end)
     end)
 

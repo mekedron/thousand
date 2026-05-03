@@ -613,6 +613,19 @@ function M:_do_write_off()
     self:_refresh_view_model()
 end
 
+-- Phase 3.8: invoke the procedural cut. The action carries no
+-- decision (the engine inspects the bottom card and routes between
+-- good_cut / bad_cut / threshold_penalty internally) so the handler
+-- is identical in shape to write_off — just dispatch and refresh.
+function M:_do_cut_deck()
+    local session = self:_session()
+    if not session then
+        return
+    end
+    self:_invoke(session:cut_deck())
+    self:_refresh_view_model()
+end
+
 function M:_do_buyback_hand()
     local session = self:_session()
     if not session then
@@ -1375,6 +1388,23 @@ local function build_tricks_panel(self, view)
     return buttons
 end
 
+-- Phase 3.8: cut-deck-phase panel — a single "Cut the deck" button
+-- visible while the procedural ritual is open. The active cutter is
+-- carried in the view-model's cut_phase block; the button is the only
+-- action available so there's nothing to enable/disable conditionally.
+local function build_cut_panel(self)
+    return {
+        Button.new({
+            id = "cut_deck", -- i18n-ok
+            label_key = "scene.table.cut.cut_deck_button",
+            enabled = true,
+            on_press = function()
+                self:_do_cut_deck()
+            end,
+        }),
+    }
+end
+
 -- A short signature for the current panel's contents — phase + relevant
 -- view-model fields. When this signature stays the same across frames
 -- the existing button instances are preserved, which means a press on
@@ -1462,6 +1492,12 @@ local function panel_signature(view)
         end
         return "tricks:" .. wo
     end
+    if phase == "cut" then
+        local cp = view.cut_phase or {}
+        local cutter = cp.active_cutter or "?" -- i18n-ok: signature token, never rendered
+        local count = cp.bad_cut_count or 0
+        return "cut:" .. tostring(cutter) .. ":" .. tostring(count) -- i18n-ok: signature token
+    end
     if phase == "deal_done" then
         return "deal_done"
     end
@@ -1501,6 +1537,8 @@ function M:_rebuild_panel_if_needed(view)
         self._panel_buttons = build_talon_take_panel(self, view)
     elseif phase == "tricks" then
         self._panel_buttons = build_tricks_panel(self, view)
+    elseif phase == "cut" then
+        self._panel_buttons = build_cut_panel(self)
     elseif phase == "deal_done" then
         self._panel_buttons = build_deal_done_panel(self)
     end
@@ -1519,6 +1557,8 @@ local function phase_label_key(phase)
         return "scene.table.phase.talon"
     elseif phase == "tricks" then
         return "scene.table.phase.tricks"
+    elseif phase == "cut" then
+        return "scene.table.phase.cut"
     end
     return "scene.table.phase.done"
 end
@@ -2404,6 +2444,51 @@ local function draw_misdeal_banner(view, regions)
     love.graphics.print(t(key, { dealer = mb.dealer, penalty = mb.penalty }), centre.x + 12, y + 4)
 end
 
+-- Phase 3.8 cut-deck banner. Renders the latest entry from the
+-- per-deal cut-deck log: the bad-cut counter while the ritual is in
+-- progress, the threshold-penalty notification afterwards. Sits in
+-- the same lane as draw_misdeal_banner.
+local function draw_cut_deck_banner(view, regions)
+    if not view then
+        return
+    end
+    if not view.cut_phase and not view.cut_deck_banner then
+        return
+    end
+    local centre = regions.centre
+    local y = centre.y - 26
+    if view.cut_phase then
+        local cp = view.cut_phase
+        love.graphics.setColor(0.30, 0.20, 0.45, 0.85)
+        love.graphics.rectangle("fill", centre.x, y, centre.w, 22)
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.print(
+            t("scene.table.cut.bad_cut_indicator", {
+                count = cp.bad_cut_count,
+                threshold = cp.threshold,
+            }),
+            centre.x + 12,
+            y + 4
+        )
+        return
+    end
+    local b = view.cut_deck_banner
+    if b.kind ~= "threshold_penalty" then
+        return
+    end
+    love.graphics.setColor(0.55, 0.20, 0.20, 0.85)
+    love.graphics.rectangle("fill", centre.x, y, centre.w, 22)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.print(
+        t("scene.table.cut.threshold_penalty_banner", {
+            seat = b.dealer,
+            amount = -b.amount,
+        }),
+        centre.x + 12,
+        y + 4
+    )
+end
+
 -- Phase 3.6 forced-dealer-bid banner. Sits in the same lane as
 -- draw_misdeal_banner; informational, no input gate.
 local function draw_dealer_forced_banner(view, regions)
@@ -2786,6 +2871,7 @@ function M:draw(w, h)
     -- one-line indicators above the centre band; they don't block
     -- input on the panel area.
     draw_misdeal_banner(self._view_model, regions)
+    draw_cut_deck_banner(self._view_model, regions)
     draw_raspassy_status_banner(self._view_model, regions)
     draw_active_contract_banner(self._view_model, regions)
     draw_dealer_forced_banner(self._view_model, regions)

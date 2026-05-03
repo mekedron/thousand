@@ -814,6 +814,7 @@ local function canonical_with_bidding(bidding_overrides, extra_overrides)
             misdeal_flat_penalty = 20,
             all_pass_handling = "redeal",
             deck_size = "24",
+            cut_deck_safety = "on",
             cut_deck_nine_jack_penalty = "off",
         },
         talon = {
@@ -1619,6 +1620,122 @@ describe("bidding house rules", function()
         assert.is_not_nil(
             find_text(mock_bhr, t_bhr("scene.table.auction.contract_multiplier_badge", { n = 2 })),
             "contract_multiplier_badge ×2 must be rendered after blind bid"
+        )
+    end)
+end)
+
+-- ---------------------------------------------------------------------------
+-- Phase 3.8 cut-deck ritual UI surface.
+-- ---------------------------------------------------------------------------
+describe("cut-deck ritual (Phase 3.8)", function()
+    local mock_cut, t_cut
+
+    before_each(function()
+        reset_modules()
+        mock_cut = love_mock.new({ width = 1024, height = 720 })
+        mock_cut:install()
+        local i18n = require("app.i18n")
+        i18n._reset()
+        i18n._set_logger(function() end)
+        i18n.set_locale("en")
+        t_cut = i18n.t
+    end)
+
+    after_each(function()
+        if mock_cut then
+            mock_cut:restore()
+        end
+        reset_modules()
+    end)
+
+    -- Build a config off canonical_russian and patch the dealing
+    -- toggles for the procedural cut ritual. canonical_with_bidding
+    -- doesn't expose dealing overrides, so go through the JSON
+    -- round-trip path.
+    local function cut_config()
+        local rc = require("core.rule_config")
+        local jsmod = require("app.json")
+        local blob = jsmod.decode(rc.to_json(rc.canonical_russian))
+        blob.dealing.cut_deck_safety = "off"
+        blob.dealing.cut_deck_nine_jack_penalty = "on"
+        blob.dealing.four_nine_redeal = "off"
+        blob.dealing.three_nine_redeal = "off"
+        blob.dealing.four_jack_redeal = "off"
+        return rc.new(blob)
+    end
+
+    it("renders the Cut the deck button while the cut phase is open", function()
+        local s = Session.new({ config = cut_config(), seed = 1, dealer = 1 })
+        assert.are.equal("cut", s:current_phase())
+
+        local table_scene = require("ui.scenes.table")
+        local sc = table_scene.new(fake_manager(s))
+        sc:enter(nil, nil)
+        dismiss_curtain(sc)
+        sc:draw(1024, 720)
+
+        local btn = find_button(sc, "cut_deck")
+        assert.is_not_nil(btn, "Cut the deck button must appear in the cut phase")
+        assert.is_true(btn.enabled)
+        assert.is_not_nil(
+            find_text(mock_cut, t_cut("scene.table.cut.cut_deck_button")),
+            "the localised 'Cut the deck' label must render"
+        )
+    end)
+
+    it("invokes Session:cut_deck() on press", function()
+        local s = Session.new({ config = cut_config(), seed = 1, dealer = 1 })
+
+        local table_scene = require("ui.scenes.table")
+        local sc = table_scene.new(fake_manager(s))
+        sc:enter(nil, nil)
+        dismiss_curtain(sc)
+        sc:draw(1024, 720)
+
+        local btn = find_button(sc, "cut_deck")
+        assert.is_not_nil(btn)
+        btn.on_press()
+        -- After the button fires the session should no longer be in
+        -- the cut phase (seed=1 is canonical_russian's good-bottom
+        -- seed so the cut clears immediately).
+        assert.are_not.equal("cut", s:current_phase())
+    end)
+
+    it("renders the bad-cut indicator counter while the cut phase is open", function()
+        local card = require("core.card")
+        local s = Session.from_state({
+            config = cut_config(),
+            seed = 1,
+            dealer = 1,
+            running_totals = { 0, 0, 0 },
+            cut_phase = {
+                active_cutter = 2,
+                bad_cut_count = 1,
+                bottom_card = card.new("hearts", "J"),
+            },
+            cut_deck_log = {
+                {
+                    kind = "bad_cut",
+                    seat = 3,
+                    dealer = 1,
+                    bad_cut_count = 1,
+                    next_cutter = 2,
+                },
+            },
+        })
+
+        local table_scene = require("ui.scenes.table")
+        local sc = table_scene.new(fake_manager(s))
+        sc:enter(nil, nil)
+        dismiss_curtain(sc)
+        sc:draw(1024, 720)
+
+        assert.is_not_nil(
+            find_text(
+                mock_cut,
+                t_cut("scene.table.cut.bad_cut_indicator", { count = 1, threshold = 3 })
+            ),
+            "the bad-cut counter must render while the cut phase is open"
         )
     end)
 end)

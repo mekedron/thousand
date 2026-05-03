@@ -246,6 +246,7 @@ describe("core.scoring", function()
                     misdeal_flat_penalty = 20,
                     all_pass_handling = "redeal",
                     deck_size = "24",
+                    cut_deck_safety = "on",
                     cut_deck_nine_jack_penalty = "off",
                 },
                 talon = {
@@ -1752,7 +1753,13 @@ describe("core.scoring", function()
 
     describe("advance_game() fall_count_resets_to_zero", function()
         it("leaves fall behaviour unchanged under 'off' even when the counter is high", function()
-            local g = advance_ok(default_advance_opts({
+            -- Override the canonical Russian "on" default so the
+            -- standard fall_off_penalty path runs even on the third
+            -- lifetime fall.
+            local cfg = with_endgame_overrides({
+                barrel = { fall_count_resets_to_zero = "off" },
+            })
+            local g = advance_with(cfg, {
                 deltas = { 50, 0, 0 },
                 running_totals_before = { 880, 0, 0 },
                 deal_index = 8,
@@ -1762,7 +1769,7 @@ describe("core.scoring", function()
                     { on_barrel = false },
                 },
                 barrel_fall_counts_before = { 2, 0, 0 },
-            }))
+            })
             assert.are.equal(760, g.running_totals[1])
             assert.are.same({ 3, 0, 0 }, g.barrel_fall_counts_after)
             assert.are.same({ false, false, false }, g.barrel_fall_resets)

@@ -101,7 +101,16 @@ end
 local on_auction_end
 
 local function build_initial_state(config, dealer, seed, running_totals, deal_index)
-    local deck = deck_module.shuffle(deck_module.build(), seed)
+    local guard_bottom = config.dealing.cut_deck_safety == "on"
+    local deck = deck_module.shuffle(deck_module.build(), seed, {
+        ensure_bottom_safe = guard_bottom,
+    })
+    -- Phase 3.8: snapshot the bottom card before dealing consumes the
+    -- deck so the cut-phase ritual can validate it without re-running
+    -- the shuffle. The cut phase is opt-in via
+    -- `dealing.cut_deck_nine_jack_penalty = "on"`; when off, callers
+    -- ignore this value.
+    local bottom_card = deck[#deck]
     local deal_result = dealing.deal(deck, config, { dealer = dealer })
     if not deal_result.ok then
         error("session: deal failed: " .. tostring(deal_result.error.message), 2)
@@ -119,7 +128,7 @@ local function build_initial_state(config, dealer, seed, running_totals, deal_in
     local golden_active, golden_seat = auction_module.is_golden_deal_active(config, deal_index or 1)
     if golden_active then
         local auction = auction_module.golden_deal_state(config, dealer, golden_seat)
-        return deal_result, auction, marriages_result.marriages, true
+        return deal_result, auction, marriages_result.marriages, true, bottom_card
     end
 
     local holdings = compute_holdings(deal_result.hands, config)
@@ -131,7 +140,30 @@ local function build_initial_state(config, dealer, seed, running_totals, deal_in
         error("session: auction.new failed: " .. tostring(auction_result.error.message), 2)
     end
 
-    return deal_result, auction_result.auction, marriages_result.marriages, false
+    return deal_result, auction_result.auction, marriages_result.marriages, false, bottom_card
+end
+
+-- Phase 3.8: counter-clockwise seat lookup for the cut-deck ritual.
+-- 1-indexed Lua arithmetic. The codebase uses (seat % count) + 1 for
+-- clockwise; the inverse is ((seat - 2) % count) + 1.
+local function ccw_of(seat, count)
+    return ((seat - 2) % count) + 1
+end
+
+-- Phase 3.8: open the pre-auction cut phase if the toggle is on.
+-- Stash the bottom card on `_cut_phase` so `Session:cut_deck()` can
+-- validate it without re-running anything. Initial cutter is the
+-- seat counter-clockwise of the dealer.
+local function maybe_open_cut_phase(self, bottom_card)
+    if self._config.dealing.cut_deck_nine_jack_penalty ~= "on" then
+        self._cut_phase = nil
+        return
+    end
+    self._cut_phase = {
+        active_cutter = ccw_of(self._dealer, self._config.players.count),
+        bad_cut_count = 0,
+        bottom_card = bottom_card,
+    }
 end
 
 -- Replace the session's deal-time state with a fresh shuffle/deal/auction
@@ -142,7 +174,7 @@ end
 local function reset_deal_state(self, dealer, seed_bump)
     self._dealer = dealer or self._dealer
     self._seed = (self._seed or os.time()) + (seed_bump or 0)
-    local deal_result, auction, marriages, golden_active = build_initial_state(
+    local deal_result, auction, marriages, golden_active, bottom_card = build_initial_state(
         self._config,
         self._dealer,
         self._seed,
@@ -186,7 +218,12 @@ local function reset_deal_state(self, dealer, seed_bump)
     -- Bolt and cross counters span deals (per-game state) and stay
     -- intact; only the per-deal recorded_penalties log resets.
     self._recorded_penalties = {}
-    if golden_active then
+    -- Phase 3.8 cut-deck ritual: open the cut phase if the toggle is
+    -- on. The phase blocks any auction-side transition (forced
+    -- redeals, golden-deal `on_auction_end`) until the cutter clears
+    -- it through `Session:cut_deck()`.
+    maybe_open_cut_phase(self, bottom_card)
+    if not self._cut_phase and golden_active then
         -- Drive the auction-end transition immediately so the talon
         -- (or no-talon trick start, under templates with `talon.size =
         -- 0`) is in place from the first frame.
@@ -249,7 +286,16 @@ end
 -- a safety belt against a configuration that would loop forever — in
 -- practice a forced 4-nine redeal fires once per ~1300 deals, so two
 -- iterations is already pathological.
+--
+-- Phase 3.8: while a cut phase is open, the forced-redeal sweep is
+-- deferred until the cutter clears it (re-shuffling under the
+-- player's nose would invalidate the bottom-card check the ritual
+-- relies on). `Session:cut_deck()` runs this loop after the phase
+-- clears, so the entitlement check still happens on the final deck.
 local function evaluate_entitlement_with_forced_loop(self)
+    if self._cut_phase then
+        return
+    end
     for _ = 1, 16 do
         local offer = redeal.entitled_offer(self._hands, self._config)
         if offer == nil then
@@ -267,6 +313,12 @@ local function evaluate_entitlement_with_forced_loop(self)
             dealer = self._dealer,
         }
         reset_deal_state(self, self._dealer, 1)
+        -- A forced redeal that re-opens the cut phase (toggle on)
+        -- must defer too. The cut clears it before any further
+        -- entitlement re-check, so break here.
+        if self._cut_phase then
+            return
+        end
     end
     self._redeal_offer = nil
 end
@@ -287,7 +339,7 @@ function M.new(opts)
     local seed = opts.seed or os.time()
 
     local initial_running_totals = zero_totals(config.players.count)
-    local deal_result, auction, marriages, golden_active =
+    local deal_result, auction, marriages, golden_active, bottom_card =
         build_initial_state(config, dealer, seed, initial_running_totals, 1)
 
     local self = setmetatable({
@@ -462,13 +514,30 @@ function M.new(opts)
         -- == "on"`, the third fall zeros the running total and the
         -- counter resets to 0. Persisted across deals.
         _barrel_fall_counts = zero_totals(config.players.count),
+        -- Phase 3.8 cut-deck ritual state.
+        --   _cut_phase: nil unless `dealing.cut_deck_nine_jack_penalty
+        --       == "on"`. Otherwise { active_cutter, bad_cut_count,
+        --       bottom_card }. Cleared on a good cut or on the third
+        --       bad cut (which fires the −120 dealer penalty).
+        --   _cut_deck_log: list of cut-phase events surfaced to the
+        --       table banner. Cleared at start_next_deal so the next
+        --       deal opens cleanly.
+        _cut_phase = nil,
+        _cut_deck_log = {},
     }, Session)
-    evaluate_entitlement_with_forced_loop(self)
-    -- Phase 3.6 opening-game: drive the auction-end transition so the
-    -- talon (or no-talon trick start) is in place from the first frame
-    -- when the deal opens with a synthetic golden-deal auction.
-    if self._in_golden_deal and self._auction and self._auction.status == "done" then
-        on_auction_end(self)
+    -- Phase 3.8: open the cut phase before any auction-side
+    -- transition. Forced redeals and the golden-deal auction-end hook
+    -- defer until the cutter clears the phase, so the cut ritual is
+    -- always the first interactive moment of the deal.
+    maybe_open_cut_phase(self, bottom_card)
+    if not self._cut_phase then
+        evaluate_entitlement_with_forced_loop(self)
+        -- Phase 3.6 opening-game: drive the auction-end transition so the
+        -- talon (or no-talon trick start) is in place from the first frame
+        -- when the deal opens with a synthetic golden-deal auction.
+        if self._in_golden_deal and self._auction and self._auction.status == "done" then
+            on_auction_end(self)
+        end
     end
     return self
 end
@@ -541,6 +610,12 @@ function M.from_state(state)
         _write_off_counts = state.write_off_counts or zero_totals(player_count),
         _no_win_streak_counts = state.no_win_streak_counts or zero_totals(player_count),
         _barrel_fall_counts = state.barrel_fall_counts or zero_totals(player_count),
+        -- Phase 3.8 cut-deck ritual: nil for old saves and saves
+        -- where the toggle is off; otherwise carries the in-progress
+        -- ritual state. The log is empty for old saves so the banner
+        -- has nothing to render.
+        _cut_phase = state.cut_phase,
+        _cut_deck_log = state.cut_deck_log or {},
     }, Session)
     -- Phase 3.6: when from_state restores a tricks-phase session and
     -- the active variant is pre_first_trick, re-open the queue from
@@ -698,6 +773,13 @@ function Session:current_phase()
     if self._redeal_offer then
         return "awaiting_redeal_decision"
     end
+    -- Phase 3.8: the cut ritual fires before forced redeals and the
+    -- golden-deal auction-end hook (the engine defers them until the
+    -- cutter clears the phase), so the cut precedes "auction" but
+    -- never overlaps the deal-done / tricks / talon stages.
+    if self._cut_phase then
+        return "cut"
+    end
     return "auction"
 end
 
@@ -717,6 +799,8 @@ function Session:current_turn()
         return q and q.seats[q.current_index] or nil
     elseif phase == "tricks" or phase == "raspassy_play" then -- i18n-ok: phase enums
         return self._tricks and self._tricks.next_to_play or nil
+    elseif phase == "cut" then -- i18n-ok: phase enum
+        return self._cut_phase and self._cut_phase.active_cutter or nil
     end
     return nil
 end
@@ -2834,6 +2918,155 @@ function Session:play(player, card)
     return { ok = true }
 end
 
+-- Cut-deck ritual API (Phase 3.8) --------------------------------------
+--
+-- When `dealing.cut_deck_nine_jack_penalty = "on"` the engine opens a
+-- pre-auction `cut` phase. The seat counter-clockwise of the dealer
+-- cuts the deck via `Session:cut_deck()`. A 9 or J at the bottom is a
+-- bad cut: the cutter rotates one seat counter-clockwise, the bad-cut
+-- counter increments, and the deck is re-shuffled with a bumped seed.
+-- After three bad cuts the dealer takes a fixed −120 penalty applied
+-- immediately to the running total, the cut phase clears, and the
+-- deal proceeds with the current deck. Counter resets per deal.
+--
+-- The cut phase also blocks the forced-redeal sweep and the
+-- golden-deal `on_auction_end` hook until the cutter clears it, so
+-- the ritual is always the first interactive moment of the deal.
+--
+-- The Phase 4 bot driver (`app/bot/`) will call `cut_deck()` directly
+-- from its decision routine — the action carries no decision so
+-- latency is bounded only by the existing minimum thinking delay.
+
+local CUT_DECK_THRESHOLD = 3
+local CUT_DECK_PENALTY_AMOUNT = 120
+
+-- Drive any auction-side transitions deferred while the cut phase was
+-- open. Mirrors the tail of Session.new and reset_deal_state — the
+-- forced-redeal sweep first (entitlements may chain), then the
+-- golden-deal `on_auction_end` hook if applicable.
+local function run_post_cut_transitions(self)
+    evaluate_entitlement_with_forced_loop(self)
+    if self._in_golden_deal and self._auction and self._auction.status == "done" then
+        on_auction_end(self)
+    end
+end
+
+-- Re-shuffle and re-deal in place, keeping the dealer fixed. Bumps the
+-- seed so the new shuffle differs from the previous one, refreshes
+-- every deal-time field, and returns the fresh bottom card so the
+-- caller can update `_cut_phase.bottom_card`. Used only by
+-- `Session:cut_deck()` on a bad cut — `reset_deal_state` is the wrong
+-- shape because it would re-open the cut phase from scratch and lose
+-- the running counter.
+local function reshuffle_for_cut(self)
+    self._seed = (self._seed or os.time()) + 1
+    local deal_result, auction, marriages, golden_active, bottom_card = build_initial_state(
+        self._config,
+        self._dealer,
+        self._seed,
+        self._running_totals,
+        self._deal_index
+    )
+    self._hands = deal_result.hands
+    self._talon_cards = deal_result.talon
+    self._stock = deal_result.stock
+    self._trump_indicator = deal_result.trump_indicator
+    self._sits_out = deal_result.sits_out
+    self._leftover_for_declarer = deal_result.leftover_for_declarer
+    self._auction = auction
+    self._marriages = marriages
+    self._in_golden_deal = golden_active and true or false
+    return bottom_card
+end
+
+-- The current cut-phase state, or nil. Surfaced as a single read so
+-- the table view-model and the Phase 4 bot driver can branch on
+-- presence without poking at a private field.
+function Session:cut_phase()
+    return self._cut_phase
+end
+
+-- The seat that should call `cut_deck()` next, or nil when no cut
+-- phase is open. Distinct from `current_turn()` (which derives the
+-- value from the current phase) so callers that want the cutter's
+-- identity directly don't need to compare phase strings.
+function Session:active_cutter()
+    return self._cut_phase and self._cut_phase.active_cutter or nil
+end
+
+-- Number of bad cuts in the current deal. Returns 0 when no cut
+-- phase is open or when the toggle is off, so the running scoreboard
+-- can surface "Bad cuts: %{count} / 3" unconditionally.
+function Session:bad_cut_count()
+    return self._cut_phase and self._cut_phase.bad_cut_count or 0
+end
+
+-- The cut-deck event log for the current deal. Latest entry feeds
+-- the threshold-penalty banner. Cleared at start_next_deal.
+function Session:cut_deck_log()
+    return self._cut_deck_log or {}
+end
+
+-- Cut the deck on behalf of the active cutter. Returns the typical
+-- `{ ok | error }` envelope; on success, `result` is one of:
+--   "good_cut"          — bottom is safe; phase clears and the deal
+--                         advances to forced redeals / auction.
+--   "bad_cut"           — bottom is 9 or J; cutter rotates ccw, the
+--                         deck is re-shuffled, the counter increments.
+--   "threshold_penalty" — third bad cut; dealer is debited 120
+--                         immediately, phase clears, deal proceeds
+--                         with the current ordering. `penalty` is
+--                         set to the amount in this case.
+function Session:cut_deck()
+    if not self._cut_phase then
+        return failure("wrong_phase", "cut_deck has no open cut phase", {
+            phase = self:current_phase(),
+        })
+    end
+    if not deck_module.is_bottom_disallowed(self._cut_phase.bottom_card) then
+        local cutter = self._cut_phase.active_cutter
+        self._cut_deck_log[#self._cut_deck_log + 1] = {
+            kind = "good_cut",
+            seat = cutter,
+            dealer = self._dealer,
+            bad_cut_count = self._cut_phase.bad_cut_count,
+        }
+        self._cut_phase = nil
+        run_post_cut_transitions(self)
+        return { ok = true, result = "good_cut" }
+    end
+    local count = self._config.players.count
+    self._cut_phase.bad_cut_count = self._cut_phase.bad_cut_count + 1
+    if self._cut_phase.bad_cut_count >= CUT_DECK_THRESHOLD then
+        local cutter = self._cut_phase.active_cutter
+        self._running_totals[self._dealer] = self._running_totals[self._dealer]
+            - CUT_DECK_PENALTY_AMOUNT
+        self._cut_deck_log[#self._cut_deck_log + 1] = {
+            kind = "threshold_penalty",
+            seat = cutter,
+            dealer = self._dealer,
+            amount = CUT_DECK_PENALTY_AMOUNT,
+            bad_cut_count = self._cut_phase.bad_cut_count,
+        }
+        self._cut_phase = nil
+        run_post_cut_transitions(self)
+        return { ok = true, result = "threshold_penalty", penalty = CUT_DECK_PENALTY_AMOUNT }
+    end
+    local previous = self._cut_phase.active_cutter
+    local rotated = ccw_of(previous, count)
+    local new_bottom = reshuffle_for_cut(self)
+    self._cut_phase.active_cutter = rotated
+    self._cut_phase.bottom_card = new_bottom
+    self._cut_deck_log[#self._cut_deck_log + 1] = {
+        kind = "bad_cut",
+        seat = previous,
+        dealer = self._dealer,
+        bad_cut_count = self._cut_phase.bad_cut_count,
+        next_cutter = rotated,
+    }
+    return { ok = true, result = "bad_cut" }
+end
+
 -- Redeal / misdeal API -------------------------------------------------
 --
 -- The session never auto-decides an optional redeal offer on the
@@ -3045,8 +3278,12 @@ function Session:start_next_deal()
     self._rebuy_log = {}
     self._bad_talon_offer = nil
     self._rebuy_pending = nil
+    -- Phase 3.8: per-deal cut events also clear before the next deal.
+    self._cut_deck_log = {}
     reset_deal_state(self, next_dealer, self._deal_index)
-    evaluate_entitlement_with_forced_loop(self)
+    if not self._cut_phase then
+        evaluate_entitlement_with_forced_loop(self)
+    end
     return { ok = true }
 end
 

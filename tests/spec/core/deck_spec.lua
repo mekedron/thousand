@@ -186,5 +186,199 @@ describe("core.deck", function()
                 deck.shuffle(d, 1.5)
             end)
         end)
+
+        -- Book rule: a 9 or J at the bottom of the cut deck forces a
+        -- re-cut; the third occurrence penalises the dealer. The
+        -- shuffle's optional bottom-card guard closes the loophole at
+        -- construction time so the penalty cannot fire (see
+        -- `dealing.cut_deck_safety` in core/rule_config.lua). The
+        -- guard is on by default and can be disabled per call via
+        -- `{ ensure_bottom_safe = false }`.
+        describe("bottom-card guard (default on)", function()
+            it("never lands a 9 or J at the bottom across a wide seed sweep", function()
+                local d = deck.build()
+                for seed = 1, 500 do
+                    local rank = deck.shuffle(d, seed)[24].rank
+                    assert.are_not.equal("9", rank, "seed " .. seed)
+                    assert.are_not.equal("J", rank, "seed " .. seed)
+                end
+            end)
+
+            it("preserves the 24-card multiset after the swap", function()
+                local d = deck.build()
+                for seed = 1, 50 do
+                    local s = deck.shuffle(d, seed)
+                    local got = pair_multiset(s)
+                    local want = expected_pairs()
+                    local ok, err = are_pair_multisets_equal(got, want)
+                    assert.is_true(ok, "seed " .. seed .. ": " .. tostring(err))
+                end
+            end)
+
+            it("stays deterministic even when the swap fires", function()
+                for _, seed in ipairs({ 0, 1, 7, 42, 12345, 1000003 }) do
+                    local a = deck.shuffle(deck.build(), seed)
+                    local b = deck.shuffle(deck.build(), seed)
+                    for i = 1, #a do
+                        assert.is_true(
+                            card.equals(a[i], b[i]),
+                            "seed " .. seed .. " differs at index " .. i
+                        )
+                    end
+                end
+            end)
+        end)
+
+        describe("bottom-card guard opt-out", function()
+            it("returns the raw Fisher-Yates ordering when ensure_bottom_safe is false", function()
+                -- Pick a seed for which Fisher-Yates leaves a 9 or J at
+                -- deck[24]; assert the raw shuffle keeps it there.
+                local function raw_bottom_rank(seed)
+                    local copy = deck.build()
+                    local state = (seed % 4294967296 + 1) % 4294967296
+                    for i = #copy, 2, -1 do
+                        state = (1664525 * state + 1013904223) % 4294967296
+                        local j = (math.floor(state / 65536) % i) + 1
+                        copy[i], copy[j] = copy[j], copy[i]
+                    end
+                    return copy[24].rank, copy
+                end
+                local seen_offence = false
+                for seed = 1, 200 do
+                    local rank, raw = raw_bottom_rank(seed)
+                    if rank == "9" or rank == "J" then
+                        seen_offence = true
+                        local s = deck.shuffle(deck.build(), seed, {
+                            ensure_bottom_safe = false,
+                        })
+                        for i = 1, #s do
+                            assert.is_true(
+                                card.equals(s[i], raw[i]),
+                                "seed " .. seed .. " mismatch at " .. i
+                            )
+                        end
+                    end
+                end
+                assert.is_true(
+                    seen_offence,
+                    "Fisher-Yates never produced a 9/J at deck[24] in [1, 200] "
+                        .. "— widen the test sweep"
+                )
+            end)
+
+            it("rejects a non-table opts argument", function()
+                local d = deck.build()
+                assert.has_error(function()
+                    deck.shuffle(d, 1, "not a table")
+                end)
+                assert.has_error(function()
+                    deck.shuffle(d, 1, 42)
+                end)
+            end)
+        end)
+
+        describe("ensure_bottom_safe()", function()
+            it("returns a fresh deck with the bottom forced to a safe rank", function()
+                -- Seed 1 in the canonical-then-shuffle pipeline does
+                -- not trigger the guard for the first 200 seeds; pick a
+                -- seed where it does, so the helper has work to do.
+                local raw = deck.shuffle(deck.build(), 1, {
+                    ensure_bottom_safe = false,
+                })
+                -- Force a known offence by swapping the first 9 we
+                -- find into the bottom slot, then verify the helper
+                -- repairs it without losing any cards.
+                local nine_index
+                for i = 1, #raw do
+                    if raw[i].rank == "9" then
+                        nine_index = i
+                        break
+                    end
+                end
+                assert.is_not_nil(nine_index, "no 9 in the deck — impossible")
+                raw[nine_index], raw[#raw] = raw[#raw], raw[nine_index]
+                assert.are.equal("9", raw[#raw].rank)
+
+                local repaired = deck.ensure_bottom_safe(raw)
+                assert.are_not.equal("9", repaired[#repaired].rank)
+                assert.are_not.equal("J", repaired[#repaired].rank)
+
+                local got = pair_multiset(repaired)
+                local want = expected_pairs()
+                local ok, err = are_pair_multisets_equal(got, want)
+                assert.is_true(ok, tostring(err))
+            end)
+
+            it("does not mutate its input", function()
+                local raw = deck.shuffle(deck.build(), 1, {
+                    ensure_bottom_safe = false,
+                })
+                local snapshot = {}
+                for i, c in ipairs(raw) do
+                    snapshot[i] = c
+                end
+                deck.ensure_bottom_safe(raw)
+                for i = 1, #snapshot do
+                    assert.is_true(card.equals(snapshot[i], raw[i]))
+                end
+            end)
+
+            it("is a clone-only no-op when the bottom is already safe", function()
+                local d = deck.shuffle(deck.build(), 42)
+                -- The default shuffle already guarantees a safe bottom.
+                local repaired = deck.ensure_bottom_safe(d)
+                for i = 1, #d do
+                    assert.is_true(card.equals(d[i], repaired[i]))
+                end
+            end)
+
+            it("rejects a non-table input", function()
+                assert.has_error(function()
+                    deck.ensure_bottom_safe(nil)
+                end)
+                assert.has_error(function()
+                    deck.ensure_bottom_safe("deck")
+                end)
+            end)
+        end)
+    end)
+
+    -- Phase 3.8: shared predicate behind both the shuffle-time guard
+    -- and the procedural cut ritual. The two callers must agree on
+    -- "what counts as a bad bottom card", which is why this lives as
+    -- a single public helper.
+    describe("is_bottom_disallowed()", function()
+        it("returns true for a 9 of any suit", function()
+            for _, suit in ipairs(card.SUITS) do
+                assert.is_true(
+                    deck.is_bottom_disallowed(card.new(suit, "9")),
+                    suit .. " 9 should be disallowed"
+                )
+            end
+        end)
+
+        it("returns true for a J of any suit", function()
+            for _, suit in ipairs(card.SUITS) do
+                assert.is_true(
+                    deck.is_bottom_disallowed(card.new(suit, "J")),
+                    suit .. " J should be disallowed"
+                )
+            end
+        end)
+
+        it("returns false for Q, K, 10, A of any suit", function()
+            for _, suit in ipairs(card.SUITS) do
+                for _, rank in ipairs({ "Q", "K", "10", "A" }) do
+                    assert.is_false(
+                        deck.is_bottom_disallowed(card.new(suit, rank)),
+                        suit .. " " .. rank .. " should be allowed"
+                    )
+                end
+            end
+        end)
+
+        it("returns false for nil", function()
+            assert.is_false(deck.is_bottom_disallowed(nil))
+        end)
     end)
 end)
