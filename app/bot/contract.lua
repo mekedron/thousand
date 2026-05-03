@@ -92,6 +92,13 @@ local CHOOSERS = {
         },
     },
     {
+        name = "choose_cut_deck",
+        phase = "cut",
+        returns = {
+            "cut_deck",
+        },
+    },
+    {
         name = "choose_forced_bid_concession",
         phase = "awaiting_forced_concession_decision",
         returns = {

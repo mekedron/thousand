@@ -1147,7 +1147,7 @@ algorithmic.
     in the registry but not yet routed. The Phase 4.3 marriage
     heuristic decides whether to declare on lead, then chains
     `choose_marriage` → apply → `choose_card` on the next tick.
-- [ ] Add a chooser for the cut-deck phase.
+- [x] Add a chooser for the cut-deck phase.
   - `Session:current_phase() == "cut"` has no chooser entry today;
     bot seats stall there. Add `choose_cut_deck` to the contract
     registry and a stub returning the canonical deck split, so a

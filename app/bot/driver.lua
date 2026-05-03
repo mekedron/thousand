@@ -78,7 +78,7 @@ end
 
 -- Given a session and the responsible seat, decide which chooser the
 -- driver should call. Returns nil for phases the driver does not yet
--- drive (cut, raspassy_play, done, contra windows). Phase 4.3+ extends
+-- drive (raspassy_play, done, contra windows). Phase 4.3+ extends
 -- this map. The driver method form (vs. a module-local function) is
 -- needed so the marriage-skip latch is in scope.
 function Driver:_pick_chooser(session, seat)
@@ -89,6 +89,9 @@ function Driver:_pick_chooser(session, seat)
     end
     if phase == "auction" then
         return "choose_bid"
+    end
+    if phase == "cut" then -- i18n-ok: phase enum
+        return "choose_cut_deck"
     end
     if phase == "talon" then
         local sub = session:talon_substate()
@@ -243,6 +246,9 @@ local DISPATCH = {
     end,
     start_next_deal = function(s)
         return s:start_next_deal()
+    end,
+    cut_deck = function(s)
+        return s:cut_deck()
     end,
 }
 

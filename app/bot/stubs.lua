@@ -31,6 +31,10 @@ function M.choose_contra(_view, _seat)
     return { kind = "skip_contra" } -- i18n-ok: action enum
 end
 
+function M.choose_cut_deck(_view, _seat)
+    return { kind = "cut_deck" } -- i18n-ok: action enum
+end
+
 function M.choose_redeal(_view, _seat)
     return { kind = "decline_redeal" } -- i18n-ok: action enum
 end

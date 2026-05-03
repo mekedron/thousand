@@ -28,6 +28,11 @@ local EXPECTED_CHOOSERS = {
         returns = { "declare_contra", "declare_redouble", "skip_contra" },
     },
     {
+        name = "choose_cut_deck",
+        phase = "cut",
+        returns = { "cut_deck" },
+    },
+    {
         name = "choose_forced_bid_concession",
         phase = "awaiting_forced_concession_decision",
         returns = { "concede_forced_bid", "decline_forced_bid" },

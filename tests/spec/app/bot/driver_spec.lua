@@ -90,6 +90,7 @@ local function make_fake_session(state)
         "bid_named_contract",
         "declare_contra",
         "declare_redouble",
+        "cut_deck",
     }
     for _, m in ipairs(mutators) do
         s[m] = function(_, ...)
@@ -155,8 +156,8 @@ describe("app.bot.driver", function()
             assert.are.equal(0, #s._calls)
         end)
 
-        it("is a no-op for phases without a chooser (cut, raspassy_play)", function()
-            local s = make_fake_session({ phase = "cut", turn = 2 })
+        it("is a no-op for phases without a chooser (raspassy_play)", function()
+            local s = make_fake_session({ phase = "raspassy_play", turn = 2 })
             local clock = fake_clock(0)
             local d = driver.new({ now_fn = clock.now })
             d:tick(s, { "human", "bot", "bot" })
@@ -490,6 +491,17 @@ describe("app.bot.driver", function()
             })
             assert.are.equal("choose_next_deal", invoked.name)
         end)
+
+        it("cut → choose_cut_deck (seat from current_turn)", function()
+            local _, invoked = run_routing({
+                phase = "cut",
+                turn = 2,
+            }, { "human", "bot", "human" }, {
+                choose_cut_deck = { kind = "cut_deck" },
+            })
+            assert.are.equal("choose_cut_deck", invoked.name)
+            assert.are.equal(2, invoked.seat)
+        end)
     end)
 
     describe("action → mutator dispatch", function()
@@ -727,6 +739,15 @@ describe("app.bot.driver", function()
                 },
             })
             assert.are.equal(0, #calls)
+        end)
+
+        it("cut_deck → session:cut_deck()", function()
+            local calls = dispatch({ kind = "cut_deck" }, {
+                phase = "cut",
+                turn = 2,
+            })
+            assert.are.equal("cut_deck", calls[1].method)
+            assert.are.equal(0, #calls[1].args)
         end)
     end)
 
