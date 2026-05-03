@@ -1919,8 +1919,29 @@ local function draw_scoreboard(view, region)
         return
     end
 
+    -- Phase 3.6 penalty house-rules: when zero_tricks or cross is
+    -- active the per-seat row needs an extra line per active counter
+    -- below the optional state line. The view-model only sets
+    -- `entry.bolts` / `entry.crosses` when the matching toggle is on,
+    -- so we can scan once to decide the row height.
+    local has_bolts, has_crosses = false, false
+    for _, entry in ipairs(view.scoreboard) do
+        if entry.bolts then
+            has_bolts = true
+        end
+        if entry.crosses then
+            has_crosses = true
+        end
+    end
+
     local row_y = region.y + 36
     local row_h = 32
+    if has_bolts then
+        row_h = row_h + 14
+    end
+    if has_crosses then
+        row_h = row_h + 14
+    end
     for _, entry in ipairs(view.scoreboard) do
         local label
         if entry.player == view.turn_player and view.hands[entry.player].perspective == "self" then
@@ -1977,6 +1998,35 @@ local function draw_scoreboard(view, region)
                     t("scene.table.scoreboard.eliminated"),
                     region.x + 12,
                     row_y + 14
+                )
+            end
+
+            -- Phase 3.6 penalty house-rules: bolt and cross counters.
+            -- Always rendered below the optional state line so the
+            -- "1 / 3" progress is visible at a glance. Hidden when
+            -- the matching toggle is off (entry.bolts/crosses nil).
+            local extra_y = row_y + 28
+            if entry.bolts then
+                love.graphics.setColor(0.85, 0.55, 0.30, 1)
+                love.graphics.print(
+                    t("scene.table.scoreboard.bolts_counter", {
+                        count = entry.bolts.count,
+                        threshold = entry.bolts.threshold,
+                    }),
+                    region.x + 12,
+                    extra_y
+                )
+                extra_y = extra_y + 14
+            end
+            if entry.crosses then
+                love.graphics.setColor(0.75, 0.40, 0.55, 1)
+                love.graphics.print(
+                    t("scene.table.scoreboard.crosses_counter", {
+                        count = entry.crosses.count,
+                        threshold = entry.crosses.threshold,
+                    }),
+                    region.x + 12,
+                    extra_y
                 )
             end
         end

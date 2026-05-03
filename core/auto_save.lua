@@ -187,6 +187,13 @@ function M.serialize(session)
         -- active named contract record so a saved deal restores
         -- with the same mizère / slam / open-hand semantics.
         active_named_contract = data_clone(session._active_named_contract),
+        -- Phase 3.6 penalty house-rules persistence. The bolt and
+        -- cross counters span deals; the recorded-violations log
+        -- spans the current deal. All three round-trip cleanly so a
+        -- saved game continues penalty bookkeeping where it left off.
+        zero_tricks_bolts = data_clone(session._zero_tricks_bolts),
+        cross_count = data_clone(session._cross_count),
+        recorded_penalties = data_clone(session._recorded_penalties),
     }
 end
 
@@ -229,6 +236,9 @@ function M.deserialize(blob)
         in_golden_deal = blob.in_golden_deal,
         golden_deal_failures = blob.golden_deal_failures,
         active_named_contract = blob.active_named_contract,
+        zero_tricks_bolts = blob.zero_tricks_bolts,
+        cross_count = blob.cross_count,
+        recorded_penalties = blob.recorded_penalties,
     }
 end
 

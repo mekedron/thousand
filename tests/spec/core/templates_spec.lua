@@ -108,15 +108,14 @@ describe("core.templates", function()
             assert.are.equal("type_mismatch", r.error.cause.code)
         end)
 
-        it("bubbles up a deferred-field change as invalid_rule_config", function()
+        it("accepts a now-selectable penalty toggle change", function()
+            -- Phase 3.6's penalty house-rules task flipped
+            -- penalties.zero_tricks from deferred to selectable.
             local blob = valid_wrapper()
-            -- penalties.zero_tricks stays deferred until Phase 3.6's
-            -- penalties task lands.
             blob.ruleConfig.penalties.zero_tricks = "consecutive_three"
             local r = templates.try_new(blob)
-            assert.is_false(r.ok)
-            assert.are.equal("invalid_rule_config", r.error.code)
-            assert.are.equal("deferred_field_changed", r.error.cause.code)
+            assert.is_true(r.ok)
+            assert.are.equal("consecutive_three", r.template.ruleConfig.penalties.zero_tricks)
         end)
 
         it("defaults starred to false when missing", function()

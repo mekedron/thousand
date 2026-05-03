@@ -351,10 +351,16 @@ describe("core.scoring", function()
                 },
                 penalties = {
                     revoke = "standard",
+                    revoke_configurable_amount = 120,
                     talon_look = "standard",
                     showing_hand = "standard",
                     zero_tricks = "off",
+                    zero_tricks_threshold = 3,
+                    zero_tricks_penalty_amount = 120,
+                    zero_tricks_declarer_exempt = "off",
+                    zero_tricks_golden_deal_doubled = "off",
                     cross = "off",
+                    cross_penalty_amount = 120,
                 },
             })
 
@@ -683,6 +689,116 @@ describe("core.scoring", function()
             assert.are.same({ 0, 0, 0 }, s.slam_against_penalty)
             assert.are.equal(1, s.bid_multiplier)
             assert.are.equal(s.bid, s.effective_bid)
+        end)
+    end)
+
+    describe("score_deal() penalty arrays", function()
+        it("defaults the five penalty arrays to zero when absent", function()
+            local s = score_ok(default_opts())
+            assert.are.same({ 0, 0, 0 }, s.revoke_penalty)
+            assert.are.same({ 0, 0, 0 }, s.talon_look_penalty)
+            assert.are.same({ 0, 0, 0 }, s.showing_hand_penalty)
+            assert.are.same({ 0, 0, 0 }, s.zero_tricks_penalty)
+            assert.are.same({ 0, 0, 0 }, s.cross_penalty)
+            assert.is_false(s.suppress_declarer_failed_bid_deduction)
+        end)
+
+        it("adds revoke_penalty straight to deltas without changing deal_scores", function()
+            -- Declarer makes contract (75 captured >= 75 bid). With a
+            -- revoke against the declarer (-120) and the bid
+            -- redistributed across two defenders (+60 each), deltas
+            -- carry the penalty while deal_scores stay clean.
+            local s = score_ok(default_opts({
+                bid = 75,
+                captured_points = { 75, 25, 20 },
+                revoke_penalty = { -120, 60, 60 },
+            }))
+            assert.are.same({ -120, 60, 60 }, s.revoke_penalty)
+            -- deal_scores reflect the rounded captured + bonuses only.
+            assert.are.equal(75, s.deal_scores[1])
+            assert.are.equal(25, s.deal_scores[2])
+            assert.are.equal(20, s.deal_scores[3])
+            -- Declarer got +bid (75) on success, then -120 for the revoke.
+            assert.are.equal(75 - 120, s.deltas[1])
+            -- Defenders got their deal_score plus the revoke share.
+            assert.are.equal(25 + 60, s.deltas[2])
+            assert.are.equal(20 + 60, s.deltas[3])
+        end)
+
+        it("adds zero_tricks_penalty to a defender's delta", function()
+            local s = score_ok(default_opts({
+                bid = 100,
+                captured_points = { 100, 0, 20 },
+                zero_tricks_penalty = { 0, -120, 0 },
+            }))
+            -- Defender 2 took 0 captured + bolt threshold hit.
+            assert.are.equal(0 - 120, s.deltas[2])
+            assert.are.same({ 0, -120, 0 }, s.zero_tricks_penalty)
+        end)
+
+        it("suppresses the declarer's failed-bid deduction when cross is on", function()
+            -- Declarer fails (60 < 100). Without suppression,
+            -- delta[1] = -100. With suppression and a cross_penalty of
+            -- 0 (counter under threshold), delta[1] = 0.
+            local s = score_ok(default_opts({
+                bid = 100,
+                captured_points = { 60, 30, 30 },
+                suppress_declarer_failed_bid_deduction = true,
+            }))
+            assert.is_false(s.made_contract)
+            assert.is_true(s.suppress_declarer_failed_bid_deduction)
+            assert.are.equal(0, s.deltas[1])
+            -- Defender base remains in their deltas.
+            assert.are.equal(30, s.deltas[2])
+            assert.are.equal(30, s.deltas[3])
+        end)
+
+        it("applies cross_penalty on top of suppression when the threshold hits", function()
+            -- Same shape but the session emits cross_penalty[1] = -120
+            -- because the declarer's cross counter just hit two.
+            local s = score_ok(default_opts({
+                bid = 100,
+                captured_points = { 60, 30, 30 },
+                suppress_declarer_failed_bid_deduction = true,
+                cross_penalty = { -120, 0, 0 },
+            }))
+            assert.are.equal(0 - 120, s.deltas[1])
+            assert.are.equal(-120, s.running_totals[1] - s.running_totals_before[1])
+        end)
+
+        it(
+            "preserves failed_contract_distribution for defenders under cross suppression",
+            function()
+                -- Build a Russian-derived config with split_among_defenders +
+                -- cross = on so the defender share is exercised even with
+                -- the declarer's side suppressed.
+                local json = require("app.json")
+                local blob = json.decode(rule_config.to_json(rule_config.canonical_russian))
+                blob.scoring.failed_contract_distribution = "split_among_defenders"
+                blob.penalties.cross = "on"
+                local variant = rule_config.new(blob)
+                local res = scoring.score_deal(
+                    variant,
+                    default_opts({
+                        bid = 100,
+                        captured_points = { 50, 30, 40 },
+                        suppress_declarer_failed_bid_deduction = true,
+                    })
+                )
+                assert.is_true(res.ok)
+                local s = res.scoring
+                -- Declarer's -bid is suppressed.
+                assert.are.equal(0, s.deltas[1])
+                -- Defenders get deal_score + their share of the bid.
+                assert.are.equal(30 + 50, s.deltas[2])
+                assert.are.equal(40 + 50, s.deltas[3])
+            end
+        )
+
+        it("rejects non-list penalty arrays with bad_<field>", function()
+            local res = scoring.score_deal(config, default_opts({ revoke_penalty = "not a list" }))
+            assert.is_false(res.ok)
+            assert.are.equal("bad_revoke_penalty", res.error.code)
         end)
     end)
 

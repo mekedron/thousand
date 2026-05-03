@@ -664,7 +664,7 @@ ships scripted engine tests covering every value.
     duration of the deal.
   - All three fields flip to selectable.
   - Engine tests run scripted full deals for every special contract.
-- [ ] Implement penalty house rules.
+- [x] Implement penalty house rules.
   - `revoke` `flat` deducts a fixed 120; `configurable` deducts a new
     sibling fixed amount.
   - `talon_look` `stricter` forfeits the deal and awards the bid to

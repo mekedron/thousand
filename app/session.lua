@@ -182,6 +182,10 @@ local function reset_deal_state(self, dealer, seed_bump)
     -- marriage-block guard, the open-hand visibility flag, and the
     -- named-contract scoring path.
     self._active_named_contract = nil
+    -- Phase 3.6 penalty house-rules: cleared on every deal start.
+    -- Bolt and cross counters span deals (per-game state) and stay
+    -- intact; only the per-deal recorded_penalties log resets.
+    self._recorded_penalties = {}
     if golden_active then
         -- Drive the auction-end transition immediately so the talon
         -- (or no-talon trick start, under templates with `talon.size =
@@ -423,6 +427,24 @@ function M.new(opts)
         -- marriage-block guard, the open-hand visibility flag, and
         -- the named-contract scoring path.
         _active_named_contract = nil,
+        -- Phase 3.6 penalty house-rules state.
+        --   _zero_tricks_bolts: per-seat persistent bolt counter.
+        --       Incremented when a seat takes zero tricks under
+        --       `penalties.zero_tricks ~= "off"`; reset on threshold
+        --       hit and (under `consecutive_three`) on any trick
+        --       taken. Persisted across deals.
+        --   _cross_count: per-seat persistent cross counter.
+        --       Incremented when the declarer fails a contract under
+        --       `penalties.cross = "on"`; reset on threshold hit
+        --       (2 crosses). Persisted across deals.
+        --   _recorded_penalties: list of per-deal violation records
+        --       fed by Session:record_penalty_violation (talon-look
+        --       and showing-hand). Cleared at deal start; consumed
+        --       by on_tricks_end when computing the per-deal
+        --       talon_look_penalty / showing_hand_penalty arrays.
+        _zero_tricks_bolts = zero_totals(config.players.count),
+        _cross_count = zero_totals(config.players.count),
+        _recorded_penalties = {},
     }, Session)
     evaluate_entitlement_with_forced_loop(self)
     -- Phase 3.6 opening-game: drive the auction-end transition so the
@@ -496,6 +518,9 @@ function M.from_state(state)
         _half_marriage_capture_bonuses = state.half_marriage_capture_bonuses or {},
         _drowned_marriage_log = state.drowned_marriage_log or {},
         _active_named_contract = state.active_named_contract,
+        _zero_tricks_bolts = state.zero_tricks_bolts or zero_totals(player_count),
+        _cross_count = state.cross_count or zero_totals(player_count),
+        _recorded_penalties = state.recorded_penalties or {},
     }, Session)
     -- Phase 3.6: when from_state restores a tricks-phase session and
     -- the active variant is pre_first_trick, re-open the queue from
@@ -726,6 +751,84 @@ end
 
 function Session:barrel_state()
     return self._barrel_state
+end
+
+-- Per-seat persistent bolt counter under
+-- `penalties.zero_tricks ~= "off"`. Returns a copy so callers (the
+-- table view-model in particular) cannot mutate session state.
+function Session:zero_tricks_bolts()
+    return copy_list(self._zero_tricks_bolts)
+end
+
+-- Per-seat persistent cross counter under `penalties.cross = "on"`.
+-- Returns a copy.
+function Session:cross_count()
+    return copy_list(self._cross_count)
+end
+
+-- Record a penalty violation for the current deal. The session
+-- accumulates these and emits the matching per-seat penalty array at
+-- `on_tricks_end`. Used by tests today; UI auto-trigger lands in a
+-- later polish task. `kind` must be `"talon_look"` or
+-- `"showing_hand"`; `seat` is a seat index in `[1, player_count]`.
+function Session:record_penalty_violation(seat, kind)
+    local count = self._config.players.count
+    if type(seat) ~= "number" or seat < 1 or seat > count or seat ~= math.floor(seat) then
+        local msg = "seat must be an integer in 1.." -- i18n-ok: internal error
+        return {
+            ok = false,
+            error = {
+                code = "bad_seat",
+                message = msg .. count,
+                actual = seat,
+                player_count = count,
+            },
+        }
+    end
+    if kind ~= "talon_look" and kind ~= "showing_hand" then -- i18n-ok: kind enum
+        local msg = "kind must be 'talon_look' or 'showing_hand'" -- i18n-ok: internal error
+        return {
+            ok = false,
+            error = {
+                code = "bad_kind",
+                message = msg,
+                actual = kind,
+            },
+        }
+    end
+    local pen_rules = self._config.penalties
+    local amount
+    if kind == "talon_look" then
+        amount = 120
+        if pen_rules.talon_look == "stricter" then
+            -- Forfeit the deal at the active bid; fall back to 120
+            -- when the auction has not produced one yet.
+            local fb = self._talon and self._talon.final_bid
+            if type(fb) == "number" and fb > 0 then
+                amount = fb
+            elseif self._auction and type(self._auction.current_bid) == "number" then
+                amount = self._auction.current_bid
+            end
+        end
+    else
+        amount = 20
+        if pen_rules.showing_hand == "strict" then
+            local fb = self._talon and self._talon.final_bid
+            if type(fb) == "number" and fb > 0 then
+                amount = fb
+            elseif self._auction and type(self._auction.current_bid) == "number" then
+                amount = self._auction.current_bid
+            else
+                amount = self._config.bidding.opening_min
+            end
+        end
+    end
+    self._recorded_penalties[#self._recorded_penalties + 1] = {
+        seat = seat,
+        kind = kind,
+        amount = amount,
+    }
+    return { ok = true, seat = seat, kind = kind, amount = amount }
 end
 
 -- The 2-player A draw stock. Returns nil for layouts without a stock,
@@ -1384,6 +1487,137 @@ local function on_tricks_end(self)
         end
     end
 
+    -- Phase 3.6 penalty house-rules. Build five signed per-seat
+    -- arrays the engine adds straight to deltas. Each array is
+    -- pre-computed before score_deal so the contract check stays
+    -- clean — penalties are running-total adjustments, not bonus
+    -- contributions to deal_scores.
+    local pen_rules = self._config.penalties
+    local revoke_penalty = {}
+    local talon_look_penalty = {}
+    local showing_hand_penalty = {}
+    local zero_tricks_penalty = {}
+    local cross_penalty = {}
+    for i = 1, player_count do
+        revoke_penalty[i] = 0
+        talon_look_penalty[i] = 0
+        showing_hand_penalty[i] = 0
+        zero_tricks_penalty[i] = 0
+        cross_penalty[i] = 0
+    end
+
+    -- Revoke: walk the completed tricks for any tagged violations
+    -- (engine flags them only under tricks.lazy_revoke = "on"). For
+    -- each violation deduct the active amount from the offender and
+    -- credit the opposing side. A defender revoke awards the full
+    -- amount to the declarer; a declarer revoke splits it across
+    -- the defenders.
+    local revoke_violations = {}
+    for _, completed in ipairs(t.completed_tricks or {}) do
+        for _, v in ipairs(completed.revoke_violations or {}) do
+            revoke_violations[#revoke_violations + 1] = v
+        end
+    end
+    if #revoke_violations > 0 and type(bid) == "number" then
+        local amount
+        if pen_rules.revoke == "flat" then
+            amount = 120
+        elseif pen_rules.revoke == "configurable" then
+            amount = pen_rules.revoke_configurable_amount
+        else
+            amount = bid
+        end
+        for _, v in ipairs(revoke_violations) do
+            local offender = v.player
+            revoke_penalty[offender] = revoke_penalty[offender] - amount
+            if offender == declarer then
+                local defenders = {}
+                for i = 1, player_count do
+                    if i ~= declarer then
+                        defenders[#defenders + 1] = i
+                    end
+                end
+                if #defenders > 0 then
+                    local share = math.floor(amount / #defenders)
+                    local rem = amount - share * #defenders
+                    for k, i in ipairs(defenders) do
+                        revoke_penalty[i] = revoke_penalty[i] + share + (k == 1 and rem or 0)
+                    end
+                end
+            else
+                revoke_penalty[declarer] = revoke_penalty[declarer] + amount
+            end
+        end
+    end
+
+    -- Zero-tricks bolts. Iterate seats; under any_three the counter
+    -- accumulates without a trick-taken reset; under consecutive_three
+    -- a seat that took a trick this deal resets to 0. A zero-trick
+    -- seat earns one bolt (two if golden_deal_doubled is on and the
+    -- deal is a golden deal). On threshold hit emit the penalty and
+    -- reset.
+    local new_bolts = {}
+    for i = 1, player_count do
+        new_bolts[i] = self._zero_tricks_bolts[i] or 0
+    end
+    if pen_rules.zero_tricks ~= "off" then
+        local threshold = pen_rules.zero_tricks_threshold
+        local penalty_amount = pen_rules.zero_tricks_penalty_amount
+        local exempt_declarer = pen_rules.zero_tricks_declarer_exempt == "on"
+        local doubled = pen_rules.zero_tricks_golden_deal_doubled == "on" and self._in_golden_deal
+        for seat = 1, player_count do
+            local won = t.tricks_won[seat] or 0
+            local exempt = exempt_declarer and seat == declarer
+            if won == 0 and not exempt then
+                new_bolts[seat] = new_bolts[seat] + (doubled and 2 or 1)
+            elseif won >= 1 and pen_rules.zero_tricks == "consecutive_three" then
+                new_bolts[seat] = 0
+            end
+            if new_bolts[seat] >= threshold then
+                zero_tricks_penalty[seat] = zero_tricks_penalty[seat] - penalty_amount
+                new_bolts[seat] = 0
+            end
+        end
+    end
+
+    -- Talon-look / showing-hand recorded violations. Each record
+    -- carries a pre-computed amount captured at API-call time.
+    -- Talon-look "stricter" awards the offender's amount to the
+    -- opposing side (split across defenders if offender is declarer);
+    -- standard talon-look and any showing-hand mode just deduct.
+    for _, rec in ipairs(self._recorded_penalties or {}) do
+        local seat = rec.seat
+        local amount = rec.amount
+        if rec.kind == "talon_look" then
+            talon_look_penalty[seat] = talon_look_penalty[seat] - amount
+            if pen_rules.talon_look == "stricter" then
+                if seat == declarer then
+                    local defenders = {}
+                    for i = 1, player_count do
+                        if i ~= declarer then
+                            defenders[#defenders + 1] = i
+                        end
+                    end
+                    if #defenders > 0 then
+                        local share = math.floor(amount / #defenders)
+                        local rem = amount - share * #defenders
+                        for k, i in ipairs(defenders) do
+                            talon_look_penalty[i] = talon_look_penalty[i]
+                                + share
+                                + (k == 1 and rem or 0)
+                        end
+                    end
+                else
+                    talon_look_penalty[declarer] = talon_look_penalty[declarer] + amount
+                end
+            end
+        elseif rec.kind == "showing_hand" then
+            showing_hand_penalty[seat] = showing_hand_penalty[seat] - amount
+        end
+    end
+
+    local cross_active = pen_rules.cross == "on"
+
     if not is_named then
         sd_opts = {
             declarer = declarer,
@@ -1397,12 +1631,46 @@ local function on_tricks_end(self)
             slam_bonus = slam_bonus,
             slam_against_penalty = slam_against_penalty,
             running_totals = self._running_totals,
+            revoke_penalty = revoke_penalty,
+            talon_look_penalty = talon_look_penalty,
+            showing_hand_penalty = showing_hand_penalty,
+            zero_tricks_penalty = zero_tricks_penalty,
+            cross_penalty = cross_penalty,
+            suppress_declarer_failed_bid_deduction = cross_active,
         }
+    else
+        sd_opts.revoke_penalty = revoke_penalty
+        sd_opts.talon_look_penalty = talon_look_penalty
+        sd_opts.showing_hand_penalty = showing_hand_penalty
+        sd_opts.zero_tricks_penalty = zero_tricks_penalty
+        sd_opts.cross_penalty = cross_penalty
     end
     local sd = scoring.score_deal(self._config, sd_opts)
     if not sd.ok then
         error("session: score_deal failed: " .. tostring(sd.error.message), 2)
     end
+
+    -- Cross post-processing. The declarer's failed-bid deduction was
+    -- already suppressed in the engine; here we increment the cross
+    -- counter, fire the threshold penalty (mutating sd.scoring's
+    -- cross_penalty + deltas in place so the deal_done payload and
+    -- advance_game both see the final figures), and reset on hit.
+    if cross_active and sd.scoring.made_contract == false then
+        self._cross_count[declarer] = (self._cross_count[declarer] or 0) + 1
+        if self._cross_count[declarer] >= 2 then
+            local pen = pen_rules.cross_penalty_amount
+            sd.scoring.cross_penalty[declarer] = sd.scoring.cross_penalty[declarer] - pen
+            sd.scoring.deltas[declarer] = sd.scoring.deltas[declarer] - pen
+            sd.scoring.running_totals[declarer] = sd.scoring.running_totals[declarer] - pen
+            self._cross_count[declarer] = 0
+        end
+    end
+
+    -- Commit zero-tricks counter updates after score_deal returns. The
+    -- engine has already applied the threshold deductions through the
+    -- penalty array; this just persists the new counters.
+    self._zero_tricks_bolts = new_bolts
+
     self._scoring = sd.scoring
 
     local g = scoring.advance_game(self._config, {
@@ -1476,6 +1744,17 @@ local function on_tricks_end(self)
             -- right contract row (mizère / slam / open hand) instead
             -- of the standard captured-points + bonuses breakdown.
             named_contract = sd.scoring.named_contract,
+            -- Phase 3.6 penalty house-rules. Per-seat signed arrays
+            -- and post-deal counter snapshots so the view-model can
+            -- render the deal-scoreboard penalty rows and the running
+            -- bolt / cross counters.
+            revoke_penalty = sd.scoring.revoke_penalty,
+            talon_look_penalty = sd.scoring.talon_look_penalty,
+            showing_hand_penalty = sd.scoring.showing_hand_penalty,
+            zero_tricks_penalty = sd.scoring.zero_tricks_penalty,
+            cross_penalty = sd.scoring.cross_penalty,
+            zero_tricks_bolts = copy_list(self._zero_tricks_bolts),
+            cross_count = copy_list(self._cross_count),
         }
     end
 end

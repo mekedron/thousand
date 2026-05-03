@@ -151,19 +151,33 @@ describe("ui.scenes.template_editor", function()
 
         it("disables every deferred field's widget", function()
             scene:draw(1024, 720)
-            local found_deferred = false
+            -- Phase 3.6 closes every catalogued toggle, so the schema
+            -- ships with no deferred fields right now. The contract is
+            -- still that any deferred widget must be disabled — keep
+            -- the loop so reintroducing a deferred toggle in a later
+            -- phase exercises the assertion without a test rewrite.
             for _, entry in ipairs(scene._widgets) do
                 if entry.descriptor.status == "deferred" and entry.widget then
                     assert.is_false(entry.widget.enabled, entry.section .. "." .. entry.field)
-                    found_deferred = true
                 end
             end
-            assert.is_true(found_deferred, "expected at least one deferred widget")
         end)
 
-        it("renders 'Not yet available' badge for deferred fields", function()
+        it("renders 'Not yet available' badge only when a deferred field exists", function()
             scene:draw(1024, 720)
-            assert.is_not_nil(find_text(mock, t("scene.template_editor.deferred_badge")))
+            local has_deferred = false
+            for _, entry in ipairs(scene._widgets) do
+                if entry.descriptor.status == "deferred" then
+                    has_deferred = true
+                    break
+                end
+            end
+            local badge = find_text(mock, t("scene.template_editor.deferred_badge"))
+            if has_deferred then
+                assert.is_not_nil(badge)
+            else
+                assert.is_nil(badge)
+            end
         end)
 
         it("changing a selectable numeric field marks the row modified", function()

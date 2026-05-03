@@ -147,18 +147,16 @@ describe("app.templates", function()
             assert.are.equal(snapshot, store["templates.json"])
         end)
 
-        it("rejects a deferred-toggle change and leaves storage unchanged", function()
+        it("accepts a now-selectable penalty toggle change", function()
+            -- Phase 3.6's penalty house-rules task flipped
+            -- penalties.zero_tricks from deferred to selectable, so an
+            -- update that sets it must now succeed.
             local created = templates.create({ fromBuiltin = "russian", name = "Mine" }).template
-            local snapshot = store["templates.json"]
-            local bad = builtin_blob("russian")
-            -- penalties.zero_tricks stays deferred until Phase 3.6's
-            -- penalties task lands.
-            bad.penalties.zero_tricks = "consecutive_three"
-            local r = templates.update(created.id, bad)
-            assert.is_false(r.ok)
-            assert.are.equal("invalid_rule_config", r.error.code)
-            assert.are.equal("deferred_field_changed", r.error.cause.code)
-            assert.are.equal(snapshot, store["templates.json"])
+            local edited = builtin_blob("russian")
+            edited.penalties.zero_tricks = "consecutive_three"
+            local r = templates.update(created.id, edited)
+            assert.is_true(r.ok)
+            assert.are.equal("consecutive_three", r.template.ruleConfig.penalties.zero_tricks)
         end)
 
         it("returns unknown_template when the id does not exist", function()

@@ -181,6 +181,27 @@ local function score_named_contract(config, opts, declarer, player_count, neares
         card_points_rounded[i] = round_to_nearest(opts.captured_points[i], nearest)
     end
 
+    -- Phase 3.6 penalty house-rule arrays. Same default-zero shape as
+    -- score_deal so the session can emit the same arrays on a
+    -- named-contract deal — e.g. a slam declarer who revoked still
+    -- pays the revoke penalty on top of the contract result.
+    local function default_zero(list)
+        if list == nil then
+            local out = {}
+            for i = 1, player_count do
+                out[i] = 0
+            end
+            return out
+        end
+        return list
+    end
+
+    local revoke_penalty_named = default_zero(opts.revoke_penalty)
+    local talon_look_penalty_named = default_zero(opts.talon_look_penalty)
+    local showing_hand_penalty_named = default_zero(opts.showing_hand_penalty)
+    local zero_tricks_penalty_named = default_zero(opts.zero_tricks_penalty)
+    local cross_penalty_named = default_zero(opts.cross_penalty)
+
     local deltas = {}
     for i = 1, player_count do
         if i == declarer then
@@ -188,6 +209,12 @@ local function score_named_contract(config, opts, declarer, player_count, neares
         else
             deltas[i] = 0
         end
+        deltas[i] = deltas[i]
+            + revoke_penalty_named[i]
+            + talon_look_penalty_named[i]
+            + showing_hand_penalty_named[i]
+            + zero_tricks_penalty_named[i]
+            + cross_penalty_named[i]
     end
 
     local running_totals_after = {}
@@ -232,6 +259,12 @@ local function score_named_contract(config, opts, declarer, player_count, neares
         last_trick_bonus = copy_int_list(zeros, player_count),
         slam_bonus = copy_int_list(zeros, player_count),
         slam_against_penalty = copy_int_list(zeros, player_count),
+        revoke_penalty = copy_int_list(revoke_penalty_named, player_count),
+        talon_look_penalty = copy_int_list(talon_look_penalty_named, player_count),
+        showing_hand_penalty = copy_int_list(showing_hand_penalty_named, player_count),
+        zero_tricks_penalty = copy_int_list(zero_tricks_penalty_named, player_count),
+        cross_penalty = copy_int_list(cross_penalty_named, player_count),
+        suppress_declarer_failed_bid_deduction = false,
         deal_scores = copy_int_list(zeros, player_count),
         made_contract = made_contract,
         contract_check_value = made_contract and effective_bid or 0,
@@ -365,6 +398,46 @@ function M.score_deal(config, opts)
     if err3 then
         return err3
     end
+
+    -- Phase 3.6 penalty house-rule inputs. Five signed per-seat arrays
+    -- the session emits when a violation is recorded or a counter hits
+    -- its threshold. Negative entries deduct from the seat's running
+    -- total; positive entries credit (e.g. revoke "standard" awards
+    -- the bid to the opposing side). They bypass the deal_scores
+    -- contract-check path and add directly to `deltas` after the
+    -- normal contract resolution.
+    local revoke_penalty, errp1 =
+        default_zero_list_or_validate("revoke_penalty", opts.revoke_penalty)
+    if errp1 then
+        return errp1
+    end
+    local talon_look_penalty, errp2 =
+        default_zero_list_or_validate("talon_look_penalty", opts.talon_look_penalty)
+    if errp2 then
+        return errp2
+    end
+    local showing_hand_penalty, errp3 =
+        default_zero_list_or_validate("showing_hand_penalty", opts.showing_hand_penalty)
+    if errp3 then
+        return errp3
+    end
+    local zero_tricks_penalty, errp4 =
+        default_zero_list_or_validate("zero_tricks_penalty", opts.zero_tricks_penalty)
+    if errp4 then
+        return errp4
+    end
+    local cross_penalty, errp5 = default_zero_list_or_validate("cross_penalty", opts.cross_penalty)
+    if errp5 then
+        return errp5
+    end
+
+    -- When `cross = "on"` and the declarer fails the contract, the
+    -- normal -bid deduction is suppressed (the failure converts to a
+    -- cross marker; the actual penalty fires from cross_penalty when
+    -- the counter hits two). Defender extras still apply.
+    local suppress_declarer_failed_bid_deduction = opts.suppress_declarer_failed_bid_deduction
+            and true
+        or false
 
     -- bid_multiplier realises `slam_bonus = "doubled_bid"` (2 on success;
     -- 1 otherwise). Applied to the input `bid` before the contract check
@@ -612,17 +685,32 @@ function M.score_deal(config, opts)
     -- the declarer's seat carries the +/-bid and the partner's pooled
     -- capture is dropped (the bid replaces it for the side). Defender
     -- deltas combine the (possibly pooled) defender base with the failed-
-    -- contract distribution extra.
+    -- contract distribution extra. Penalty arrays add a signed
+    -- contribution to every seat after the normal resolution so e.g. a
+    -- revoking declarer who still made contract scores
+    -- `+success_payout + revoke_penalty[declarer]`.
     local deltas = {}
     for i = 1, player_count do
         if i == declarer then
-            deltas[i] = made_contract and success_payout or -effective_bid
+            if made_contract then
+                deltas[i] = success_payout
+            elseif suppress_declarer_failed_bid_deduction then
+                deltas[i] = 0
+            else
+                deltas[i] = -effective_bid
+            end
         elseif sides and sides[i] == declarer_side then
             deltas[i] = 0
         else
             deltas[i] = (defender_base[i] or deal_scores[i])
                 + failed_contract_distribution_extras[i]
         end
+        deltas[i] = deltas[i]
+            + revoke_penalty[i]
+            + talon_look_penalty[i]
+            + showing_hand_penalty[i]
+            + zero_tricks_penalty[i]
+            + cross_penalty[i]
     end
 
     local running_totals_after = {}
@@ -664,6 +752,12 @@ function M.score_deal(config, opts)
         last_trick_bonus = copy_int_list(last_trick_bonus, player_count),
         slam_bonus = copy_int_list(slam_bonus, player_count),
         slam_against_penalty = copy_int_list(slam_against_penalty, player_count),
+        revoke_penalty = copy_int_list(revoke_penalty, player_count),
+        talon_look_penalty = copy_int_list(talon_look_penalty, player_count),
+        showing_hand_penalty = copy_int_list(showing_hand_penalty, player_count),
+        zero_tricks_penalty = copy_int_list(zero_tricks_penalty, player_count),
+        cross_penalty = copy_int_list(cross_penalty, player_count),
+        suppress_declarer_failed_bid_deduction = suppress_declarer_failed_bid_deduction,
         deal_scores = deal_scores,
         made_contract = made_contract,
         contract_check_value = contract_check_value,
@@ -800,6 +894,11 @@ function M.score_raspassy(config, opts)
         }
     end
 
+    local zeros_p = {}
+    for i = 1, player_count do
+        zeros_p[i] = 0
+    end
+
     local state = tag_as_scoring({
         schema_version = M.SCHEMA_VERSION,
         config = config,
@@ -810,6 +909,12 @@ function M.score_raspassy(config, opts)
         marriage_bonuses = marriage_bonuses,
         half_marriage_capture_bonuses = half_marriage_capture_bonuses,
         ace_marriage_bonuses = ace_marriage_bonuses,
+        revoke_penalty = copy_int_list(zeros_p, player_count),
+        talon_look_penalty = copy_int_list(zeros_p, player_count),
+        showing_hand_penalty = copy_int_list(zeros_p, player_count),
+        zero_tricks_penalty = copy_int_list(zeros_p, player_count),
+        cross_penalty = copy_int_list(zeros_p, player_count),
+        suppress_declarer_failed_bid_deduction = false,
         deal_scores = deal_scores,
         made_contract = nil,
         deltas = deltas,

@@ -1598,84 +1598,170 @@ local SCHEMA = {
             },
         },
     },
-    -- Penalty house-rule toggles. Phase 3.2 catalogues the shape;
-    -- penalty amounts (e.g. flat 120 for revoke, 20 for showing
-    -- hand) are sibling fields that land with the gameplay task.
-    -- See docs/variations/house-rules.md "Penalty house rules".
+    -- Penalty house-rule toggles. Phase 3.6 wired: every toggle
+    -- flips to "selectable" with engine + counter + scoreboard-row
+    -- support. See docs/variations/house-rules.md "Penalty house
+    -- rules".
     penalties = {
         kind = "section",
         field_order = {
             "revoke",
+            "revoke_configurable_amount",
             "talon_look",
             "showing_hand",
             "zero_tricks",
+            "zero_tricks_threshold",
+            "zero_tricks_penalty_amount",
+            "zero_tricks_declarer_exempt",
+            "zero_tricks_golden_deal_doubled",
             "cross",
+            "cross_penalty_amount",
         },
         fields = {
             -- House-rule: penalty for revoking. `standard` awards
             -- the declarer's full bid to the opposing side; `flat`
             -- awards 120 regardless of bid; `configurable` lets the
-            -- house pick a fixed amount (the amount is a sibling
-            -- field that lands with the gameplay task). See
+            -- house pick a fixed amount (sibling
+            -- `revoke_configurable_amount`). The engine triggers
+            -- this penalty when `tricks.lazy_revoke = "on"` flags a
+            -- violation in `completed_tricks.revoke_violations`. See
             -- docs/variations/house-rules.md "Revoke penalty".
             revoke = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "standard", "flat", "configurable" },
                 default = "standard",
-                status = "deferred",
+                status = "selectable",
+            },
+            -- Fixed penalty deducted from the offender under
+            -- `revoke = "configurable"`. Inert under the other
+            -- modes; carried in the schema so saved templates
+            -- round-trip cleanly. Bounded in [0, 240] — the
+            -- documented "120 typical" sits at the midpoint, with
+            -- headroom for stiffer house conventions.
+            revoke_configurable_amount = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 0,
+                max = 240,
+                default = 120,
+                status = "selectable",
             },
             -- House-rule: penalty for looking at the talon before
             -- the auction ends. `standard` deducts 120 and redeals;
             -- `stricter` forfeits the deal and awards the bid to
-            -- the opposing side. See
-            -- docs/variations/house-rules.md "Talon-look penalty".
+            -- the opposing side. The engine fires this penalty when
+            -- `Session:record_penalty_violation(seat, "talon_look")`
+            -- is called — UI auto-trigger is deferred to a Phase 5
+            -- polish task. See docs/variations/house-rules.md
+            -- "Talon-look penalty".
             talon_look = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "standard", "stricter" },
                 default = "standard",
-                status = "deferred",
+                status = "selectable",
             },
             -- House-rule: penalty for showing one's hand to an
-            -- opponent. `standard` is a small fixed penalty
-            -- (typically 20); `strict` deducts the full bid. See
-            -- docs/variations/house-rules.md "Showing-hand penalty".
+            -- opponent. `standard` is a small fixed penalty (20);
+            -- `strict` deducts the full bid. Triggered via
+            -- `Session:record_penalty_violation(seat, "showing_hand")`
+            -- — UI auto-trigger is deferred to a Phase 5 polish
+            -- task. See docs/variations/house-rules.md
+            -- "Showing-hand penalty".
             showing_hand = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "standard", "strict" },
                 default = "standard",
-                status = "deferred",
+                status = "selectable",
             },
             -- House-rule: zero-tricks penalty / болт / палка.
             -- `consecutive_three` resets the bolt counter on any
             -- trick taken; `any_three` is cumulative across the
             -- game. The variant flags (declarer exempt, doubled in
-            -- golden deal) are sibling fields that land with the
-            -- gameplay task. See docs/variations/house-rules.md
-            -- "Zero-tricks penalty (Болт / Палка)" — distinct from
-            -- the bidding-section forced_dealer_bid (also called
-            -- бовт/болт but a forced 100 contract, not a zero-tricks
-            -- penalty).
+            -- golden deal) live in sibling fields. See
+            -- docs/variations/house-rules.md "Zero-tricks penalty
+            -- (Болт / Палка)" — distinct from the bidding-section
+            -- forced_dealer_bid (also called бовт/болт but a forced
+            -- 100 contract, not a zero-tricks penalty).
             zero_tricks = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "off", "consecutive_three", "any_three" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
+            },
+            -- Bolt count at which the zero-tricks penalty fires and
+            -- the counter resets. Inert under `zero_tricks = "off"`.
+            -- Bounded in [2, 5] — the spec's "commonly 3" sits at the
+            -- midpoint, with room for stricter or laxer table rules.
+            zero_tricks_threshold = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 2,
+                max = 5,
+                default = 3,
+                status = "selectable",
+            },
+            -- Penalty deducted when a player's bolt count reaches
+            -- `zero_tricks_threshold`. Inert under
+            -- `zero_tricks = "off"`. Bounded in [0, 240] — the
+            -- documented "−120 typical" sits at the midpoint.
+            zero_tricks_penalty_amount = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 0,
+                max = 240,
+                default = 120,
+                status = "selectable",
+            },
+            -- Sub-flag: when `on`, the declarer never accumulates a
+            -- bolt — only defenders can earn them. Rare. Inert under
+            -- `zero_tricks = "off"`.
+            zero_tricks_declarer_exempt = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "selectable",
+            },
+            -- Sub-flag: when `on` and the deal is a golden deal, a
+            -- zero-tricks seat earns 2 bolts instead of 1. Inert
+            -- under `zero_tricks = "off"`.
+            zero_tricks_golden_deal_doubled = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "selectable",
             },
             -- House-rule: cross / крест — alternative penalty path
-            -- for failed contracts. After accumulating two crosses,
-            -- the declarer receives a fixed penalty and the cross
-            -- counter clears. See docs/variations/house-rules.md
-            -- "Cross / Крест".
+            -- for failed contracts. When `on`, a failing declarer's
+            -- bid deduction is suppressed; instead the declarer
+            -- receives a cross. After two crosses the declarer takes
+            -- a fixed penalty (sibling `cross_penalty_amount`) and
+            -- the counter clears. Defender contributions still apply
+            -- per `scoring.failed_contract_distribution`. See
+            -- docs/variations/house-rules.md "Cross / Крест".
             cross = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "off", "on" },
                 default = "off",
-                status = "deferred",
+                status = "selectable",
+            },
+            -- Penalty deducted from the declarer when their cross
+            -- counter reaches 2 under `cross = "on"`. Inert under
+            -- `cross = "off"`. Bounded in [0, 240] — the documented
+            -- "−120 typical" sits at the midpoint.
+            cross_penalty_amount = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 0,
+                max = 240,
+                default = 120,
+                status = "selectable",
             },
         },
     },
@@ -2620,10 +2706,16 @@ local function canonical_russian_blob()
         },
         penalties = {
             revoke = "standard",
+            revoke_configurable_amount = 120,
             talon_look = "standard",
             showing_hand = "standard",
             zero_tricks = "off",
+            zero_tricks_threshold = 3,
+            zero_tricks_penalty_amount = 120,
+            zero_tricks_declarer_exempt = "off",
+            zero_tricks_golden_deal_doubled = "off",
             cross = "off",
+            cross_penalty_amount = 120,
         },
     }
 end

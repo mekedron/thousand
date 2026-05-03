@@ -483,10 +483,16 @@ describe("app.table_view_model", function()
                 },
                 penalties = {
                     revoke = "standard",
+                    revoke_configurable_amount = 120,
                     talon_look = "standard",
                     showing_hand = "standard",
                     zero_tricks = "off",
+                    zero_tricks_threshold = 3,
+                    zero_tricks_penalty_amount = 120,
+                    zero_tricks_declarer_exempt = "off",
+                    zero_tricks_golden_deal_doubled = "off",
                     cross = "off",
+                    cross_penalty_amount = 120,
                 },
             })
         end

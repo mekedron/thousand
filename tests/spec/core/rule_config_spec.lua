@@ -139,10 +139,16 @@ local function valid_table()
         },
         penalties = {
             revoke = "standard",
+            revoke_configurable_amount = 120,
             talon_look = "standard",
             showing_hand = "standard",
             zero_tricks = "off",
+            zero_tricks_threshold = 3,
+            zero_tricks_penalty_amount = 120,
+            zero_tricks_declarer_exempt = "off",
+            zero_tricks_golden_deal_doubled = "off",
             cross = "off",
+            cross_penalty_amount = 120,
         },
     }
 end
@@ -437,10 +443,16 @@ describe("core.rule_config", function()
 
         it("encodes the canonical penalty toggles at their defaults", function()
             assert.are.equal("standard", config.penalties.revoke)
+            assert.are.equal(120, config.penalties.revoke_configurable_amount)
             assert.are.equal("standard", config.penalties.talon_look)
             assert.are.equal("standard", config.penalties.showing_hand)
             assert.are.equal("off", config.penalties.zero_tricks)
+            assert.are.equal(3, config.penalties.zero_tricks_threshold)
+            assert.are.equal(120, config.penalties.zero_tricks_penalty_amount)
+            assert.are.equal("off", config.penalties.zero_tricks_declarer_exempt)
+            assert.are.equal("off", config.penalties.zero_tricks_golden_deal_doubled)
             assert.are.equal("off", config.penalties.cross)
+            assert.are.equal(120, config.penalties.cross_penalty_amount)
         end)
     end)
 
@@ -4654,12 +4666,12 @@ describe("core.rule_config", function()
     end)
 
     describe("penalties.revoke", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("penalties.revoke")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("standard", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -4669,14 +4681,13 @@ describe("core.rule_config", function()
             assert.is_true(allowed["configurable"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
-            for _, bad in ipairs({ "flat", "configurable" }) do
+        it("accepts every selectable value", function()
+            for _, value in ipairs({ "standard", "flat", "configurable" }) do
                 local t = valid_table()
-                t.penalties.revoke = bad
+                t.penalties.revoke = value
                 local res = rule_config.try_new(t)
-                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
-                assert.are.equal("deferred_field_changed", res.error.code)
-                assert.are.equal("penalties.revoke", res.error.path)
+                assert.is_true(res.ok, "value " .. value .. " should be accepted")
+                assert.are.equal(value, res.config.penalties.revoke)
             end
         end)
 
@@ -4688,13 +4699,52 @@ describe("core.rule_config", function()
         end)
     end)
 
+    describe("penalties.revoke_configurable_amount", function()
+        it("exposes a selectable bounded number descriptor", function()
+            local d = rule_config.schema_for("penalties.revoke_configurable_amount")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(0, d.min)
+            assert.are.equal(240, d.max)
+            assert.are.equal(120, d.default)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("accepts values inside [0, 240]", function()
+            for _, value in ipairs({ 0, 60, 120, 240 }) do
+                local t = valid_table()
+                t.penalties.revoke_configurable_amount = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " should be accepted")
+                assert.are.equal(value, res.config.penalties.revoke_configurable_amount)
+            end
+        end)
+
+        it("rejects values outside [0, 240]", function()
+            for _, bad in ipairs({ -1, 241, 1000 }) do
+                local t = valid_table()
+                t.penalties.revoke_configurable_amount = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
+                assert.are.equal("penalties.revoke_configurable_amount", res.error.path)
+            end
+        end)
+
+        it("survives a JSON round trip at a custom value", function()
+            local config = rule_config.new(valid_table())
+            local res = rule_config.from_json(rule_config.to_json(config))
+            assert.is_true(res.ok)
+            assert.are.equal(120, res.config.penalties.revoke_configurable_amount)
+        end)
+    end)
+
     describe("penalties.talon_look", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("penalties.talon_look")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("standard", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -4703,13 +4753,14 @@ describe("core.rule_config", function()
             assert.is_true(allowed["stricter"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
-            local t = valid_table()
-            t.penalties.talon_look = "stricter"
-            local res = rule_config.try_new(t)
-            assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("penalties.talon_look", res.error.path)
+        it("accepts every selectable value", function()
+            for _, value in ipairs({ "standard", "stricter" }) do
+                local t = valid_table()
+                t.penalties.talon_look = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " should be accepted")
+                assert.are.equal(value, res.config.penalties.talon_look)
+            end
         end)
 
         it("survives a JSON round trip at its default", function()
@@ -4721,12 +4772,12 @@ describe("core.rule_config", function()
     end)
 
     describe("penalties.showing_hand", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("penalties.showing_hand")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("standard", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -4735,13 +4786,14 @@ describe("core.rule_config", function()
             assert.is_true(allowed["strict"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
-            local t = valid_table()
-            t.penalties.showing_hand = "strict"
-            local res = rule_config.try_new(t)
-            assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("penalties.showing_hand", res.error.path)
+        it("accepts every selectable value", function()
+            for _, value in ipairs({ "standard", "strict" }) do
+                local t = valid_table()
+                t.penalties.showing_hand = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " should be accepted")
+                assert.are.equal(value, res.config.penalties.showing_hand)
+            end
         end)
 
         it("survives a JSON round trip at its default", function()
@@ -4753,12 +4805,12 @@ describe("core.rule_config", function()
     end)
 
     describe("penalties.zero_tricks", function()
-        it("exposes a deferred string-leaf descriptor", function()
+        it("exposes a selectable string-leaf descriptor", function()
             local d = rule_config.schema_for("penalties.zero_tricks")
             assert.are.equal("leaf", d.kind)
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -4768,14 +4820,13 @@ describe("core.rule_config", function()
             assert.is_true(allowed["any_three"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
-            for _, bad in ipairs({ "consecutive_three", "any_three" }) do
+        it("accepts every selectable value", function()
+            for _, value in ipairs({ "off", "consecutive_three", "any_three" }) do
                 local t = valid_table()
-                t.penalties.zero_tricks = bad
+                t.penalties.zero_tricks = value
                 local res = rule_config.try_new(t)
-                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
-                assert.are.equal("deferred_field_changed", res.error.code)
-                assert.are.equal("penalties.zero_tricks", res.error.path)
+                assert.is_true(res.ok, "value " .. value .. " should be accepted")
+                assert.are.equal(value, res.config.penalties.zero_tricks)
             end
         end)
 
@@ -4787,13 +4838,65 @@ describe("core.rule_config", function()
         end)
     end)
 
-    describe("penalties.cross", function()
-        it("exposes a deferred string-leaf descriptor", function()
-            local d = rule_config.schema_for("penalties.cross")
+    describe("penalties.zero_tricks_threshold", function()
+        it("exposes a selectable bounded number descriptor", function()
+            local d = rule_config.schema_for("penalties.zero_tricks_threshold")
             assert.are.equal("leaf", d.kind)
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(2, d.min)
+            assert.are.equal(5, d.max)
+            assert.are.equal(3, d.default)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("accepts values inside [2, 5]", function()
+            for _, value in ipairs({ 2, 3, 4, 5 }) do
+                local t = valid_table()
+                t.penalties.zero_tricks_threshold = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " should be accepted")
+                assert.are.equal(value, res.config.penalties.zero_tricks_threshold)
+            end
+        end)
+
+        it("rejects values outside [2, 5]", function()
+            for _, bad in ipairs({ 1, 6, 100 }) do
+                local t = valid_table()
+                t.penalties.zero_tricks_threshold = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
+                assert.are.equal("penalties.zero_tricks_threshold", res.error.path)
+            end
+        end)
+    end)
+
+    describe("penalties.zero_tricks_penalty_amount", function()
+        it("exposes a selectable bounded number descriptor", function()
+            local d = rule_config.schema_for("penalties.zero_tricks_penalty_amount")
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(0, d.min)
+            assert.are.equal(240, d.max)
+            assert.are.equal(120, d.default)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("rejects values outside [0, 240]", function()
+            for _, bad in ipairs({ -1, 241 }) do
+                local t = valid_table()
+                t.penalties.zero_tricks_penalty_amount = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
+                assert.are.equal("penalties.zero_tricks_penalty_amount", res.error.path)
+            end
+        end)
+    end)
+
+    describe("penalties.zero_tricks_declarer_exempt", function()
+        it("exposes a selectable string-leaf descriptor", function()
+            local d = rule_config.schema_for("penalties.zero_tricks_declarer_exempt")
             assert.are.equal("string", d.lua_type)
             assert.are.equal("off", d.default)
-            assert.are.equal("deferred", d.status)
+            assert.are.equal("selectable", d.status)
             local allowed = {}
             for _, v in ipairs(d.allowed) do
                 allowed[v] = true
@@ -4802,13 +4905,59 @@ describe("core.rule_config", function()
             assert.is_true(allowed["on"])
         end)
 
-        it("rejects any non-default value with deferred_field_changed", function()
-            local t = valid_table()
-            t.penalties.cross = "on"
-            local res = rule_config.try_new(t)
-            assert.is_false(res.ok)
-            assert.are.equal("deferred_field_changed", res.error.code)
-            assert.are.equal("penalties.cross", res.error.path)
+        it("accepts on and off", function()
+            for _, value in ipairs({ "off", "on" }) do
+                local t = valid_table()
+                t.penalties.zero_tricks_declarer_exempt = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok)
+                assert.are.equal(value, res.config.penalties.zero_tricks_declarer_exempt)
+            end
+        end)
+    end)
+
+    describe("penalties.zero_tricks_golden_deal_doubled", function()
+        it("exposes a selectable string-leaf descriptor", function()
+            local d = rule_config.schema_for("penalties.zero_tricks_golden_deal_doubled")
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("accepts on and off", function()
+            for _, value in ipairs({ "off", "on" }) do
+                local t = valid_table()
+                t.penalties.zero_tricks_golden_deal_doubled = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok)
+                assert.are.equal(value, res.config.penalties.zero_tricks_golden_deal_doubled)
+            end
+        end)
+    end)
+
+    describe("penalties.cross", function()
+        it("exposes a selectable string-leaf descriptor", function()
+            local d = rule_config.schema_for("penalties.cross")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("selectable", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["on"])
+        end)
+
+        it("accepts every selectable value", function()
+            for _, value in ipairs({ "off", "on" }) do
+                local t = valid_table()
+                t.penalties.cross = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " should be accepted")
+                assert.are.equal(value, res.config.penalties.cross)
+            end
         end)
 
         it("survives a JSON round trip at its default", function()
@@ -4816,6 +4965,27 @@ describe("core.rule_config", function()
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
             assert.are.equal("off", res.config.penalties.cross)
+        end)
+    end)
+
+    describe("penalties.cross_penalty_amount", function()
+        it("exposes a selectable bounded number descriptor", function()
+            local d = rule_config.schema_for("penalties.cross_penalty_amount")
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(0, d.min)
+            assert.are.equal(240, d.max)
+            assert.are.equal(120, d.default)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("rejects values outside [0, 240]", function()
+            for _, bad in ipairs({ -1, 241 }) do
+                local t = valid_table()
+                t.penalties.cross_penalty_amount = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
+                assert.are.equal("penalties.cross_penalty_amount", res.error.path)
+            end
         end)
     end)
 

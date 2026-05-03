@@ -792,6 +792,31 @@ local function build_score_breakdown(payload)
             label_key = "scene.table.scoreboard.failed_contract_distribution_row",
             list = payload.failed_contract_distribution_extras,
         },
+        {
+            kind = "revoke_penalty",
+            label_key = "scene.table.scoreboard.revoke_penalty_row",
+            list = payload.revoke_penalty,
+        },
+        {
+            kind = "talon_look_penalty",
+            label_key = "scene.table.scoreboard.talon_look_penalty_row",
+            list = payload.talon_look_penalty,
+        },
+        {
+            kind = "showing_hand_penalty",
+            label_key = "scene.table.scoreboard.showing_hand_penalty_row",
+            list = payload.showing_hand_penalty,
+        },
+        {
+            kind = "zero_tricks_penalty",
+            label_key = "scene.table.scoreboard.bolt_penalty_row",
+            list = payload.zero_tricks_penalty,
+        },
+        {
+            kind = "cross_penalty",
+            label_key = "scene.table.scoreboard.cross_penalty_row",
+            list = payload.cross_penalty,
+        },
     }
     for _, spec in ipairs(row_specs) do
         local total = nonzero_total(spec.list)
@@ -1052,6 +1077,16 @@ function M.from_session(session)
         }
     end
 
+    -- Phase 3.6 penalty house-rules: surface bolt and cross
+    -- counters when their toggle is active. Renderer hides the line
+    -- otherwise.
+    local pen_rules = session:config().penalties
+    local bolts_active = pen_rules.zero_tricks ~= "off"
+    local cross_active = pen_rules.cross == "on"
+    local bolts = bolts_active and session:zero_tricks_bolts() or nil
+    local crosses = cross_active and session:cross_count() or nil
+    local bolt_threshold = pen_rules.zero_tricks_threshold
+
     local scoreboard = {}
     for i = 1, player_count do
         local entry = barrel[i]
@@ -1071,6 +1106,18 @@ function M.from_session(session)
                 deals_remaining = entry and entry.reverse_deals_remaining or nil,
             },
             eliminated = entry and entry.eliminated == true or false,
+            -- Phase 3.6 penalty house-rules: per-seat persistent
+            -- counters. Both default to nil when the matching toggle
+            -- is off so the renderer can skip the line entirely
+            -- without an explicit "off" branch.
+            bolts = bolts and {
+                count = bolts[i] or 0,
+                threshold = bolt_threshold,
+            } or nil,
+            crosses = crosses and {
+                count = crosses[i] or 0,
+                threshold = 2,
+            } or nil,
             is_dealer = (i == dealer),
             is_turn = (i == turn),
             is_winner = (winner ~= nil and i == winner),

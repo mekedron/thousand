@@ -575,10 +575,16 @@ describe("core.auction", function()
                 },
                 penalties = {
                     revoke = "standard",
+                    revoke_configurable_amount = 120,
                     talon_look = "standard",
                     showing_hand = "standard",
                     zero_tricks = "off",
+                    zero_tricks_threshold = 3,
+                    zero_tricks_penalty_amount = 120,
+                    zero_tricks_declarer_exempt = "off",
+                    zero_tricks_golden_deal_doubled = "off",
                     cross = "off",
+                    cross_penalty_amount = 120,
                 },
             })
         end
@@ -728,10 +734,16 @@ describe("core.auction", function()
                 },
                 penalties = {
                     revoke = "standard",
+                    revoke_configurable_amount = 120,
                     talon_look = "standard",
                     showing_hand = "standard",
                     zero_tricks = "off",
+                    zero_tricks_threshold = 3,
+                    zero_tricks_penalty_amount = 120,
+                    zero_tricks_declarer_exempt = "off",
+                    zero_tricks_golden_deal_doubled = "off",
                     cross = "off",
+                    cross_penalty_amount = 120,
                 },
             })
             local a = auction.new(cfg_open, 1).auction
@@ -975,10 +987,16 @@ describe("core.auction", function()
             },
             penalties = {
                 revoke = "standard",
+                revoke_configurable_amount = 120,
                 talon_look = "standard",
                 showing_hand = "standard",
                 zero_tricks = "off",
+                zero_tricks_threshold = 3,
+                zero_tricks_penalty_amount = 120,
+                zero_tricks_declarer_exempt = "off",
+                zero_tricks_golden_deal_doubled = "off",
                 cross = "off",
+                cross_penalty_amount = 120,
             },
         }
         if bidding_overrides then
