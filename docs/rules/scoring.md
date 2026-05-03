@@ -87,12 +87,16 @@ both pinned **on** in the canonical Russian template:
 - **Write-off (сдача).** The book frames write-off as a one-shot
   decision the declarer makes after seeing the widow ("if it is not
   possible to score the ordered amount, you can write off"). The
-  engine surfaces it as a **pre-tricks prompt**: between talon take
-  and the pass step (Russian / 2-player B), or between talon reveal
-  and the two opponent passes (Polish 2-card). The declarer chooses
-  *Play this hand* — and the deal proceeds normally — or *Write off*,
-  in which case the **full bid** is subtracted from the declarer and
-  **half the bid** is credited to each opponent. The cross-deal
+  engine surfaces it as an **inline pre-tricks affordance**: a
+  *Write off* button shown alongside the pass step (between talon
+  take and the first card pass for Russian / 2-player B; between
+  talon reveal and the two opponent passes for Polish 2-card). The
+  button vanishes the moment the declarer hands their first card to
+  an opponent — committing to play is implicit, and no extra
+  dismissal is needed. Clicking *Write off* opens a confirmation
+  modal; on confirm, the **full bid** is subtracted from the
+  declarer and **half the bid** is credited to each opponent. The
+  cross-deal
   [every-third-write-off penalty](../variations/house-rules.md#every-third-write-off-penalty)
   is on as a sibling. See
   [House Rules — Write-off](../variations/house-rules.md#write-off--сдача).

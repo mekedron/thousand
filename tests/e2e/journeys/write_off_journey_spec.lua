@@ -1,16 +1,16 @@
 -- Phase 3.9 write-off / сдача e2e journey. Drives the table scene
--- through a session sitting at the new
--- `awaiting_write_off_decision` phase (between talon take and the
--- pass step) and asserts:
+-- through a session sitting at the `awaiting_write_off_decision`
+-- phase (between talon take and the pass step) and asserts:
 --
---   * the Play / Write off modal renders with its title and both
---     localised buttons;
+--   * no modal auto-opens — the inline Write-off button is in the
+--     panel instead, sized like any other action button;
 --   * the per-seat "Write-offs: %{count} / %{threshold}" scoreboard
 --     line still surfaces when `penalties.write_off_streak` is on;
---   * pressing **Play this hand** dismisses the modal and lets the
---     deal flow into the standard pass step;
---   * pressing **Write off** closes the deal with `reason =
---     "write_off"` and the deal-done banner appears.
+--   * clicking the inline button opens the destructive-action
+--     confirmation modal;
+--   * **Cancel** closes the modal and leaves the offer open;
+--   * **Write off** closes the deal with `reason = "write_off"`
+--     and the deal-done banner appears.
 --
 -- Engine math is pinned in tests/spec/app/session_write_off_spec; this
 -- journey verifies the rendered output round-trips to the user.
@@ -183,7 +183,7 @@ describe("write-off journey", function()
         end
     end)
 
-    it("renders the Play / Write off modal at the new phase", function()
+    it("renders the inline Write-off button (no auto-modal) at the prompt phase", function()
         local cfg = build_config({ bidding = { write_off = "on" } })
         local s = session_at_write_off_decision(cfg, generic_layout(), {
             dealer = 1,
@@ -195,15 +195,12 @@ describe("write-off journey", function()
         j._mock.graphics.clear_recording()
         scene:draw(1024, 720)
 
-        assert.are.equal("write_off_prompt", scene._modal)
-        assert.is_not_nil(find_modal_button(scene, "write_off_prompt_accept"))
-        assert.is_not_nil(find_modal_button(scene, "write_off_prompt_decline"))
-        assert.is_truthy(find_text(j, "Write off the contract?"))
-        assert.is_truthy(find_text(j, "Play this hand"))
+        assert.is_nil(scene._modal, "no auto-modal on prompt-phase entry")
+        assert.is_not_nil(find_panel_button(scene, "write_off_inline"))
         assert.is_truthy(find_text(j, "Write off"))
     end)
 
-    it("does not open the modal when the toggle is off", function()
+    it("does not surface the inline button when the toggle is off", function()
         local cfg = build_config({ bidding = { write_off = "off" } })
         -- When the toggle is off, the natural flow lands at the talon
         -- phase with no prompt. Drive a Session.new through take_talon
@@ -217,11 +214,11 @@ describe("write-off journey", function()
 
         local _, scene = build_table_scene_in_mock(fresh)
         scene:draw(1024, 720)
-        assert.is_not_equal("write_off_prompt", scene._modal)
-        assert.is_nil(find_modal_button(scene, "write_off_prompt_accept"))
+        assert.is_nil(scene._modal)
+        assert.is_nil(find_panel_button(scene, "write_off_inline"))
     end)
 
-    it("dismisses the modal and resumes the talon phase on Play this hand", function()
+    it("clicking the inline Write-off button opens the confirmation modal", function()
         local cfg = build_config({ bidding = { write_off = "on" } })
         local s = session_at_write_off_decision(cfg, generic_layout(), {
             dealer = 1,
@@ -229,6 +226,30 @@ describe("write-off journey", function()
             bid = 100,
         })
         local _, scene = build_table_scene_in_mock(s)
+        scene:draw(1024, 720)
+
+        local inline = find_panel_button(scene, "write_off_inline")
+        assert.is_not_nil(inline)
+        inline:activate()
+        scene:draw(1024, 720)
+
+        assert.are.equal("write_off_prompt", scene._modal)
+        assert.is_not_nil(find_modal_button(scene, "write_off_prompt_accept"))
+        assert.is_not_nil(find_modal_button(scene, "write_off_prompt_decline"))
+        assert.is_truthy(find_text(j, "Write off the contract?"))
+        assert.is_truthy(find_text(j, "Cancel"))
+    end)
+
+    it("Cancel closes the modal and leaves the offer open", function()
+        local cfg = build_config({ bidding = { write_off = "on" } })
+        local s = session_at_write_off_decision(cfg, generic_layout(), {
+            dealer = 1,
+            declarer = 2,
+            bid = 100,
+        })
+        local _, scene = build_table_scene_in_mock(s)
+        scene:draw(1024, 720)
+        find_panel_button(scene, "write_off_inline"):activate()
         scene:draw(1024, 720)
 
         local decline = find_modal_button(scene, "write_off_prompt_decline")
@@ -236,11 +257,13 @@ describe("write-off journey", function()
         decline:activate()
         scene:draw(1024, 720)
 
-        assert.are.equal("talon", s:current_phase())
-        assert.is_nil(find_modal_button(scene, "write_off_prompt_decline"))
+        assert.is_nil(scene._modal, "modal closed after Cancel")
+        assert.is_not_nil(s:write_off_offer_state(), "offer still open")
+        assert.is_not_nil(find_panel_button(scene, "write_off_inline"))
+        assert.are.equal("awaiting_write_off_decision", s:current_phase())
     end)
 
-    it("closes the deal with write_off reason on Write off", function()
+    it("confirming Write off closes the deal with reason = write_off", function()
         local cfg = build_config({ bidding = { write_off = "on" } })
         local s = session_at_write_off_decision(cfg, generic_layout(), {
             dealer = 1,
@@ -248,6 +271,8 @@ describe("write-off journey", function()
             bid = 100,
         })
         local _, scene = build_table_scene_in_mock(s)
+        scene:draw(1024, 720)
+        find_panel_button(scene, "write_off_inline"):activate()
         scene:draw(1024, 720)
 
         local accept = find_modal_button(scene, "write_off_prompt_accept")
@@ -264,6 +289,31 @@ describe("write-off journey", function()
         scene:draw(1024, 720)
         assert.is_nil(find_modal_button(scene, "write_off_prompt_accept"))
         assert.is_truthy(find_text(j, "Write-off — declarer conceded mid-deal"))
+    end)
+
+    -- Auto-clear path: the inline button vanishes the moment the
+    -- offer clears. We drive a fresh Session through bid → take_talon
+    -- (which opens the offer) → pass_talon (auto-clears) and assert
+    -- the panel re-renders without the inline button.
+    it("the inline button disappears once the offer auto-clears", function()
+        local cfg = build_config({ bidding = { write_off = "on" } })
+        local fresh = Session.new({ seed = 7, dealer = 1, config = cfg })
+        assert(fresh:bid(2, 100).ok)
+        assert(fresh:pass(3).ok)
+        assert(fresh:pass(1).ok)
+        assert(fresh:take_talon().ok)
+        assert.are.equal("awaiting_write_off_decision", fresh:current_phase())
+
+        local _, scene = build_table_scene_in_mock(fresh)
+        scene:draw(1024, 720)
+        assert.is_not_nil(find_panel_button(scene, "write_off_inline"))
+
+        local hand = fresh:hands()[2]
+        assert(fresh:pass_talon(1, hand[1]).ok)
+        scene:draw(1024, 720)
+
+        assert.is_nil(fresh:write_off_offer_state())
+        assert.is_nil(find_panel_button(scene, "write_off_inline"))
     end)
 
     it("renders the per-seat write-off counter while the prompt is open", function()

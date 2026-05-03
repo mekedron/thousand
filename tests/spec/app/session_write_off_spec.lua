@@ -11,7 +11,7 @@
 --   * the cross-deal write-off counter, including threshold-hit
 --     penalty firing and reset;
 --   * the toggle-off and rejection paths (mid-tricks call rejected,
---     pass_talon blocked while the prompt is open).
+--     pass_talon auto-clears the offer when the prompt is open).
 -- Auto-save round-trip is covered in tests/spec/core/auto_save_spec.
 
 local Session = require("app.session")
@@ -196,20 +196,72 @@ describe("app.session write-off (Phase 3.9 pre-tricks prompt)", function()
         end)
     end)
 
-    describe("guards", function()
-        it("blocks pass_talon while the prompt is open", function()
+    describe("auto-resolution on first pass / discard / raise", function()
+        -- Phase 3.9 follow-up: the prompt is no longer a blocking gate.
+        -- The first card-moving action on a hand with an open offer
+        -- silently accepts play (offer cleared, declarer committed) so
+        -- the inline Write-off button vanishes the moment the deal
+        -- starts. Explicit `accept_play()` / `write_off()` still work
+        -- for callers that need to resolve without moving a card.
+        it("pass_talon auto-clears the offer and continues normally", function()
             local cfg = rule_config.canonical_russian
             local s = Session.new({ seed = 7, dealer = 1, config = cfg })
             assert(s:bid(2, 100).ok)
             assert(s:pass(3).ok)
             assert(s:pass(1).ok)
             assert(s:take_talon().ok)
+            assert.is_not_nil(s:write_off_offer_state())
             local hand = s:hands()[2]
             local r = s:pass_talon(1, hand[1])
-            assert.is_false(r.ok)
-            assert.are.equal("awaiting_write_off_decision", r.error.code)
+            assert.is_true(r.ok)
+            assert.is_nil(s:write_off_offer_state())
+            assert.are.equal("talon", s:current_phase())
         end)
 
+        it("skip_raise auto-clears the offer", function()
+            local cfg = rule_config.canonical_russian
+            local s = Session.new({ seed = 7, dealer = 1, config = cfg })
+            assert(s:bid(2, 100).ok)
+            assert(s:pass(3).ok)
+            assert(s:pass(1).ok)
+            assert(s:take_talon().ok)
+            -- Skip both passes via accept_play first (would otherwise
+            -- need card moves to reach skip_raise). This exercises the
+            -- explicit-resolution path so we can test skip_raise's
+            -- auto-clear independently.
+            assert(s:accept_play().ok)
+            local hand = s:hands()[2]
+            assert(s:pass_talon(1, hand[1]).ok)
+            hand = s:hands()[2]
+            assert(s:pass_talon(3, hand[1]).ok)
+            -- Now we're at awaiting_raise; no offer is open here, so
+            -- this case asserts the helper is a safe no-op when the
+            -- offer was already cleared.
+            assert.is_nil(s:write_off_offer_state())
+            assert(s:skip_raise().ok)
+        end)
+
+        it("pass_polish_talon auto-clears the offer", function()
+            -- Base on the Polish built-in (talon distribution =
+            -- pass_without_taking) and flip write_off back on, since
+            -- canonical Polish has it off.
+            local polish_blob = json.decode(rule_config.to_json(rule_config.builtins.polish))
+            polish_blob.bidding.write_off = "on"
+            local cfg = rule_config.new(polish_blob)
+            local s = Session.new({ seed = 7, dealer = 1, config = cfg })
+            assert(s:bid(2, 100).ok)
+            assert(s:pass(3).ok)
+            assert(s:pass(1).ok)
+            -- Polish reveal opens the offer; the first pass_polish_talon
+            -- clears it and keeps going.
+            assert.is_not_nil(s:write_off_offer_state())
+            local r = s:pass_polish_talon(1, 1)
+            assert.is_true(r.ok)
+            assert.is_nil(s:write_off_offer_state())
+        end)
+    end)
+
+    describe("guards", function()
         it("write_off rejects when bidding.write_off is off", function()
             local cfg = config_with_overrides({ bidding = { write_off = "off" } })
             local s = Session.new({ seed = 7, dealer = 1, config = cfg })

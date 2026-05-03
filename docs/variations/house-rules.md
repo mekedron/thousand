@@ -194,13 +194,15 @@ who didn't want the bid in the first place.
 
 ### Write-off / Сдача
 
-The book's pre-tricks concession. The declarer is prompted **after
-seeing the widow** — between talon take and the pass step (Russian /
-2-player B), or between talon reveal and the two opponent passes
-(Polish 2-card `pass_without_taking`) — to either *Play this hand* or
-*Write off*. Choosing to write off subtracts the **full bid** from the
-declarer's running total and credits **half of the bid** to each
-opponent.
+The book's pre-tricks concession. **After seeing the widow** — between
+talon take and the pass step (Russian / 2-player B), or between talon
+reveal and the two opponent passes (Polish 2-card
+`pass_without_taking`) — the declarer sees an inline *Write off*
+button next to the pass affordances. Handing the first card to an
+opponent commits to playing the deal and the button disappears
+silently. Clicking *Write off* instead opens a confirmation modal; on
+confirm, the **full bid** is subtracted from the declarer's running
+total and **half of the bid** is credited to each opponent.
 
 On in the canonical Russian template — the book describes write-off
 as a standard pre-play action available to any declarer with full hand

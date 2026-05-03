@@ -60,19 +60,6 @@ local function dismiss_curtain(j)
     j:step()
 end
 
--- Phase 3.9: dismiss the pre-tricks write-off prompt by clicking
--- "Play this hand". Tests that drive past the talon take in canonical
--- Russian (write_off = "on" by default) call this between the take
--- and the pass.
-local function dismiss_write_off_prompt(j)
-    local label = j:find_localised("scene.table.write_off_prompt.decline")
-    if not find_text(j, label) then
-        return
-    end
-    click_button(j, label)
-    j:step()
-end
-
 describe("e2e: hot-seat play wiring", function()
     local j
 
@@ -154,9 +141,10 @@ describe("e2e: hot-seat play wiring", function()
         it("clicking Take Talon transitions to the awaiting_pass label", function()
             click_button(j, j:find_localised("scene.table.talon.take_button"))
             j:step()
-            -- Phase 3.9: write-off prompt sits over the talon panel.
-            -- Decline so the underlying pass-target prompt is visible.
-            dismiss_write_off_prompt(j)
+            -- Phase 3.9 follow-up: the pre-tricks write-off offer is
+            -- now non-blocking — the inline Write-off button sits in
+            -- the panel but the pass-to-opponent prompt and card
+            -- hit-tests work without dismissing anything first.
             -- Awaiting-pass mode shows a "Pass card to Player N" prompt.
             -- The exact target depends on the seat order (declarer 2 → 1
             -- or 3 first); either is acceptable here.
@@ -172,9 +160,9 @@ describe("e2e: hot-seat play wiring", function()
             -- Take the talon.
             click_button(j, j:find_localised("scene.table.talon.take_button"))
             j:step()
-            -- Phase 3.9: dismiss the pre-tricks write-off prompt before
-            -- card-clicking the pass step.
-            dismiss_write_off_prompt(j)
+            -- Phase 3.9 follow-up: the inline Write-off button shows
+            -- up here but is non-blocking — the first card-click
+            -- below auto-clears the offer in the engine.
 
             -- Tapping arbitrary cards in the active hand triggers the
             -- pass-talon mutator. We don't know exact rect locations

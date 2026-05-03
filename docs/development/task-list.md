@@ -1000,6 +1000,32 @@ realise the contract is dead, and concede mid-deal.
     note that write-off is now a pre-tricks decision rather than an
     in-trick interrupt.
 
+- [x] Replace the Play / Write off modal with an inline Write-off
+  affordance during the pass step; clicking the inline button opens
+  a destructive-action confirmation modal.
+  - Engine: drop the blocking `write_off_decision_guard` from
+    `pass_talon` / `pass_polish_talon` / `discard_talon` / `raise` /
+    `skip_raise`; have those mutators implicitly resolve the offer
+    (equivalent to a silent `accept_play()`) before applying. The
+    explicit `Session:accept_play()` and `Session:write_off()` APIs
+    stay for callers that want them.
+  - UI (table scene): stop auto-opening the Play / Write off modal.
+    Render an inline **Write off** button alongside the pass
+    affordances whenever `view.write_off_prompt` is set; the button
+    vanishes the moment the offer clears (i.e. on the first card
+    passed). Clicking the button opens the existing modal, now
+    framed as a destructive-action confirmation ("Cancel" / "Write
+    off").
+  - i18n: add `scene.table.write_off_inline.label`; relabel
+    `scene.table.write_off_prompt.decline` to read "Cancel" in every
+    locale.
+  - Tests: unit coverage that pass / discard / raise auto-clear the
+    offer; the journey spec asserts no auto-modal at the prompt
+    phase, the inline button replaces it, "Cancel" leaves the offer
+    open, and confirming triggers `Session:write_off`.
+  - Docs: `docs/rules/scoring.md` and
+    `docs/variations/house-rules.md` describe the inline affordance.
+
 ### 3.10 Template editor: "current value" visual for read-only built-ins
 
 Goal: when editing a built-in (read-only) template, the selected

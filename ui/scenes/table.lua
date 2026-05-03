@@ -227,7 +227,12 @@ function M:_hand_is_interactive(view)
             and view.hands[view.turn_player]
             and view.hands[view.turn_player].perspective == "self"
     end
-    if view.phase == "talon" and view.talon_phase then
+    -- Phase 3.9 follow-up: the pre-tricks write-off offer keeps the
+    -- talon alive and the hand fully interactive; card taps fire pass
+    -- mutators that auto-clear the offer in the engine.
+    local pass_phase = view.phase == "talon" -- i18n-ok: phase enums
+        or view.phase == "awaiting_write_off_decision" -- i18n-ok
+    if pass_phase and view.talon_phase then
         local status = view.talon_phase.status
         return status == "awaiting_pass" or status == "awaiting_discard" -- i18n-ok: engine enums
     end
@@ -609,18 +614,6 @@ function M:_do_write_off()
         return
     end
     self:_invoke(session:write_off())
-    self:_refresh_view_model()
-end
-
--- Phase 3.9 write-off prompt counterpart: declarer chooses to play the
--- hand. Clears the prompt; the existing pass / discard / Polish-pass
--- handlers proceed normally.
-function M:_do_accept_play()
-    local session = self:_session()
-    if not session then
-        return
-    end
-    self:_invoke(session:accept_play())
     self:_refresh_view_model()
 end
 
@@ -1150,15 +1143,19 @@ function M:_open_write_off_prompt_modal(prompt)
         label_key = "scene.table.write_off_prompt.decline",
         enabled = true,
         on_press = function()
-            self:_do_accept_play()
+            -- Phase 3.9 follow-up: Cancel just closes the confirmation
+            -- modal. The write-off offer stays open and the inline
+            -- button is still available until the declarer passes
+            -- their first card (which auto-clears the offer in the
+            -- engine).
             self:_close_write_off_prompt_modal()
         end,
     })
     self._modal_buttons = { accept, decline }
     self._modal_focus = FocusGroup.new(self._modal_buttons)
-    -- Default focus on Decline / "Play this hand": writing off is the
-    -- destructive branch (the declarer pays the contract immediately),
-    -- so the safer keyboard target is to play the hand.
+    -- Default focus on Cancel: writing off is the destructive branch
+    -- (the declarer pays the contract immediately), so the safer
+    -- keyboard target is to back out of the confirmation.
     self._modal_focus:focus(decline)
 end
 
@@ -1173,18 +1170,15 @@ function M:_close_write_off_prompt_modal()
 end
 
 function M:_apply_write_off_prompt_modal_trigger(view)
+    -- Phase 3.9 follow-up: the modal opens only on user click of the
+    -- inline Write-off button (see `build_write_off_decision_panel`).
+    -- The auto-trigger now only auto-closes — fires when the offer
+    -- clears under the modal (e.g. the declarer pressed Esc, then
+    -- passed a card). Keeps the modal from outliving its prompt.
     local prompt = view and view.write_off_prompt
-    if not prompt then
-        if self._modal == "write_off_prompt" then
-            self:_close_write_off_prompt_modal()
-        end
-        return
+    if not prompt and self._modal == "write_off_prompt" then
+        self:_close_write_off_prompt_modal()
     end
-    local sig = write_off_prompt_signature(prompt)
-    if self._modal == "write_off_prompt" and self._write_off_prompt_signature == sig then
-        return
-    end
-    self:_open_write_off_prompt_modal(prompt)
 end
 
 -- Privacy curtain ------------------------------------------------------
@@ -1443,6 +1437,35 @@ local function build_talon_raise_panel(self, view)
     return panel
 end
 
+-- Phase 3.9 follow-up: panel builder for `awaiting_write_off_decision`.
+-- The take-then-pass distributions (Russian / 2-player B) sit at talon
+-- status "awaiting_pass" here, where cards do the passing — the panel
+-- needs only the inline Write-off button. The Polish 2-card direct-pass
+-- distribution sits at status "revealed" instead, so we layer the
+-- inline button on top of the existing take-panel buttons (Polish pass
+-- talon, plus any concede / buyback siblings).
+local function build_write_off_decision_panel(self, view)
+    local talon_phase = (view and view.talon_phase) or {}
+    local panel
+    if talon_phase.status == "revealed" then
+        panel = build_talon_take_panel(self, view)
+    else
+        panel = {}
+    end
+    panel[#panel + 1] = Button.new({
+        id = "write_off_inline", -- i18n-ok
+        label_key = "scene.table.write_off_inline.label",
+        enabled = true,
+        on_press = function()
+            local prompt = self._view_model and self._view_model.write_off_prompt
+            if prompt then
+                self:_open_write_off_prompt_modal(prompt)
+            end
+        end,
+    })
+    return panel
+end
+
 local function build_deal_done_panel(self)
     return {
         Button.new({
@@ -1570,6 +1593,15 @@ local function panel_signature(view)
         -- buttons, so the signature is stable across the phase.
         return "tricks"
     end
+    -- Phase 3.9 follow-up: pre-tricks write-off prompt. The inline
+    -- panel sits on top of whatever the underlying talon status would
+    -- normally render, so the signature carries the status to keep
+    -- button identity stable across re-renders.
+    if phase == "awaiting_write_off_decision" then
+        local talon_phase = view.talon_phase or {}
+        local status = talon_phase.status or "?" -- i18n-ok: signature token, never rendered
+        return "writeoff:" .. tostring(status) -- i18n-ok: signature token
+    end
     if phase == "cut" then
         local cp = view.cut_phase or {}
         local cutter = cp.active_cutter or "?" -- i18n-ok: signature token, never rendered
@@ -1613,6 +1645,8 @@ function M:_rebuild_panel_if_needed(view)
         -- button; the talon hasn't been revealed yet so the take/raise
         -- panel doesn't apply.
         self._panel_buttons = build_talon_take_panel(self, view)
+    elseif phase == "awaiting_write_off_decision" and view.write_off_prompt then
+        self._panel_buttons = build_write_off_decision_panel(self, view)
     elseif phase == "tricks" then
         self._panel_buttons = build_tricks_panel(self, view)
     elseif phase == "cut" then
@@ -3084,7 +3118,13 @@ function M:_handle_card_tap(view, entry)
     -- i18n-ok: phase / status / rank tokens are engine enums, never rendered.
     local talon_phase = view.talon_phase
     local awaiting = talon_phase and talon_phase.status == "awaiting_pass" -- i18n-ok
-    if view.phase == "talon" and awaiting then
+    -- Phase 3.9 follow-up: card taps also fire during the pre-tricks
+    -- write-off offer, where they implicitly accept play (engine
+    -- auto-clears the offer in the pass mutator) and pass the card in
+    -- a single gesture.
+    local pass_phase = view.phase == "talon" -- i18n-ok: phase enum
+        or view.phase == "awaiting_write_off_decision" -- i18n-ok: phase enum
+    if pass_phase and awaiting then
         local target = talon_phase.pass_target_seat
         if target then
             self:_do_pass_talon(target, entry.card)
@@ -3092,7 +3132,7 @@ function M:_handle_card_tap(view, entry)
         return
     end
     if
-        view.phase == "talon"
+        pass_phase
         and talon_phase
         and talon_phase.status == "awaiting_discard" -- i18n-ok
     then

@@ -2145,19 +2145,19 @@ local function rebuy_guard(self, action)
     return nil
 end
 
--- Phase 3.9: a pending pre-tricks write-off prompt blocks subsequent
--- talon mutators (`pass_talon`, `pass_polish_talon`, `discard_talon`,
--- `raise`, `skip_raise`). The declarer must answer the prompt — via
--- `accept_play()` or `write_off()` — before the deal can proceed.
-local function write_off_decision_guard(self, action)
+-- Phase 3.9 follow-up: the pre-tricks write-off prompt is no longer a
+-- blocking gate. Pass / discard / raise mutators auto-clear the offer
+-- (equivalent to a silent `accept_play()`) before applying — the user
+-- gives away their first card and the inline Write-off button vanishes
+-- without them having had to dismiss a modal. The explicit
+-- `Session:accept_play()` and `Session:write_off()` APIs stay for
+-- callers (bot / scripted tests / future LLM player) that want to
+-- resolve the offer without coupling it to a card move.
+local function auto_resolve_write_off_offer(self)
     if self._awaiting_write_off_decision then
-        local msg = "resolve the pending write-off decision first" -- i18n-ok
-        return failure("awaiting_write_off_decision", msg, {
-            action = action,
-            declarer = self._awaiting_write_off_decision.declarer,
-        })
+        self._awaiting_write_off_decision = nil
+        self._write_off_decision_resolved = true
     end
-    return nil
 end
 
 function Session:take_talon()
@@ -2192,10 +2192,10 @@ function Session:pass_talon(target_player, card)
     end
     local g = bad_talon_guard(self, "pass_talon") -- i18n-ok: action enum
         or rebuy_guard(self, "pass_talon") -- i18n-ok: action enum
-        or write_off_decision_guard(self, "pass_talon") -- i18n-ok: action enum
     if g then
         return g
     end
+    auto_resolve_write_off_offer(self)
     local result = talon_module.pass(self._talon, target_player, card)
     if not result.ok then
         return result
@@ -2218,10 +2218,10 @@ function Session:pass_polish_talon(target_player, talon_index)
     end
     local g = bad_talon_guard(self, "pass_polish_talon") -- i18n-ok: action enum
         or rebuy_guard(self, "pass_polish_talon") -- i18n-ok: action enum
-        or write_off_decision_guard(self, "pass_polish_talon") -- i18n-ok: action enum
     if g then
         return g
     end
+    auto_resolve_write_off_offer(self)
     local result = talon_module.pass_from_talon(self._talon, target_player, talon_index)
     if not result.ok then
         return result
@@ -2246,10 +2246,10 @@ function Session:discard_talon(card)
     end
     local g = bad_talon_guard(self, "discard_talon") -- i18n-ok: action enum
         or rebuy_guard(self, "discard_talon") -- i18n-ok: action enum
-        or write_off_decision_guard(self, "discard_talon") -- i18n-ok: action enum
     if g then
         return g
     end
+    auto_resolve_write_off_offer(self)
     local result = talon_module.discard(self._talon, card)
     if not result.ok then
         return result
@@ -2266,10 +2266,10 @@ function Session:raise(amount)
     end
     local g = bad_talon_guard(self, "raise") -- i18n-ok: action enum
         or rebuy_guard(self, "raise") -- i18n-ok: action enum
-        or write_off_decision_guard(self, "raise") -- i18n-ok: action enum
     if g then
         return g
     end
+    auto_resolve_write_off_offer(self)
     local result = talon_module.raise(self._talon, amount)
     if not result.ok then
         return result
@@ -2287,10 +2287,10 @@ function Session:skip_raise()
     end
     local g = bad_talon_guard(self, "skip_raise") -- i18n-ok: action enum
         or rebuy_guard(self, "skip_raise") -- i18n-ok: action enum
-        or write_off_decision_guard(self, "skip_raise") -- i18n-ok: action enum
     if g then
         return g
     end
+    auto_resolve_write_off_offer(self)
     local result = talon_module.skip_raise(self._talon)
     if not result.ok then
         return result
