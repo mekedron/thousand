@@ -1108,7 +1108,7 @@ algorithmic.
 
 ### 4.1 Bot interface and engine-driver loop
 
-- [ ] Define the bot player interface in `app/bot/`.
+- [x] Define the bot player interface in `app/bot/`.
   - Interface covers `chooseBid`, `chooseTalonPass`, `chooseRaise`,
     `chooseCard`, and `chooseMarriage`, plus an entry for every
     additional decision surface introduced by Phase 3.6: accept or
