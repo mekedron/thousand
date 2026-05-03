@@ -1616,12 +1616,9 @@ local function on_tricks_end(self)
         -- bolt earn from 1 to 2; doubling does not stack to 4 even
         -- when both fire — the book's wording is "doubled" per
         -- condition.
-        local declarer_was_blind = self._auction
-            and self._auction.blind_at_win == true
-            or false
-        local doubled = (
-            pen_rules.zero_tricks_golden_deal_doubled == "on" and self._in_golden_deal
-        ) or (pen_rules.zero_tricks_dark_game_doubled == "on" and declarer_was_blind)
+        local declarer_was_blind = self._auction and self._auction.blind_at_win == true or false
+        local doubled = (pen_rules.zero_tricks_golden_deal_doubled == "on" and self._in_golden_deal)
+            or (pen_rules.zero_tricks_dark_game_doubled == "on" and declarer_was_blind)
         for seat = 1, player_count do
             local won = t.tricks_won[seat] or 0
             local exempt = exempt_declarer and seat == declarer

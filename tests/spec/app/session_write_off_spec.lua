@@ -255,9 +255,9 @@ describe("app.session write-off", function()
                     write_off_streak = "any_three",
                     write_off_streak_threshold = 3,
                     write_off_streak_penalty_amount = 120,
-                no_win_streak = "off",
-                no_win_streak_threshold = 3,
-                no_win_streak_penalty_amount = 120,
+                    no_win_streak = "off",
+                    no_win_streak_threshold = 3,
+                    no_win_streak_penalty_amount = 120,
                 },
             })
             local s = session_at_tricks(cfg, generic_layout(), {
@@ -283,9 +283,9 @@ describe("app.session write-off", function()
                     write_off_streak = "any_three",
                     write_off_streak_threshold = 2,
                     write_off_streak_penalty_amount = 60,
-                no_win_streak = "off",
-                no_win_streak_threshold = 3,
-                no_win_streak_penalty_amount = 120,
+                    no_win_streak = "off",
+                    no_win_streak_threshold = 3,
+                    no_win_streak_penalty_amount = 120,
                 },
             })
             local s = session_at_tricks(cfg, generic_layout(), {
