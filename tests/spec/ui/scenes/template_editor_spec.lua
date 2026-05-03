@@ -255,4 +255,77 @@ describe("ui.scenes.template_editor", function()
             end
         end)
     end)
+
+    describe("layout panels", function()
+        before_each(function()
+            scene:enter(nil, { template_id = custom.id })
+        end)
+
+        local function find_fill_rectangle(predicate)
+            for _, op in ipairs(mock.graphics.recording()) do
+                if op.op == "rectangle" and op.mode == "fill" and predicate(op) then
+                    return op
+                end
+            end
+            return nil
+        end
+
+        local function find_scissor(predicate)
+            for _, op in ipairs(mock.graphics.recording()) do
+                if op.op == "scissor" and not op.cleared and predicate(op) then
+                    return op
+                end
+            end
+            return nil
+        end
+
+        it("draws an opaque header backdrop spanning the title strip", function()
+            scene:draw(1024, 720)
+            local rect = find_fill_rectangle(function(op)
+                return op.x == 0 and op.y == 0 and op.w == 1024 and op.h == 88
+            end)
+            assert.is_not_nil(rect, "header backdrop rectangle present")
+        end)
+
+        it("draws an opaque footer backdrop spanning the bottom action bar", function()
+            scene:draw(1024, 720)
+            local rect = find_fill_rectangle(function(op)
+                return op.x == 0 and op.y == 720 - 64 and op.w == 1024 and op.h == 64
+            end)
+            assert.is_not_nil(rect, "footer backdrop rectangle present")
+        end)
+
+        it("clips the scrollable body with a scissor between header and footer", function()
+            scene:draw(1024, 720)
+            local sc = find_scissor(function(op)
+                return op.x == 0 and op.y == 88 and op.w == 1024 and op.h == 720 - 88 - 64
+            end)
+            assert.is_not_nil(sc, "body scissor covers the body region")
+        end)
+
+        it("emits a final setScissor() to clear the body clip", function()
+            scene:draw(1024, 720)
+            local cleared = false
+            for _, op in ipairs(mock.graphics.recording()) do
+                if op.op == "scissor" and op.cleared then
+                    cleared = true
+                end
+            end
+            assert.is_true(cleared, "scissor cleared after body draw")
+        end)
+
+        it("wraps at least one help text via printf with a width limit", function()
+            scene:draw(1024, 720)
+            local found = nil
+            for _, op in ipairs(mock.graphics.recording()) do
+                if op.op == "text" and op.limit and op.text:find("buyback", 1, true) then
+                    found = op
+                    break
+                end
+            end
+            assert.is_not_nil(found, "buyback help text drawn with a width limit")
+            assert.is_true(found.limit > 0)
+            assert.is_true(found.limit < 360, "wraps inside the label column")
+        end)
+    end)
 end)

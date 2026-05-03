@@ -141,6 +141,21 @@ local function new_graphics(get_dims)
         })
     end
 
+    function g.setScissor(x, y, w, h)
+        local t = top()
+        if x == nil then
+            record({ op = "scissor", cleared = true })
+        else
+            record({
+                op = "scissor",
+                x = (x or 0) + t.x,
+                y = (y or 0) + t.y,
+                w = w or 0,
+                h = h or 0,
+            })
+        end
+    end
+
     function g.push()
         local t = top()
         stack[#stack + 1] = { x = t.x, y = t.y }

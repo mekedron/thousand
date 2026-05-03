@@ -30,7 +30,7 @@ local TITLE_Y = 20
 local PARENT_Y = 56
 local HEADER_BOTTOM = 88
 local FOOTER_HEIGHT = 64
-local ROW_HEIGHT = 76
+local ROW_HEIGHT = 88
 local SECTION_HEADER_HEIGHT = 40
 local LABEL_X = 20
 local CONTROL_X = 360
@@ -38,7 +38,13 @@ local CONTROL_W = 320
 local CONTROL_H = 44
 local BADGE_X_OFFSET = 12
 local BANNER_HEIGHT = 32
+-- Width available for the label + help text column (right-padded so
+-- wrapped lines don't kiss the toggle/stepper at CONTROL_X).
+local LABEL_COLUMN_W = CONTROL_X - LABEL_X - 16
 
+local SCENE_BG = { 0.05, 0.13, 0.08, 1 }
+local PANEL_BG = { 0.05, 0.13, 0.08, 1 }
+local PANEL_DIVIDER = { 0.18, 0.30, 0.20, 1 }
 local TITLE_COLOR = { 1, 1, 1, 1 }
 local LABEL_COLOR = { 0.92, 0.96, 0.92, 1 }
 local DESC_COLOR = { 0.65, 0.78, 0.68, 1 }
@@ -510,8 +516,71 @@ end
 function M:draw(w, h)
     w = w or 800
     h = h or 600
-    love.graphics.clear(0.05, 0.13, 0.08)
+    love.graphics.clear(SCENE_BG[1], SCENE_BG[2], SCENE_BG[3])
     compute_layout(self, w, h)
+    self:_apply_focus_marks()
+
+    -- Body — section-grouped rows under a scissor clip so the scrolled
+    -- content never bleeds into the header or footer panels. Y positions
+    -- account for the active scroll offset; widgets keep stable Button
+    -- instances across frames so only their rect moves.
+    local body_top = HEADER_BOTTOM
+    local body_h = math.max(0, h - HEADER_BOTTOM - FOOTER_HEIGHT)
+    love.graphics.setScissor(0, body_top, w, body_h)
+    local y = body_top - self._scroll_y
+    local current_section
+    for _, entry in ipairs(self._widgets) do
+        if entry.section ~= current_section then
+            current_section = entry.section
+            love.graphics.setColor(SECTION_COLOR)
+            local section_label = t("templates.section." .. entry.section) -- i18n-ok: key
+            love.graphics.print(section_label, LABEL_X, y + 8)
+            y = y + SECTION_HEADER_HEIGHT
+        end
+        love.graphics.setColor(LABEL_COLOR)
+        love.graphics.print(t(field_label_key(entry.section, entry.field)), LABEL_X, y + 6)
+        love.graphics.setColor(DESC_COLOR)
+        local help_key = field_help_key(entry.section, entry.field)
+        local help = t(help_key)
+        if help == help_key and entry.descriptor.status == "deferred" then -- i18n-ok: status
+            help = t("templates.field.deferred_help")
+        end
+        if help ~= help_key then
+            love.graphics.printf(help, LABEL_X, y + 26, LABEL_COLUMN_W, "left")
+        end
+        if entry.widget then
+            entry.widget:set_rect(CONTROL_X, y, CONTROL_W, CONTROL_H)
+            entry.widget:draw()
+        elseif entry.readonly then
+            love.graphics.setColor(DESC_COLOR)
+            love.graphics.print(t("scene.template_editor.read_only_field"), CONTROL_X, y + 14)
+        end
+        if entry.descriptor.status == "deferred" then -- i18n-ok: status
+            love.graphics.setColor(DESC_COLOR)
+            love.graphics.print(
+                t("scene.template_editor.deferred_badge"),
+                CONTROL_X + CONTROL_W + BADGE_X_OFFSET,
+                y + 14
+            )
+        end
+        if self._modified[row_path(entry)] then
+            love.graphics.setColor(MODIFIED_COLOR)
+            love.graphics.print(
+                t("scene.template_editor.modified_badge"),
+                CONTROL_X + CONTROL_W + BADGE_X_OFFSET,
+                y + 30
+            )
+        end
+        y = y + ROW_HEIGHT
+    end
+    love.graphics.setScissor()
+
+    -- Header panel (opaque backdrop + divider so scrolled rows above
+    -- HEADER_BOTTOM don't show through).
+    love.graphics.setColor(PANEL_BG)
+    love.graphics.rectangle("fill", 0, 0, w, HEADER_BOTTOM)
+    love.graphics.setColor(PANEL_DIVIDER)
+    love.graphics.rectangle("fill", 0, HEADER_BOTTOM - 1, w, 1)
 
     -- Title.
     love.graphics.setColor(TITLE_COLOR)
@@ -556,7 +625,7 @@ function M:draw(w, h)
         love.graphics.printf(msg, 0, PARENT_Y + 18, w, "center")
     end
 
-    -- Validation banner (under header).
+    -- Validation banner (under header backdrop, on top of divider).
     if self._dry_run_error then
         love.graphics.setColor(BANNER_COLOR)
         love.graphics.rectangle("fill", 0, HEADER_BOTTOM - BANNER_HEIGHT, w, BANNER_HEIGHT)
@@ -571,65 +640,22 @@ function M:draw(w, h)
         )
     end
 
-    -- Body — section-grouped rows. Y positions account for the active
-    -- scroll offset so widgets keep stable Button instances across
-    -- frames; the only thing that moves is the rect.
-    self:_apply_focus_marks()
-    local y = HEADER_BOTTOM - self._scroll_y
-    local current_section
-    for _, entry in ipairs(self._widgets) do
-        if entry.section ~= current_section then
-            current_section = entry.section
-            love.graphics.setColor(SECTION_COLOR)
-            local section_label = t("templates.section." .. entry.section) -- i18n-ok: key
-            love.graphics.print(section_label, LABEL_X, y + 8)
-            y = y + SECTION_HEADER_HEIGHT
-        end
-        love.graphics.setColor(LABEL_COLOR)
-        love.graphics.print(t(field_label_key(entry.section, entry.field)), LABEL_X, y + 6)
-        love.graphics.setColor(DESC_COLOR)
-        local help_key = field_help_key(entry.section, entry.field)
-        local help = t(help_key)
-        if help == help_key and entry.descriptor.status == "deferred" then -- i18n-ok: status
-            help = t("templates.field.deferred_help")
-        end
-        if help ~= help_key then
-            love.graphics.print(help, LABEL_X, y + 30)
-        end
-        if entry.widget then
-            entry.widget:set_rect(CONTROL_X, y, CONTROL_W, CONTROL_H)
-            entry.widget:draw()
-        elseif entry.readonly then
-            love.graphics.setColor(DESC_COLOR)
-            love.graphics.print(t("scene.template_editor.read_only_field"), CONTROL_X, y + 14)
-        end
-        if entry.descriptor.status == "deferred" then -- i18n-ok: status
-            love.graphics.setColor(DESC_COLOR)
-            love.graphics.print(
-                t("scene.template_editor.deferred_badge"),
-                CONTROL_X + CONTROL_W + BADGE_X_OFFSET,
-                y + 14
-            )
-        end
-        if self._modified[row_path(entry)] then
-            love.graphics.setColor(MODIFIED_COLOR)
-            love.graphics.print(
-                t("scene.template_editor.modified_badge"),
-                CONTROL_X + CONTROL_W + BADGE_X_OFFSET,
-                y + 30
-            )
-        end
-        y = y + ROW_HEIGHT
-    end
-
-    -- Header buttons.
+    -- Header buttons (top-right): Save / Cancel.
     self._save_button:draw()
     self._cancel_button:draw()
+
+    -- Footer panel (opaque backdrop + divider).
+    love.graphics.setColor(PANEL_BG)
+    love.graphics.rectangle("fill", 0, h - FOOTER_HEIGHT, w, FOOTER_HEIGHT)
+    love.graphics.setColor(PANEL_DIVIDER)
+    love.graphics.rectangle("fill", 0, h - FOOTER_HEIGHT, w, 1)
+
+    -- Footer buttons.
     self._reset_button:draw()
     self._duplicate_button:draw()
     self._delete_button:draw()
 
-    -- Modal.
+    -- Modal — full-screen overlay so it sits on top of header + footer.
     if self._modal == "confirm_delete" then
         compute_modal_layout(self, w, h)
         love.graphics.setColor(0, 0, 0, 0.6)
