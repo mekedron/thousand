@@ -190,6 +190,9 @@ describe("ui.scenes.table", function()
         assert(session:pass(3).ok)
         assert(session:pass(1).ok)
         assert(session:take_talon().ok)
+        if session:current_phase() == "awaiting_write_off_decision" then
+            assert(session:accept_play().ok)
+        end
         local hand = session:hands()[2]
         assert(session:pass_talon(1, hand[1]).ok)
         hand = session:hands()[2]
@@ -315,6 +318,9 @@ describe("ui.scenes.table", function()
             assert(s:pass(3).ok)
             assert(s:pass(1).ok)
             assert(s:take_talon().ok)
+            if s:current_phase() == "awaiting_write_off_decision" then
+                assert(s:accept_play().ok)
+            end
             local hand = s:hands()[2]
             assert(s:pass_talon(1, hand[1]).ok)
             hand = s:hands()[2]
@@ -402,6 +408,9 @@ describe("ui.scenes.table", function()
         assert(s:bid(2, 120).ok)
         assert(s:pass(3).ok)
         assert(s:take_talon().ok)
+        if s:current_phase() == "awaiting_write_off_decision" then
+            assert(s:accept_play().ok)
+        end
         local hand = s:hands()[2]
         local function safe_pass(h)
             for _, c in ipairs(h) do
@@ -525,6 +534,9 @@ describe("ui.scenes.table", function()
             assert(session:pass(3).ok)
             assert(session:pass(1).ok)
             assert(session:take_talon().ok)
+            if session:current_phase() == "awaiting_write_off_decision" then
+                assert(session:accept_play().ok)
+            end
             local hand = session:hands()[2]
             assert(session:pass_talon(1, hand[1]).ok)
             hand = session:hands()[2]
@@ -569,6 +581,9 @@ describe("ui.scenes.table", function()
             assert(session:pass(3).ok)
             assert(session:pass(1).ok)
             assert(session:take_talon().ok)
+            if session:current_phase() == "awaiting_write_off_decision" then
+                assert(session:accept_play().ok)
+            end
             local hand = session:hands()[2]
             assert(session:pass_talon(1, hand[1]).ok)
             hand = session:hands()[2]
@@ -610,6 +625,9 @@ describe("ui.scenes.table", function()
             assert(session:pass(3).ok)
             assert(session:pass(1).ok)
             assert(session:take_talon().ok)
+            if session:current_phase() == "awaiting_write_off_decision" then
+                assert(session:accept_play().ok)
+            end
             local hand = session:hands()[2]
             assert(session:pass_talon(1, hand[1]).ok)
             hand = session:hands()[2]
@@ -703,6 +721,9 @@ describe("ui.scenes.table", function()
             assert(session:pass(3).ok)
             assert(session:pass(1).ok)
             assert(session:take_talon().ok)
+            if session:current_phase() == "awaiting_write_off_decision" then
+                assert(session:accept_play().ok)
+            end
             local hand = session:hands()[2]
             assert(session:pass_talon(1, hand[1]).ok)
             hand = session:hands()[2]

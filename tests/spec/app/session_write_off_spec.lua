@@ -1,13 +1,18 @@
--- Phase 3.7 write-off / сдача integration coverage. Mirrors
--- session_penalties_spec: per-toggle describes, deterministic
--- 24-card hands, scripted setup at the tricks phase via
--- Session.from_state. Coverage focuses on:
---   * the action's phase / toggle / declarer / trick-count guards;
---   * the half_to_each and equal_split distribution math (3-player
---     canonical and 4-player layouts);
+-- Phase 3.9 write-off / сдача integration coverage. The decision is a
+-- one-shot pre-tricks prompt opened between talon take (or talon
+-- reveal under Polish `pass_without_taking`) and the pass step.
+-- Coverage focuses on:
+--   * the phase transition from take_talon (Russian / 2p-B) and from
+--     the talon reveal (Polish) into `awaiting_write_off_decision`;
+--   * Session:accept_play clearing the prompt and letting the pass /
+--     discard / Polish-pass methods proceed normally;
+--   * Session:write_off scoring math from the new phase
+--     (half_to_each + equal_split, 3-player + 4-player layouts);
 --   * the cross-deal write-off counter, including threshold-hit
---     penalty firing and reset.
--- The auto-save round-trip lives in tests/spec/core/auto_save_spec.
+--     penalty firing and reset;
+--   * the toggle-off and rejection paths (mid-tricks call rejected,
+--     pass_talon blocked while the prompt is open).
+-- Auto-save round-trip is covered in tests/spec/core/auto_save_spec.
 
 local Session = require("app.session")
 local rule_config = require("core.rule_config")
@@ -15,7 +20,6 @@ local card = require("core.card")
 local json = require("app.json")
 local marriages_module = require("core.marriages")
 local auction_module = require("core.auction")
-local tricks_module = require("core.tricks")
 
 local function c(suit, rank)
     return card.new(suit, rank)
@@ -33,10 +37,10 @@ local function config_with_overrides(overrides)
     return rule_config.new(blob)
 end
 
--- Generic 3-player layout. Seat 2 holds the winners but the actual
--- sequence doesn't matter for write-off tests — the action concedes
--- the deal before any tricks are played, so each test only relies on
--- the bid value and the seat layout.
+-- Generic 3-player layout. Seat 2 is the declarer in every test; the
+-- prompt fires before any tricks are played, so the actual card mix
+-- only matters for marriage / suit-follow code paths the write-off
+-- decision never reaches.
 local function generic_layout()
     return {
         {
@@ -72,7 +76,12 @@ local function generic_layout()
     }
 end
 
-local function session_at_tricks(test_config, hands, opts)
+-- Build a session sitting at `awaiting_write_off_decision` via
+-- Session.from_state. Mirrors the auction_module flow that opens the
+-- prompt naturally so the rebuilt state matches what `take_talon`
+-- would have produced — but skips the prompt-opening hook so the
+-- assertions can exercise the post-prompt mutators directly.
+local function session_at_write_off_decision(test_config, hands, opts)
     opts = opts or {}
     local dealer = opts.dealer or 1
     local pc = test_config.players.count
@@ -108,10 +117,6 @@ local function session_at_tricks(test_config, hands, opts)
     end
 
     local marriages = marriages_module.new(test_config).marriages
-    local tricks = tricks_module.new(test_config, hands, declarer, {
-        dealer = dealer,
-        declarer = declarer,
-    }).tricks
 
     local from = {
         config = test_config,
@@ -120,15 +125,23 @@ local function session_at_tricks(test_config, hands, opts)
         hands = hands,
         auction = auction,
         marriages = marriages,
-        tricks = tricks,
         talon = {
             declarer = declarer,
             final_bid = opts.bid or 100,
-            status = "done",
+            status = opts.talon_status or "awaiting_pass",
+            distribution = opts.distribution or "declarer_takes_then_passes",
             hands = hands,
+            sits_out = opts.sits_out,
+            opponent_count = pc - 1 - (opts.sits_out and 1 or 0),
+            passes_received = {},
         },
         running_totals = running_totals,
         deal_index = opts.deal_index or 1,
+        awaiting_write_off_decision = {
+            declarer = declarer,
+            bid = opts.bid or 100,
+            split_mode = test_config.bidding.write_off_split,
+        },
     }
     if opts.write_off_counts then
         from.write_off_counts = opts.write_off_counts
@@ -136,37 +149,80 @@ local function session_at_tricks(test_config, hands, opts)
     return Session.from_state(from)
 end
 
-describe("app.session write-off", function()
-    describe("initial state", function()
-        it("starts with zeroed write-off counters per seat", function()
-            local s = Session.new({ seed = 7 })
-            assert.are.same({ 0, 0, 0 }, s:write_off_counts())
+describe("app.session write-off (Phase 3.9 pre-tricks prompt)", function()
+    describe("phase transitions", function()
+        it("opens the prompt after take_talon under canonical Russian", function()
+            local cfg = rule_config.canonical_russian
+            local s = Session.new({ seed = 7, dealer = 1, config = cfg })
+            assert(s:bid(2, 100).ok)
+            assert(s:pass(3).ok)
+            assert(s:pass(1).ok)
+            assert.are.equal("talon", s:current_phase())
+            assert(s:take_talon().ok)
+            assert.are.equal("awaiting_write_off_decision", s:current_phase())
+            local offer = s:write_off_offer_state()
+            assert.is_table(offer)
+            assert.are.equal(2, offer.declarer)
+            assert.are.equal(100, offer.bid)
+            assert.are.equal("half_to_each", offer.split_mode)
+            -- The acting seat is the declarer.
+            assert.are.equal(2, s:current_turn())
         end)
 
-        it("returns counter copies, never the live array", function()
-            local s = Session.new({ seed = 7 })
-            local view = s:write_off_counts()
-            view[1] = 999
-            assert.are.equal(0, s:write_off_counts()[1])
+        it("does not open the prompt when bidding.write_off is off", function()
+            local cfg = config_with_overrides({ bidding = { write_off = "off" } })
+            local s = Session.new({ seed = 7, dealer = 1, config = cfg })
+            assert(s:bid(2, 100).ok)
+            assert(s:pass(3).ok)
+            assert(s:pass(1).ok)
+            assert(s:take_talon().ok)
+            assert.are.equal("talon", s:current_phase())
+            assert.is_nil(s:write_off_offer_state())
+        end)
+
+        it("does not re-open the prompt after the declarer chose play", function()
+            local cfg = rule_config.canonical_russian
+            local s = Session.new({ seed = 7, dealer = 1, config = cfg })
+            assert(s:bid(2, 100).ok)
+            assert(s:pass(3).ok)
+            assert(s:pass(1).ok)
+            assert(s:take_talon().ok)
+            assert(s:accept_play().ok)
+            assert.are.equal("talon", s:current_phase())
+            -- Pass a card; the prompt must not re-open mid-pass.
+            local hand = s:hands()[2]
+            assert(s:pass_talon(1, hand[1]).ok)
+            assert.are.equal("talon", s:current_phase())
         end)
     end)
 
     describe("guards", function()
-        it("rejects when bidding.write_off is off", function()
-            -- Canonical Russian has write_off = "on" per the book; opt
-            -- it off here to exercise the disabled-action guard.
+        it("blocks pass_talon while the prompt is open", function()
+            local cfg = rule_config.canonical_russian
+            local s = Session.new({ seed = 7, dealer = 1, config = cfg })
+            assert(s:bid(2, 100).ok)
+            assert(s:pass(3).ok)
+            assert(s:pass(1).ok)
+            assert(s:take_talon().ok)
+            local hand = s:hands()[2]
+            local r = s:pass_talon(1, hand[1])
+            assert.is_false(r.ok)
+            assert.are.equal("awaiting_write_off_decision", r.error.code)
+        end)
+
+        it("write_off rejects when bidding.write_off is off", function()
             local cfg = config_with_overrides({ bidding = { write_off = "off" } })
-            local s = session_at_tricks(cfg, generic_layout(), {
-                dealer = 1,
-                declarer = 2,
-                bid = 100,
-            })
+            local s = Session.new({ seed = 7, dealer = 1, config = cfg })
+            assert(s:bid(2, 100).ok)
+            assert(s:pass(3).ok)
+            assert(s:pass(1).ok)
+            assert(s:take_talon().ok)
             local r = s:write_off()
             assert.is_false(r.ok)
             assert.are.equal("write_off_disabled", r.error.code)
         end)
 
-        it("rejects when not in the tricks phase", function()
+        it("write_off rejects when called outside the awaiting phase", function()
             local cfg = config_with_overrides({ bidding = { write_off = "on" } })
             local s = Session.new({ config = cfg, seed = 7 })
             assert.are.equal("auction", s:current_phase())
@@ -175,20 +231,30 @@ describe("app.session write-off", function()
             assert.are.equal("wrong_phase", r.error.code)
         end)
 
-        it("rejects once the last trick has begun", function()
-            local cfg = config_with_overrides({ bidding = { write_off = "on" } })
-            local s = session_at_tricks(cfg, generic_layout(), {
-                dealer = 1,
-                declarer = 2,
-                bid = 100,
-            })
-            -- Force tricks_played up to tricks_per_deal - 1 to simulate
-            -- the moment after the seventh trick has resolved and the
-            -- eighth is the only one left.
-            s._tricks.tricks_played = (s._tricks.tricks_per_deal or 8) - 1
+        it("write_off rejects mid-tricks (legacy in-trick path is gone)", function()
+            local cfg = rule_config.canonical_russian
+            local s = Session.new({ seed = 7, dealer = 1, config = cfg })
+            assert(s:bid(2, 100).ok)
+            assert(s:pass(3).ok)
+            assert(s:pass(1).ok)
+            assert(s:take_talon().ok)
+            assert(s:accept_play().ok)
+            local hand = s:hands()[2]
+            assert(s:pass_talon(1, hand[1]).ok)
+            hand = s:hands()[2]
+            assert(s:pass_talon(3, hand[1]).ok)
+            assert(s:skip_raise().ok)
+            assert.are.equal("tricks", s:current_phase())
             local r = s:write_off()
             assert.is_false(r.ok)
-            assert.are.equal("too_late_to_write_off", r.error.code)
+            assert.are.equal("wrong_phase", r.error.code)
+        end)
+
+        it("accept_play rejects when no prompt is pending", function()
+            local s = Session.new({ seed = 7 })
+            local r = s:accept_play()
+            assert.is_false(r.ok)
+            assert.are.equal("no_write_off_pending", r.error.code)
         end)
     end)
 
@@ -197,11 +263,12 @@ describe("app.session write-off", function()
             local cfg = config_with_overrides({
                 bidding = { write_off = "on", write_off_split = "half_to_each" },
             })
-            local s = session_at_tricks(cfg, generic_layout(), {
+            local s = session_at_write_off_decision(cfg, generic_layout(), {
                 dealer = 1,
                 declarer = 2,
                 bid = 100,
             })
+            assert.are.equal("awaiting_write_off_decision", s:current_phase())
             local r = s:write_off()
             assert.is_true(r.ok)
             local dd = s:deal_done()
@@ -210,19 +277,15 @@ describe("app.session write-off", function()
             assert.are.equal(2, dd.declarer)
             -- Seat 2 declarer pays 100; seats 1 and 3 each receive 50.
             assert.are.same({ 50, -100, 50 }, dd.deal_scores)
-            -- Counter advanced by 1.
             assert.are.same({ 0, 1, 0 }, s:write_off_counts())
         end)
 
-        it("survives a JSON snapshot round-trip with the counter intact", function()
-            -- Pin the streak penalty off so the counter advances past
-            -- 2 without resetting; the threshold-fire path has its own
-            -- coverage in the every-third-write-off describe below.
+        it("survives a JSON-snapshot round-trip with the counter intact", function()
             local cfg = config_with_overrides({
                 bidding = { write_off = "on", write_off_split = "half_to_each" },
                 penalties = { write_off_streak = "off" },
             })
-            local s = session_at_tricks(cfg, generic_layout(), {
+            local s = session_at_write_off_decision(cfg, generic_layout(), {
                 dealer = 1,
                 declarer = 2,
                 bid = 100,
@@ -239,15 +302,15 @@ describe("app.session write-off", function()
             local cfg = config_with_overrides({
                 bidding = { write_off = "on", write_off_split = "equal_split" },
             })
-            local s = session_at_tricks(cfg, generic_layout(), {
+            local s = session_at_write_off_decision(cfg, generic_layout(), {
                 dealer = 1,
                 declarer = 2,
                 bid = 100,
             })
             local r = s:write_off()
             assert.is_true(r.ok)
-            -- 100 / 2 recipients = 50 each. Floor of 100/2 is 50.
             local dd = s:deal_done()
+            -- 100 / 2 recipients = 50 each.
             assert.are.same({ 50, -100, 50 }, dd.deal_scores)
         end)
     end)
@@ -265,7 +328,7 @@ describe("app.session write-off", function()
                     no_win_streak_penalty_amount = 120,
                 },
             })
-            local s = session_at_tricks(cfg, generic_layout(), {
+            local s = session_at_write_off_decision(cfg, generic_layout(), {
                 dealer = 1,
                 declarer = 2,
                 bid = 100,
@@ -277,7 +340,6 @@ describe("app.session write-off", function()
             -- Declarer pays 100 (bid) + 120 (penalty) = 220; opponents
             -- still take 50 each (penalty does not reach them).
             assert.are.same({ 50, -220, 50 }, dd.deal_scores)
-            -- Counter resets after the threshold fires.
             assert.are.same({ 0, 0, 0 }, s:write_off_counts())
         end)
 
@@ -293,7 +355,7 @@ describe("app.session write-off", function()
                     no_win_streak_penalty_amount = 120,
                 },
             })
-            local s = session_at_tricks(cfg, generic_layout(), {
+            local s = session_at_write_off_decision(cfg, generic_layout(), {
                 dealer = 1,
                 declarer = 2,
                 bid = 100,
@@ -302,8 +364,6 @@ describe("app.session write-off", function()
             local r = s:write_off()
             assert.is_true(r.ok)
             local dd = s:deal_done()
-            -- Declarer pays 100 (bid) + 60 (penalty) = 160; opponents
-            -- each take 50.
             assert.are.same({ 50, -160, 50 }, dd.deal_scores)
             assert.are.same({ 0, 0, 0 }, s:write_off_counts())
         end)
@@ -313,7 +373,7 @@ describe("app.session write-off", function()
                 bidding = { write_off = "on" },
                 penalties = { write_off_streak = "off" },
             })
-            local s = session_at_tricks(cfg, generic_layout(), {
+            local s = session_at_write_off_decision(cfg, generic_layout(), {
                 dealer = 1,
                 declarer = 2,
                 bid = 100,
@@ -321,8 +381,6 @@ describe("app.session write-off", function()
             })
             local r = s:write_off()
             assert.is_true(r.ok)
-            -- Counter still increments for diagnostic display, but no
-            -- penalty fires.
             assert.are.same({ 0, 6, 0 }, s:write_off_counts())
             local dd = s:deal_done()
             assert.are.same({ 50, -100, 50 }, dd.deal_scores)

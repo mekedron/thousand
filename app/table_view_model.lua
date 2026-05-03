@@ -419,6 +419,11 @@ local function build_talon_phase_block(session)
     local bad_talon_phase = "awaiting_bad_talon_decision" -- i18n-ok: phase enum
     local rebuy_phase = "awaiting_rebuy_decision" -- i18n-ok: phase enum
     local concession_phase = "awaiting_forced_concession_decision" -- i18n-ok: phase enum
+    -- Phase 3.9: the write-off-decision phase keeps the talon alive
+    -- behind the modal — the panel still surfaces declarer info, the
+    -- raise affordances, etc. The modal is the foreground action; the
+    -- panel is the backdrop.
+    local write_off_phase = "awaiting_write_off_decision" -- i18n-ok: phase enum
     -- Phase 3.6 forced-bid concession: the concession-decision phase
     -- has no live talon yet but the table-take panel still renders the
     -- concede button. Surface a minimal block so the UI can find its
@@ -430,7 +435,12 @@ local function build_talon_phase_block(session)
         end
         return nil
     end
-    if phase ~= talon_phase and phase ~= bad_talon_phase and phase ~= rebuy_phase then
+    if
+        phase ~= talon_phase
+        and phase ~= bad_talon_phase
+        and phase ~= rebuy_phase
+        and phase ~= write_off_phase
+    then
         return nil
     end
     local talon = session._talon
@@ -558,26 +568,56 @@ local function build_current_trick_block(session)
     return session:current_trick()
 end
 
--- Phase 3.7 tricks-phase action affordances. Today this surfaces the
--- write-off / сдача button gate; future tricks-phase actions land
--- alongside without a second block. Returns nil outside the tricks
--- phase so the renderer can skip the block entirely.
+-- Phase 3.7 tricks-phase action affordances. Reserved for future
+-- tricks-phase mid-play actions. Returns nil outside the tricks phase
+-- so the renderer can skip the block entirely.
+--
+-- Phase 3.9 dropped the inline write-off button — write-off is now a
+-- one-shot pre-tricks decision surfaced via `write_off_prompt`.
 local function build_tricks_phase_block(session)
     if session:current_phase() ~= "tricks" then
         return nil
     end
-    local cfg = session:config()
     local declarer = session:current_leader()
-    local tricks = session._tricks
-    local tricks_played = tricks and tricks.tricks_played or 0
-    local tricks_per_deal = tricks and tricks.tricks_per_deal or 0
-    local can_write_off = cfg.bidding.write_off == "on"
-        and declarer ~= nil
-        and tricks_played < (tricks_per_deal - 1)
     return {
         declarer = declarer,
-        declarer_can_write_off = can_write_off,
-        write_off_split = cfg.bidding.write_off_split,
+    }
+end
+
+-- Phase 3.9 pre-tricks write-off prompt. Surfaced while the session is
+-- in `awaiting_write_off_decision` — between talon take and pass step
+-- (Russian, 2-player B) or between talon reveal and the two opponent
+-- passes (Polish 2-card `pass_without_taking`). Mirrors
+-- `bad_talon_prompt` and `rebuy_prompt`. The `share` field is the per-
+-- recipient credit the table scene shows in the body copy under
+-- `half_to_each` so the player can see the trade before deciding.
+local function build_write_off_prompt_block(session)
+    local offer = session:write_off_offer_state()
+    if not offer then
+        return nil
+    end
+    local cfg = session:config()
+    local count = cfg.players.count
+    local declarer = offer.declarer
+    local sits_out = session._talon and session._talon.sits_out or nil
+    local recipients = 0
+    for seat = 1, count do
+        if seat ~= declarer and seat ~= sits_out then
+            recipients = recipients + 1
+        end
+    end
+    local split_mode = offer.split_mode or cfg.bidding.write_off_split
+    local share
+    if split_mode == "half_to_each" then
+        share = math.floor(offer.bid / 2)
+    elseif split_mode == "equal_split" and recipients > 0 then
+        share = math.floor(offer.bid / recipients)
+    end
+    return {
+        declarer = declarer,
+        bid = offer.bid,
+        split_mode = split_mode,
+        share = share,
     }
 end
 
@@ -1346,6 +1386,7 @@ function M.from_session(session)
         bad_talon_prompt = build_bad_talon_prompt_block(session),
         buyback_banner = build_buyback_banner_block(session),
         rebuy_prompt = build_rebuy_prompt_block(session),
+        write_off_prompt = build_write_off_prompt_block(session),
         active_contract_banner = active_contract_banner,
         declarer_hand_open = declarer_hand_open,
         open_hand_seat = open_hand_seat,

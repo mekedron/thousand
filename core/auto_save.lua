@@ -215,6 +215,14 @@ function M.serialize(session)
         -- defaults the log to {}.
         cut_phase = data_clone(session._cut_phase),
         cut_deck_log = data_clone(session._cut_deck_log),
+        -- Phase 3.9 pre-tricks write-off prompt. `awaiting_write_off_decision`
+        -- holds the open offer (declarer / bid / split_mode) when the
+        -- declarer is currently being prompted; nil otherwise. The
+        -- companion `_resolved` flag survives so re-entry into the talon
+        -- state (e.g. after a Polish bad-talon decline) does not
+        -- re-prompt a declarer who has already chosen this deal.
+        awaiting_write_off_decision = data_clone(session._awaiting_write_off_decision),
+        write_off_decision_resolved = session._write_off_decision_resolved or false,
     }
 end
 
@@ -265,6 +273,11 @@ function M.deserialize(blob)
         barrel_fall_counts = blob.barrel_fall_counts,
         cut_phase = blob.cut_phase,
         cut_deck_log = blob.cut_deck_log,
+        -- Phase 3.9 pre-tricks write-off prompt. Older saves load with
+        -- both fields nil/false because Session.from_state defaults
+        -- missing fields.
+        awaiting_write_off_decision = blob.awaiting_write_off_decision,
+        write_off_decision_resolved = blob.write_off_decision_resolved or false,
     }
 end
 

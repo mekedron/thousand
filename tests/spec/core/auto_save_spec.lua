@@ -48,6 +48,12 @@ end
 local function drive_to_tricks(seed, marriage_suit)
     local s = drive_to_talon(seed)
     assert(s:take_talon().ok)
+    -- Phase 3.9: trickless_canonical inherits write_off = "on" from
+    -- canonical_russian, so the take opens the pre-tricks prompt. Decline
+    -- it to flow into the pass step.
+    if s:current_phase() == "awaiting_write_off_decision" then
+        assert(s:accept_play().ok)
+    end
     local hand = s:hands()[2]
     assert(s:pass_talon(1, find_safe_pass(hand, marriage_suit)).ok)
     hand = s:hands()[2]
@@ -187,6 +193,12 @@ describe("core.auto_save", function()
         it("preserves the talon phase mid-pass", function()
             local s = drive_to_talon(SEED_NO_MARRIAGE)
             assert(s:take_talon().ok)
+            -- Phase 3.9: clear the pre-tricks write-off prompt before
+            -- the snapshot so this test still asserts the talon phase
+            -- round-trips. The new prompt has its own coverage below.
+            if s:current_phase() == "awaiting_write_off_decision" then
+                assert(s:accept_play().ok)
+            end
             local restored = Session.from_state(round_trip(s))
             assert.are.equal("talon", restored:current_phase())
             assert.are.equal(s:current_bid(), restored:current_bid())
@@ -197,6 +209,21 @@ describe("core.auto_save", function()
             local hand = restored:hands()[2]
             local r = restored:pass_talon(1, hand[1])
             assert.is_true(r.ok)
+        end)
+
+        it("preserves the awaiting_write_off_decision phase", function()
+            local s = drive_to_talon(SEED_NO_MARRIAGE)
+            assert(s:take_talon().ok)
+            assert.are.equal("awaiting_write_off_decision", s:current_phase())
+            local restored = Session.from_state(round_trip(s))
+            assert.are.equal("awaiting_write_off_decision", restored:current_phase())
+            local offer = restored:write_off_offer_state()
+            assert.is_table(offer)
+            assert.are.equal(s:write_off_offer_state().declarer, offer.declarer)
+            assert.are.equal(s:write_off_offer_state().bid, offer.bid)
+            -- Round-tripped session must still accept either branch.
+            assert.is_true(restored:accept_play().ok)
+            assert.are.equal("talon", restored:current_phase())
         end)
 
         it("preserves an in-progress tricks state with a played card", function()

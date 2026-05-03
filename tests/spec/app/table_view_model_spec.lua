@@ -36,6 +36,12 @@ end
 local function drive_to_tricks(seed)
     local s = drive_to_talon(seed)
     assert(s:take_talon().ok)
+    -- Phase 3.9: canonical Russian opens the write-off prompt after
+    -- take. Decline it (play the hand) so the deal continues into the
+    -- pass step normally.
+    if s:current_phase() == "awaiting_write_off_decision" then
+        assert(s:accept_play().ok)
+    end
     local hand = s:hands()[2]
     assert(s:pass_talon(1, hand[1]).ok)
     hand = s:hands()[2]
@@ -161,6 +167,11 @@ describe("app.table_view_model", function()
 
         it("transitions talon_phase to awaiting_pass after take", function()
             assert(session:take_talon().ok)
+            -- Phase 3.9: clear the pre-tricks write-off prompt so the
+            -- pass step is the active sub-phase the panel reflects.
+            if session:current_phase() == "awaiting_write_off_decision" then
+                assert(session:accept_play().ok)
+            end
             view = view_model.from_session(session)
             assert.are.equal("awaiting_pass", view.talon_phase.status)
             assert.is_not_nil(view.talon_phase.pass_target_seat)
@@ -168,6 +179,9 @@ describe("app.table_view_model", function()
 
         it("surfaces awaiting_raise with allowed_raise_amounts after both passes", function()
             assert(session:take_talon().ok)
+            if session:current_phase() == "awaiting_write_off_decision" then
+                assert(session:accept_play().ok)
+            end
             local hand = session:hands()[2]
             assert(session:pass_talon(1, hand[1]).ok)
             hand = session:hands()[2]
@@ -251,6 +265,9 @@ describe("app.table_view_model", function()
             assert(session:bid(2, 120).ok)
             assert(session:pass(3).ok)
             assert(session:take_talon().ok)
+            if session:current_phase() == "awaiting_write_off_decision" then
+                assert(session:accept_play().ok)
+            end
             local hand = session:hands()[2]
             assert(session:pass_talon(1, safe_pass_card(hand, marriage_suit)).ok)
             hand = session:hands()[2]

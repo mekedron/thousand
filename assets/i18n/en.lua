@@ -80,7 +80,6 @@ return {
 
     ["scene.table.tricks.your_turn"] = "Your turn — play a card",
     ["scene.table.tricks.led"] = "Led:",
-    ["scene.table.tricks.write_off_button"] = "Write off",
 
     ["scene.table.cut.cut_deck_button"] = "Cut the deck",
     ["scene.table.cut.bad_cut_indicator"] = "Bad cuts: %{count} / %{threshold}",
@@ -179,6 +178,11 @@ return {
     ["scene.table.rebuy_prompt.body"] = "Player %{seat} may take the talon at %{value}.",
     ["scene.table.rebuy_prompt.accept"] = "Buy at %{value}",
     ["scene.table.rebuy_prompt.decline"] = "Pass",
+    ["scene.table.write_off_prompt.title"] = "Write off the contract?",
+    ["scene.table.write_off_prompt.body.half_to_each"] = "Concede %{bid} from your total; each opponent gains %{share}.",
+    ["scene.table.write_off_prompt.body.equal_split"] = "Concede %{bid} from your total; opponents share %{bid} equally.",
+    ["scene.table.write_off_prompt.accept"] = "Write off",
+    ["scene.table.write_off_prompt.decline"] = "Play this hand",
     ["scene.table.buyback_banner"] = "Player %{declarer} bought back the hand (-%{penalty})",
     ["scene.table.deal_done.talon_conceded"] = "Player %{declarer} conceded at %{bid}",
     ["scene.table.deal_done.write_off"] = "Write-off — declarer conceded mid-deal",
@@ -502,7 +506,7 @@ return {
     ["templates.field.bidding.forced_bid_concession_preset_ratio.label"] = "Concession preset ratio",
     ["templates.field.bidding.forced_bid_concession_preset_ratio.help"] = "Per-defender share of the contract used by the 'preset ratio' concession mode. Read-only list — list/map editing not yet available.",
     ["templates.field.bidding.write_off.label"] = "Write-off / сдача",
-    ["templates.field.bidding.write_off.help"] = "When on, the declarer may abandon the deal between tricks (any time before the last trick begins) and pay out the contract per the configured split. The cross-deal counter that triggers the every-third-write-off penalty lives in penalties.write_off_streak.",
+    ["templates.field.bidding.write_off.help"] = "When on, the declarer is prompted to write off after seeing the widow — between talon take and the pass step (Russian, 2-player B), or between talon reveal and the opponent passes (Polish 2-card). Choosing to write off pays the contract per the configured split. The cross-deal counter that triggers the every-third-write-off penalty lives in penalties.write_off_streak.",
     ["templates.field.bidding.write_off.off"] = "Off",
     ["templates.field.bidding.write_off.on"] = "On",
     ["templates.field.bidding.write_off_split.label"] = "Write-off split",

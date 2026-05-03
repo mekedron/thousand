@@ -965,7 +965,7 @@ ordered amount"). Today the engine surfaces the *Write off* button
 between tricks — too lenient — so a declarer can keep playing,
 realise the contract is dead, and concede mid-deal.
 
-- [ ] Move write-off out of the tricks panel into a dedicated
+- [x] Move write-off out of the tricks panel into a dedicated
   pre-tricks decision phase.
   - Engine: introduce an `awaiting_write_off_decision` phase that
     opens after the talon discard / Polish pass, before the first

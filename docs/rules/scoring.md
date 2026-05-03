@@ -84,9 +84,14 @@ both pinned **on** in the canonical Russian template:
   **+555** *or* **−555**, that seat's running total is reset to
   zero. See
   [House Rules — Dump truck](../variations/house-rules.md#dump-truck--самосвал).
-- **Write-off (сдача).** A declarer who sees that the contract is
-  unmakeable may write off the deal at any point before the eighth
-  trick: the **full bid** is subtracted from the declarer, and
+- **Write-off (сдача).** The book frames write-off as a one-shot
+  decision the declarer makes after seeing the widow ("if it is not
+  possible to score the ordered amount, you can write off"). The
+  engine surfaces it as a **pre-tricks prompt**: between talon take
+  and the pass step (Russian / 2-player B), or between talon reveal
+  and the two opponent passes (Polish 2-card). The declarer chooses
+  *Play this hand* — and the deal proceeds normally — or *Write off*,
+  in which case the **full bid** is subtracted from the declarer and
   **half the bid** is credited to each opponent. The cross-deal
   [every-third-write-off penalty](../variations/house-rules.md#every-third-write-off-penalty)
   is on as a sibling. See

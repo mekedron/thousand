@@ -59,6 +59,11 @@ local function drive_to_tricks(seed)
     assert(s:pass(3).ok)
     assert(s:pass(1).ok)
     assert(s:take_talon().ok)
+    -- Phase 3.9: canonical Russian opens the pre-tricks write-off
+    -- prompt after take. Decline so the deal flows into the pass step.
+    if s:current_phase() == "awaiting_write_off_decision" then
+        assert(s:accept_play().ok)
+    end
     local hand = s:hands()[2]
     assert(s:pass_talon(1, hand[1]).ok)
     hand = s:hands()[2]

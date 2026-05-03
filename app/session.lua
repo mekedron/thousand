@@ -204,6 +204,8 @@ local function reset_deal_state(self, dealer, seed_bump)
     self._contra_declarer = nil
     self._forced_concession_offer = nil
     self._forced_concession_resolved = false
+    self._awaiting_write_off_decision = nil
+    self._write_off_decision_resolved = false
     self._first_trick_played = false
     -- Phase 3.6 opening-game: track whether this deal is a forced
     -- golden deal so on_tricks_end can attribute failures and the
@@ -277,6 +279,68 @@ local function maybe_open_rebuy_offer(self)
         seats = seats,
         contract = contract,
         original_declarer = self._talon.declarer,
+    }
+end
+
+-- Phase 3.9: open the pre-tricks write-off / сдача prompt. The book
+-- frames write-off as a one-shot decision the declarer makes after
+-- seeing the widow — between talon take and the pass step in the
+-- standard 3-card layout, or between talon reveal and the two opponent
+-- passes in the Polish 2-card `pass_without_taking` distribution.
+-- Refuses to open when:
+--   * `bidding.write_off ~= "on"` (toggle off);
+--   * the declarer has already chosen this deal
+--     (`_write_off_decision_resolved`);
+--   * an offer is already pending (`_awaiting_write_off_decision`);
+--   * no live talon, or a bad-talon / rebuy decision is still open;
+--   * the talon is not at the right transition point — `awaiting_pass`
+--     for the take-then-pass distributions, or `revealed` with
+--     `pass_without_taking` for the Polish direct-pass path;
+--   * the active bid is structured (named contract): write-off is
+--     numeric-only per the 3.7 scoring contract.
+local function maybe_open_write_off_prompt(self)
+    if self._awaiting_write_off_decision then
+        return
+    end
+    if self._write_off_decision_resolved then
+        return
+    end
+    if self._config.bidding.write_off ~= "on" then
+        return
+    end
+    local t = self._talon
+    if not t then
+        return
+    end
+    if self._bad_talon_offer or self._rebuy_pending then
+        return
+    end
+    local ready = false
+    local status = t.status
+    if status == "awaiting_pass" then -- i18n-ok: talon status enum
+        ready = true
+    elseif status == "awaiting_discard" then -- i18n-ok: talon status enum
+        ready = true
+    elseif status == "revealed" then -- i18n-ok: talon status enum
+        if t.distribution == "pass_without_taking" then -- i18n-ok: talon distribution enum
+            ready = true
+        end
+    end
+    if not ready then
+        return
+    end
+    local declarer = t.declarer
+    if declarer == nil then
+        return
+    end
+    local bid = t.final_bid or t.original_bid
+    if type(bid) ~= "number" then
+        return
+    end
+    self._awaiting_write_off_decision = {
+        declarer = declarer,
+        bid = bid,
+        split_mode = self._config.bidding.write_off_split,
     }
 end
 
@@ -452,6 +516,16 @@ function M.new(opts)
         _redouble_declared = false,
         _contra_declarer = nil,
         _forced_concession_offer = nil,
+        -- Phase 3.9 write-off prompt. `_awaiting_write_off_decision` is
+        -- nil unless the declarer is currently being prompted between
+        -- talon take and the pass step (or between talon reveal and the
+        -- Polish opponent passes). Shape: { declarer, bid, split_mode }.
+        -- `_write_off_decision_resolved` flips true once the declarer
+        -- chooses (accept_play / write_off) so the helper does not
+        -- re-prompt later in the same deal — e.g. after a bad-talon
+        -- decline or a defender's rebuy declines reopens the talon.
+        _awaiting_write_off_decision = nil,
+        _write_off_decision_resolved = false,
         _first_trick_played = false,
         -- Phase 3.6 marriage-house-rules per-deal state.
         --   _pre_first_trick_marriage_queue: nil unless
@@ -598,6 +672,8 @@ function M.from_state(state)
         _redouble_declared = state.redouble_declared or false,
         _contra_declarer = state.contra_declarer,
         _forced_concession_offer = state.forced_concession_offer,
+        _awaiting_write_off_decision = state.awaiting_write_off_decision,
+        _write_off_decision_resolved = state.write_off_decision_resolved or false,
         _first_trick_played = state.first_trick_played or false,
         _pre_first_trick_marriage_queue = state.pre_first_trick_marriage_queue,
         _half_marriage_captures = state.half_marriage_captures or {},
@@ -765,6 +841,9 @@ function Session:current_phase()
         if self._rebuy_pending then
             return "awaiting_rebuy_decision"
         end
+        if self._awaiting_write_off_decision then
+            return "awaiting_write_off_decision"
+        end
         return "talon"
     end
     if self._forced_concession_offer then
@@ -794,6 +873,9 @@ function Session:current_turn()
         return self._talon and self._talon.declarer or nil
     elseif phase == "awaiting_rebuy_decision" then -- i18n-ok: phase enum
         return self._rebuy_pending and self._rebuy_pending.seats[1] or nil
+    elseif phase == "awaiting_write_off_decision" then -- i18n-ok: phase enum
+        return self._awaiting_write_off_decision and self._awaiting_write_off_decision.declarer
+            or nil
     elseif phase == "awaiting_pre_first_trick_marriages" then -- i18n-ok: phase enum
         local q = self._pre_first_trick_marriage_queue
         return q and q.seats[q.current_index] or nil
@@ -1436,6 +1518,13 @@ function on_auction_end(self)
     if not self._bad_talon_offer then
         maybe_open_rebuy_offer(self)
     end
+    -- Phase 3.9: the Polish 2-card `pass_without_taking` distribution
+    -- has no take step — the declarer passes directly off the revealed
+    -- talon. Open the write-off prompt at the end of the auction-end
+    -- block (after bad_talon / rebuy guards clear); the helper no-ops
+    -- for take-then-pass distributions because the talon is still at
+    -- status "revealed" without `pass_without_taking`.
+    maybe_open_write_off_prompt(self)
 end
 
 -- Talon → tricks transition. The declarer leads the first trick (the
@@ -2056,6 +2145,21 @@ local function rebuy_guard(self, action)
     return nil
 end
 
+-- Phase 3.9: a pending pre-tricks write-off prompt blocks subsequent
+-- talon mutators (`pass_talon`, `pass_polish_talon`, `discard_talon`,
+-- `raise`, `skip_raise`). The declarer must answer the prompt — via
+-- `accept_play()` or `write_off()` — before the deal can proceed.
+local function write_off_decision_guard(self, action)
+    if self._awaiting_write_off_decision then
+        local msg = "resolve the pending write-off decision first" -- i18n-ok
+        return failure("awaiting_write_off_decision", msg, {
+            action = action,
+            declarer = self._awaiting_write_off_decision.declarer,
+        })
+    end
+    return nil
+end
+
 function Session:take_talon()
     if not self._talon then
         return failure("wrong_phase", "take_talon requires the talon phase", {
@@ -2072,6 +2176,11 @@ function Session:take_talon()
         return result
     end
     self._talon = result.talon
+    -- Phase 3.9: now that the declarer holds the full hand, surface the
+    -- pre-tricks write-off prompt before any pass / discard ceremony.
+    -- The helper no-ops when the toggle is off, the declarer has
+    -- already chosen this deal, or the bid is structured.
+    maybe_open_write_off_prompt(self)
     return { ok = true }
 end
 
@@ -2083,6 +2192,7 @@ function Session:pass_talon(target_player, card)
     end
     local g = bad_talon_guard(self, "pass_talon") -- i18n-ok: action enum
         or rebuy_guard(self, "pass_talon") -- i18n-ok: action enum
+        or write_off_decision_guard(self, "pass_talon") -- i18n-ok: action enum
     if g then
         return g
     end
@@ -2108,6 +2218,7 @@ function Session:pass_polish_talon(target_player, talon_index)
     end
     local g = bad_talon_guard(self, "pass_polish_talon") -- i18n-ok: action enum
         or rebuy_guard(self, "pass_polish_talon") -- i18n-ok: action enum
+        or write_off_decision_guard(self, "pass_polish_talon") -- i18n-ok: action enum
     if g then
         return g
     end
@@ -2135,6 +2246,7 @@ function Session:discard_talon(card)
     end
     local g = bad_talon_guard(self, "discard_talon") -- i18n-ok: action enum
         or rebuy_guard(self, "discard_talon") -- i18n-ok: action enum
+        or write_off_decision_guard(self, "discard_talon") -- i18n-ok: action enum
     if g then
         return g
     end
@@ -2154,6 +2266,7 @@ function Session:raise(amount)
     end
     local g = bad_talon_guard(self, "raise") -- i18n-ok: action enum
         or rebuy_guard(self, "raise") -- i18n-ok: action enum
+        or write_off_decision_guard(self, "raise") -- i18n-ok: action enum
     if g then
         return g
     end
@@ -2174,6 +2287,7 @@ function Session:skip_raise()
     end
     local g = bad_talon_guard(self, "skip_raise") -- i18n-ok: action enum
         or rebuy_guard(self, "skip_raise") -- i18n-ok: action enum
+        or write_off_decision_guard(self, "skip_raise") -- i18n-ok: action enum
     if g then
         return g
     end
@@ -2360,6 +2474,11 @@ function Session:decline_bad_talon_redeal()
     -- the rebuy offer fire, mirroring what happens at the end of
     -- `on_auction_end` when no bad-talon offer was ever opened.
     maybe_open_rebuy_offer(self)
+    -- Phase 3.9: a Polish declarer who declined the bad-talon redeal
+    -- now reaches the same pre-pass moment the auction-end hook would
+    -- otherwise have caught. The helper no-ops if rebuy fired or if
+    -- this is a take-then-pass distribution.
+    maybe_open_write_off_prompt(self)
     return { ok = true }
 end
 
@@ -2405,6 +2524,11 @@ function Session:claim_rebuy(seat)
         dealer = self._dealer,
     }
     self._rebuy_pending = nil
+    -- Phase 3.9: a successful rebuy installs a new declarer; the
+    -- write-off prompt opens for them at the next pre-pass moment.
+    -- The helper no-ops for take-then-pass distributions because the
+    -- talon is still at status "revealed" without `pass_without_taking`.
+    maybe_open_write_off_prompt(self)
     return { ok = true }
 end
 
@@ -2432,6 +2556,10 @@ function Session:decline_rebuy(seat)
     if #self._rebuy_pending.seats == 0 then
         self._rebuy_pending = nil
     end
+    -- Phase 3.9: the last decline restores control to the original
+    -- declarer's pre-pass menu. Same helper, same no-op rules as the
+    -- accept path.
+    maybe_open_write_off_prompt(self)
     return { ok = true }
 end
 
@@ -3746,9 +3874,32 @@ function Session:decline_forced_bid()
     return { ok = true }
 end
 
--- Phase 3.7 write-off / сдача. The declarer abandons the deal mid-
--- play (any time during the tricks phase before the last trick
--- begins) and pays out the contract per `bidding.write_off_split`:
+-- Phase 3.9 write-off offer accessor for the table view-model.
+function Session:write_off_offer_state()
+    return self._awaiting_write_off_decision
+end
+
+-- Phase 3.9: declarer chooses to play this hand instead of writing off.
+-- Clears the prompt and lets the existing pass / discard / Polish-pass
+-- methods proceed. The "resolved" flag prevents the helper from
+-- re-prompting this deal.
+function Session:accept_play()
+    if not self._awaiting_write_off_decision then
+        return failure("no_write_off_pending", "no write-off prompt to accept", {
+            phase = self:current_phase(),
+        })
+    end
+    self._awaiting_write_off_decision = nil
+    self._write_off_decision_resolved = true
+    return { ok = true }
+end
+
+-- Phase 3.9 write-off / сдача. The book frames the decision as a
+-- one-shot pre-tricks prompt the declarer answers after seeing the
+-- widow — between talon take and the pass step (Russian, 2-player B)
+-- or between talon reveal and the two opponent passes (Polish 2-card
+-- `pass_without_taking`). On accept, pays out the contract per
+-- `bidding.write_off_split`:
 --   * half_to_each — every active opponent gets half the bid.
 --     Book default; with 3+ opponents the credits intentionally
 --     exceed the debit.
@@ -3765,35 +3916,17 @@ function Session:write_off()
         local msg = "bidding.write_off is not enabled" -- i18n-ok: internal error
         return failure("write_off_disabled", msg, { rule = self._config.bidding.write_off })
     end
-    if self:current_phase() ~= "tricks" then
-        return failure("wrong_phase", "write_off requires the tricks phase", {
+    if self:current_phase() ~= "awaiting_write_off_decision" then
+        return failure("wrong_phase", "write_off requires the awaiting_write_off_decision phase", {
             phase = self:current_phase(),
         })
     end
-    local t = self._tricks
-    if not t then
-        return failure("wrong_phase", "write_off requires an active tricks state", {
-            phase = self:current_phase(),
-        })
-    end
-    -- "Before the last trick begins" — the canonical 8-trick layout
-    -- gates writes off after seven tricks have resolved. The check is
-    -- data-driven so 6-trick (Polish 2-card) and other layouts get the
-    -- same semantic: write-off is unavailable once the final trick is
-    -- the only one left to play.
-    if (t.tricks_played or 0) >= (t.tricks_per_deal or 0) - 1 then
-        local msg = "write_off must be invoked before the last trick begins" -- i18n-ok
-        return failure("too_late_to_write_off", msg, {
-            tricks_played = t.tricks_played,
-            tricks_per_deal = t.tricks_per_deal,
-        })
-    end
-
-    local declarer = self._talon and self._talon.declarer or self._auction.declarer
+    local offer = self._awaiting_write_off_decision
+    local declarer = offer.declarer
     if declarer == nil then
         return failure("no_declarer", "write_off has no declarer to charge", {})
     end
-    local bid = self:current_bid()
+    local bid = offer.bid
     if type(bid) ~= "number" then
         return failure("no_numeric_bid", "write_off requires a numeric contract bid", { bid = bid })
     end
@@ -3873,6 +4006,8 @@ function Session:write_off()
     self._marriages = nil
     self._pre_first_trick_marriage_queue = nil
     self._raspassy_active = false
+    self._awaiting_write_off_decision = nil
+    self._write_off_decision_resolved = true
     return { ok = true }
 end
 

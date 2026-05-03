@@ -48,9 +48,19 @@ local function drive_to_talon(seed)
     return s
 end
 
+-- Phase 3.9: canonical Russian opens the pre-tricks write-off prompt
+-- after take. Tests that drive past the talon either decline it (play
+-- the hand) or call this helper to skip past it cleanly.
+local function clear_write_off_prompt_if_pending(s)
+    if s:current_phase() == "awaiting_write_off_decision" then
+        assert(s:accept_play().ok)
+    end
+end
+
 local function drive_to_tricks_no_marriage(seed)
     local s = drive_to_talon(seed)
     assert(s:take_talon().ok)
+    clear_write_off_prompt_if_pending(s)
     local hand = s:hands()[2]
     assert(s:pass_talon(1, hand[1]).ok)
     hand = s:hands()[2]
@@ -84,6 +94,7 @@ end
 local function drive_to_tricks_with_marriage(seed)
     local s = drive_to_talon_contested_with_config(seed, marriage_test_config())
     assert(s:take_talon().ok)
+    clear_write_off_prompt_if_pending(s)
     -- Pass two non-marriage cards.
     local hand = s:hands()[2]
     assert(s:pass_talon(1, find_safe_pass(hand, "spades")).ok)
@@ -331,6 +342,7 @@ describe("app.session", function()
 
         it("Session:pass_talon moves a card from declarer to the named opponent", function()
             assert(s:take_talon().ok)
+            clear_write_off_prompt_if_pending(s)
             local hand = s:hands()[2]
             local card = hand[1]
             local r = s:pass_talon(1, card)
@@ -342,6 +354,7 @@ describe("app.session", function()
 
         it("Session:pass_talon rejects a card not in the declarer's hand", function()
             assert(s:take_talon().ok)
+            clear_write_off_prompt_if_pending(s)
             local r = s:pass_talon(1, { suit = "spades", rank = "?" })
             assert.is_false(r.ok)
             assert.are.equal("card_not_in_hand", r.error.code)
@@ -349,6 +362,7 @@ describe("app.session", function()
 
         it("Session:pass_talon rejects passing to the declarer", function()
             assert(s:take_talon().ok)
+            clear_write_off_prompt_if_pending(s)
             local hand = s:hands()[2]
             local r = s:pass_talon(2, hand[1])
             assert.is_false(r.ok)
@@ -357,6 +371,7 @@ describe("app.session", function()
 
         it("Session:skip_raise after two passes finalises the talon phase", function()
             assert(s:take_talon().ok)
+            clear_write_off_prompt_if_pending(s)
             local hand = s:hands()[2]
             assert(s:pass_talon(1, hand[1]).ok)
             hand = s:hands()[2]
@@ -367,6 +382,7 @@ describe("app.session", function()
 
         it("Session:raise above the current bid bumps the contract", function()
             assert(s:take_talon().ok)
+            clear_write_off_prompt_if_pending(s)
             local hand = s:hands()[2]
             assert(s:pass_talon(1, hand[1]).ok)
             hand = s:hands()[2]
@@ -378,6 +394,7 @@ describe("app.session", function()
 
         it("Session:raise rejects a non-higher amount", function()
             assert(s:take_talon().ok)
+            clear_write_off_prompt_if_pending(s)
             local hand = s:hands()[2]
             assert(s:pass_talon(1, hand[1]).ok)
             hand = s:hands()[2]

@@ -194,16 +194,21 @@ who didn't want the bid in the first place.
 
 ### Write-off / Сдача
 
-The book's mid-deal concession. A declarer who sees that the contract
-is unmakeable may **write off** the deal at any point before the
-eighth trick: the **full bid** is subtracted from the declarer's
-running total, and **half of the bid** is credited to each opponent.
+The book's pre-tricks concession. The declarer is prompted **after
+seeing the widow** — between talon take and the pass step (Russian /
+2-player B), or between talon reveal and the two opponent passes
+(Polish 2-card `pass_without_taking`) — to either *Play this hand* or
+*Write off*. Choosing to write off subtracts the **full bid** from the
+declarer's running total and credits **half of the bid** to each
+opponent.
 
 On in the canonical Russian template — the book describes write-off
-as a standard mid-deal action available to any declarer.
+as a standard pre-play action available to any declarer with full hand
+information.
 
 Distinct from [forced-bid concession](#forced-bid-concession), which
-only fires on a forced minimum-100 contract pre-play.
+only fires on a forced minimum-100 contract pre-play (before the
+talon is even revealed).
 
 Split variants:
 

@@ -1,13 +1,16 @@
--- Phase 3.7 write-off / сдача e2e journey. Drives the table scene
--- through a session whose tricks phase opens under
--- `bidding.write_off = "on"` and asserts:
+-- Phase 3.9 write-off / сдача e2e journey. Drives the table scene
+-- through a session sitting at the new
+-- `awaiting_write_off_decision` phase (between talon take and the
+-- pass step) and asserts:
 --
---   * the "Write off" panel button is visible to the declarer while
---     the deal still has more than one trick remaining;
---   * the per-seat "Write-offs: 1 / 3" scoreboard line renders when
---     `penalties.write_off_streak = "any_three"` is on;
---   * pressing the button advances the session into deal_done with
---     `reason = "write_off"` and the localised banner appears.
+--   * the Play / Write off modal renders with its title and both
+--     localised buttons;
+--   * the per-seat "Write-offs: %{count} / %{threshold}" scoreboard
+--     line still surfaces when `penalties.write_off_streak` is on;
+--   * pressing **Play this hand** dismisses the modal and lets the
+--     deal flow into the standard pass step;
+--   * pressing **Write off** closes the deal with `reason =
+--     "write_off"` and the deal-done banner appears.
 --
 -- Engine math is pinned in tests/spec/app/session_write_off_spec; this
 -- journey verifies the rendered output round-trips to the user.
@@ -19,7 +22,6 @@ local card = require("core.card")
 local json = require("app.json")
 local marriages_module = require("core.marriages")
 local auction_module = require("core.auction")
-local tricks_module = require("core.tricks")
 
 local function find_text(j, needle)
     return j._mock.graphics.find_text(needle)
@@ -35,8 +37,17 @@ local function build_table_scene_in_mock(session)
     return manager, manager._scenes["table"]
 end
 
+local function find_modal_button(scene, id)
+    for _, b in ipairs(scene._modal_buttons or {}) do
+        if b.id == id then
+            return b
+        end
+    end
+    return nil
+end
+
 local function find_panel_button(scene, id)
-    for _, b in ipairs(scene._panel_buttons) do
+    for _, b in ipairs(scene._panel_buttons or {}) do
         if b.id == id then
             return b
         end
@@ -59,9 +70,8 @@ local function c(suit, rank)
     return card.new(suit, rank)
 end
 
--- 24-card deal. Seat 2 holds the winners; the actual sequence does
--- not matter for write-off journeys because the deal closes the
--- moment the button is pressed.
+-- 24-card deal. Seat 2 is the declarer; the actual card mix doesn't
+-- matter — the prompt fires before any tricks are played.
 local function generic_layout()
     return {
         {
@@ -97,7 +107,11 @@ local function generic_layout()
     }
 end
 
-local function session_at_tricks(cfg, hands, opts)
+-- Build a session sitting in awaiting_write_off_decision via
+-- Session.from_state. Mirrors the natural take_talon path but stops
+-- the engine at the prompt so the journey can render and interact
+-- with the modal.
+local function session_at_write_off_decision(cfg, hands, opts)
     opts = opts or {}
     local pc = cfg.players.count
     local dealer = opts.dealer or 1
@@ -128,10 +142,6 @@ local function session_at_tricks(cfg, hands, opts)
         end
     end
     local marriages = marriages_module.new(cfg).marriages
-    local tricks = tricks_module.new(cfg, hands, declarer, {
-        dealer = dealer,
-        declarer = declarer,
-    }).tricks
     return Session.from_state({
         config = cfg,
         seed = 1,
@@ -139,16 +149,23 @@ local function session_at_tricks(cfg, hands, opts)
         hands = hands,
         auction = auction,
         marriages = marriages,
-        tricks = tricks,
         talon = {
             declarer = declarer,
             final_bid = opts.bid or 100,
-            status = "done",
+            status = "awaiting_pass",
+            distribution = "declarer_takes_then_passes",
             hands = hands,
+            opponent_count = pc - 1,
+            passes_received = {},
         },
         running_totals = running_totals,
         deal_index = 1,
         write_off_counts = opts.write_off_counts,
+        awaiting_write_off_decision = {
+            declarer = declarer,
+            bid = opts.bid or 100,
+            split_mode = cfg.bidding.write_off_split,
+        },
     })
 end
 
@@ -166,9 +183,9 @@ describe("write-off journey", function()
         end
     end)
 
-    it("renders the Write off panel button when the toggle is on", function()
+    it("renders the Play / Write off modal at the new phase", function()
         local cfg = build_config({ bidding = { write_off = "on" } })
-        local s = session_at_tricks(cfg, generic_layout(), {
+        local s = session_at_write_off_decision(cfg, generic_layout(), {
             dealer = 1,
             declarer = 2,
             bid = 100,
@@ -178,29 +195,78 @@ describe("write-off journey", function()
         j._mock.graphics.clear_recording()
         scene:draw(1024, 720)
 
-        local btn = find_panel_button(scene, "tricks_write_off")
-        assert.is_not_nil(btn, "Write-off button should be present in the tricks panel")
-        assert.is_true(btn.enabled)
+        assert.are.equal("write_off_prompt", scene._modal)
+        assert.is_not_nil(find_modal_button(scene, "write_off_prompt_accept"))
+        assert.is_not_nil(find_modal_button(scene, "write_off_prompt_decline"))
+        assert.is_truthy(find_text(j, "Write off the contract?"))
+        assert.is_truthy(find_text(j, "Play this hand"))
         assert.is_truthy(find_text(j, "Write off"))
     end)
 
-    it("hides the Write off button when the toggle is off", function()
-        -- Phase 3.7 flipped bidding.write_off = "on" in canonical_russian;
-        -- this case explicitly opts back off to confirm the panel button
-        -- disappears when the toggle is off.
+    it("does not open the modal when the toggle is off", function()
         local cfg = build_config({ bidding = { write_off = "off" } })
-        local s = session_at_tricks(cfg, generic_layout(), {
+        -- When the toggle is off, the natural flow lands at the talon
+        -- phase with no prompt. Drive a Session.new through take_talon
+        -- here so we observe the no-prompt branch end-to-end.
+        local fresh = Session.new({ seed = 7, dealer = 1, config = cfg })
+        assert(fresh:bid(2, 100).ok)
+        assert(fresh:pass(3).ok)
+        assert(fresh:pass(1).ok)
+        assert(fresh:take_talon().ok)
+        assert.are.equal("talon", fresh:current_phase())
+
+        local _, scene = build_table_scene_in_mock(fresh)
+        scene:draw(1024, 720)
+        assert.is_not_equal("write_off_prompt", scene._modal)
+        assert.is_nil(find_modal_button(scene, "write_off_prompt_accept"))
+    end)
+
+    it("dismisses the modal and resumes the talon phase on Play this hand", function()
+        local cfg = build_config({ bidding = { write_off = "on" } })
+        local s = session_at_write_off_decision(cfg, generic_layout(), {
             dealer = 1,
             declarer = 2,
             bid = 100,
         })
         local _, scene = build_table_scene_in_mock(s)
         scene:draw(1024, 720)
-        local btn = find_panel_button(scene, "tricks_write_off")
-        assert.is_nil(btn, "Write-off button should be hidden when the toggle is off")
+
+        local decline = find_modal_button(scene, "write_off_prompt_decline")
+        assert.is_not_nil(decline)
+        decline:activate()
+        scene:draw(1024, 720)
+
+        assert.are.equal("talon", s:current_phase())
+        assert.is_nil(find_modal_button(scene, "write_off_prompt_decline"))
     end)
 
-    it("renders the per-seat write-off counter when streak is any_three", function()
+    it("closes the deal with write_off reason on Write off", function()
+        local cfg = build_config({ bidding = { write_off = "on" } })
+        local s = session_at_write_off_decision(cfg, generic_layout(), {
+            dealer = 1,
+            declarer = 2,
+            bid = 100,
+        })
+        local _, scene = build_table_scene_in_mock(s)
+        scene:draw(1024, 720)
+
+        local accept = find_modal_button(scene, "write_off_prompt_accept")
+        assert.is_not_nil(accept)
+        accept:activate()
+
+        assert.are.equal("deal_done", s:current_phase())
+        local dd = s:deal_done()
+        assert.are.equal("write_off", dd.reason)
+        assert.are.equal(2, dd.declarer)
+
+        scene:draw(1024, 720)
+        j._mock.graphics.clear_recording()
+        scene:draw(1024, 720)
+        assert.is_nil(find_modal_button(scene, "write_off_prompt_accept"))
+        assert.is_truthy(find_text(j, "Write-off — declarer conceded mid-deal"))
+    end)
+
+    it("renders the per-seat write-off counter while the prompt is open", function()
         local cfg = build_config({
             bidding = { write_off = "on" },
             penalties = {
@@ -208,7 +274,7 @@ describe("write-off journey", function()
                 write_off_streak_threshold = 3,
             },
         })
-        local s = session_at_tricks(cfg, generic_layout(), {
+        local s = session_at_write_off_decision(cfg, generic_layout(), {
             dealer = 1,
             declarer = 2,
             bid = 100,
@@ -219,37 +285,28 @@ describe("write-off journey", function()
         j._mock.graphics.clear_recording()
         scene:draw(1024, 720)
 
-        -- The view-model surfaces the per-seat counter only when the
-        -- streak rule is on; the renderer prints it under each seat
-        -- row using the "Write-offs: %{count} / %{threshold}" format.
         assert.is_truthy(find_text(j, "Write-offs: 1 / 3"))
     end)
 
-    it("closes the deal with write_off reason when the button is pressed", function()
+    it("does not render the legacy inline tricks-phase write-off button", function()
         local cfg = build_config({ bidding = { write_off = "on" } })
-        local s = session_at_tricks(cfg, generic_layout(), {
-            dealer = 1,
-            declarer = 2,
-            bid = 100,
-        })
-        local _, scene = build_table_scene_in_mock(s)
-        scene:draw(1024, 720)
+        -- Build a session at the tricks phase (post-prompt) so any
+        -- regression that re-introduces the inline button surfaces.
+        local fresh = Session.new({ seed = 7, dealer = 1, config = cfg })
+        assert(fresh:bid(2, 100).ok)
+        assert(fresh:pass(3).ok)
+        assert(fresh:pass(1).ok)
+        assert(fresh:take_talon().ok)
+        assert(fresh:accept_play().ok)
+        local hand = fresh:hands()[2]
+        assert(fresh:pass_talon(1, hand[1]).ok)
+        hand = fresh:hands()[2]
+        assert(fresh:pass_talon(3, hand[1]).ok)
+        assert(fresh:skip_raise().ok)
+        assert.are.equal("tricks", fresh:current_phase())
 
-        local btn = find_panel_button(scene, "tricks_write_off")
-        assert.is_not_nil(btn)
-        btn:activate()
-
-        assert.are.equal("deal_done", s:current_phase())
-        local dd = s:deal_done()
-        assert.are.equal("write_off", dd.reason)
-        assert.are.equal(2, dd.declarer)
-
-        -- After the action the scene re-renders with the deal-done
-        -- banner; the Write-off button is no longer in the panel.
-        scene:draw(1024, 720)
-        j._mock.graphics.clear_recording()
+        local _, scene = build_table_scene_in_mock(fresh)
         scene:draw(1024, 720)
         assert.is_nil(find_panel_button(scene, "tricks_write_off"))
-        assert.is_truthy(find_text(j, "Write-off — declarer conceded mid-deal"))
     end)
 end)

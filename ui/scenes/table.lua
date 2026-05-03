@@ -600,16 +600,27 @@ function M:_do_concede_deal()
     self:_refresh_view_model()
 end
 
--- Phase 3.7 write-off / сдача: declarer concedes mid-deal under
--- `bidding.write_off = "on"`. The view-model gates the button on the
--- declarer + trick-count + toggle conditions; the action's own
--- guards do the same so this handler is unconditionally safe.
+-- Phase 3.7 / 3.9 write-off / сдача: declarer concedes the contract
+-- in response to the pre-tricks `awaiting_write_off_decision` prompt.
+-- Replaces the inline mid-tricks button removed in Phase 3.9.
 function M:_do_write_off()
     local session = self:_session()
     if not session then
         return
     end
     self:_invoke(session:write_off())
+    self:_refresh_view_model()
+end
+
+-- Phase 3.9 write-off prompt counterpart: declarer chooses to play the
+-- hand. Clears the prompt; the existing pass / discard / Polish-pass
+-- handlers proceed normally.
+function M:_do_accept_play()
+    local session = self:_session()
+    if not session then
+        return
+    end
+    self:_invoke(session:accept_play())
     self:_refresh_view_model()
 end
 
@@ -1101,6 +1112,81 @@ function M:_apply_rebuy_modal_trigger(view)
     self:_open_rebuy_modal(prompt)
 end
 
+-- Phase 3.9 write-off prompt modal -----------------------------------
+
+local function write_off_prompt_signature(prompt)
+    if not prompt then
+        return nil
+    end
+    -- i18n-ok: internal signature, joined with ":" and never rendered.
+    local parts = {
+        tostring(prompt.declarer),
+        tostring(prompt.bid),
+        tostring(prompt.split_mode),
+    }
+    return table.concat(parts, ":") -- i18n-ok: ":" is a separator, never rendered
+end
+
+function M:_open_write_off_prompt_modal(prompt)
+    self._modal = "write_off_prompt" -- i18n-ok
+    self._write_off_prompt_payload = {
+        declarer = prompt.declarer,
+        bid = prompt.bid,
+        split_mode = prompt.split_mode,
+        share = prompt.share,
+    }
+    self._write_off_prompt_signature = write_off_prompt_signature(prompt)
+    local accept = Button.new({
+        id = "write_off_prompt_accept", -- i18n-ok
+        label_key = "scene.table.write_off_prompt.accept",
+        enabled = true,
+        on_press = function()
+            self:_do_write_off()
+            self:_close_write_off_prompt_modal()
+        end,
+    })
+    local decline = Button.new({
+        id = "write_off_prompt_decline", -- i18n-ok
+        label_key = "scene.table.write_off_prompt.decline",
+        enabled = true,
+        on_press = function()
+            self:_do_accept_play()
+            self:_close_write_off_prompt_modal()
+        end,
+    })
+    self._modal_buttons = { accept, decline }
+    self._modal_focus = FocusGroup.new(self._modal_buttons)
+    -- Default focus on Decline / "Play this hand": writing off is the
+    -- destructive branch (the declarer pays the contract immediately),
+    -- so the safer keyboard target is to play the hand.
+    self._modal_focus:focus(decline)
+end
+
+function M:_close_write_off_prompt_modal()
+    if self._modal == "write_off_prompt" then
+        self._modal = nil
+    end
+    self._write_off_prompt_payload = nil
+    self._write_off_prompt_signature = nil
+    self._modal_buttons = {}
+    self._modal_focus = nil
+end
+
+function M:_apply_write_off_prompt_modal_trigger(view)
+    local prompt = view and view.write_off_prompt
+    if not prompt then
+        if self._modal == "write_off_prompt" then
+            self:_close_write_off_prompt_modal()
+        end
+        return
+    end
+    local sig = write_off_prompt_signature(prompt)
+    if self._modal == "write_off_prompt" and self._write_off_prompt_signature == sig then
+        return
+    end
+    self:_open_write_off_prompt_modal(prompt)
+end
+
 -- Privacy curtain ------------------------------------------------------
 
 function M:_open_curtain(for_seat)
@@ -1370,22 +1456,15 @@ local function build_deal_done_panel(self)
     }
 end
 
--- Phase 3.7: tricks-phase panel buttons. Currently only the Write-off
--- button when `bidding.write_off = "on"`; future tricks-phase actions
--- can join the same panel without restructuring the rebuild path.
-local function build_tricks_panel(self, view)
-    local buttons = {}
-    if view.tricks_phase and view.tricks_phase.declarer_can_write_off then
-        buttons[#buttons + 1] = Button.new({
-            id = "tricks_write_off", -- i18n-ok
-            label_key = "scene.table.tricks.write_off_button",
-            enabled = true,
-            on_press = function()
-                self:_do_write_off()
-            end,
-        })
-    end
-    return buttons
+-- Phase 3.7: tricks-phase panel buttons. Reserved for future tricks-
+-- phase actions; the panel currently has no buttons.
+--
+-- Phase 3.9 dropped the inline write-off / сдача button — write-off is
+-- now a one-shot pre-tricks decision driven by the
+-- `awaiting_write_off_decision` phase modal (see
+-- `_open_write_off_prompt_modal`).
+local function build_tricks_panel(_self, _view)
+    return {}
 end
 
 -- Phase 3.8: cut-deck-phase panel — a single "Cut the deck" button
@@ -1486,11 +1565,10 @@ local function panel_signature(view)
         return "talon:" .. status .. ":" .. contra_token .. ":" .. concede -- i18n-ok
     end
     if phase == "tricks" then
-        local wo = "-" -- i18n-ok: signature token, never rendered
-        if view.tricks_phase and view.tricks_phase.declarer_can_write_off then
-            wo = "W" -- i18n-ok: signature token, never rendered
-        end
-        return "tricks:" .. wo
+        -- Phase 3.9 removed the tricks-phase write-off signature token —
+        -- the inline button is gone. Tricks panel currently has no
+        -- buttons, so the signature is stable across the phase.
+        return "tricks"
     end
     if phase == "cut" then
         local cp = view.cut_phase or {}
@@ -2774,6 +2852,54 @@ local function draw_rebuy_modal(self, w, h)
     end
 end
 
+-- Phase 3.9 write-off prompt modal: dimmed overlay + 520×240 panel.
+-- Title + body line + Play / Write-off buttons centred at the bottom.
+local function draw_write_off_prompt_modal(self, w, h)
+    if self._modal ~= "write_off_prompt" or not self._write_off_prompt_payload then
+        return
+    end
+    love.graphics.setColor(MODAL_DIM)
+    love.graphics.rectangle("fill", 0, 0, w, h)
+
+    local panel_w, panel_h = 520, 240
+    local px = math.floor(w * 0.5 - panel_w * 0.5)
+    local py = math.floor(h * 0.5 - panel_h * 0.5)
+    love.graphics.setColor(MODAL_BG)
+    love.graphics.rectangle("fill", px, py, panel_w, panel_h)
+    love.graphics.setColor(1, 1, 1, 1)
+
+    local payload = self._write_off_prompt_payload
+    love.graphics.print(t("scene.table.write_off_prompt.title"), px + 32, py + 40)
+    local body_key
+    if payload.split_mode == "half_to_each" then
+        body_key = "scene.table.write_off_prompt.body.half_to_each"
+    else
+        body_key = "scene.table.write_off_prompt.body.equal_split"
+    end
+    love.graphics.print(
+        t(body_key, {
+            bid = payload.bid,
+            share = payload.share or 0,
+        }),
+        px + 32,
+        py + 80
+    )
+
+    if #self._modal_buttons == 0 then
+        return
+    end
+
+    local btn_w, btn_h, btn_gap = 220, 48, 24
+    local total_w = btn_w * 2 + btn_gap
+    local btn_y = py + panel_h - btn_h - 28
+    local left_x = px + math.floor(panel_w * 0.5 - total_w * 0.5)
+    self._modal_buttons[1]:set_rect(left_x, btn_y, btn_w, btn_h)
+    self._modal_buttons[2]:set_rect(left_x + btn_w + btn_gap, btn_y, btn_w, btn_h)
+    for _, b in ipairs(self._modal_buttons) do
+        b:draw()
+    end
+end
+
 local function draw_privacy_curtain(self, w, h)
     if not self._curtain or not self._curtain_button then
         return
@@ -2851,6 +2977,7 @@ function M:draw(w, h)
     self:_apply_redeal_modal_trigger(self._view_model)
     self:_apply_bad_talon_modal_trigger(self._view_model)
     self:_apply_rebuy_modal_trigger(self._view_model)
+    self:_apply_write_off_prompt_modal_trigger(self._view_model)
     self:_rebuild_panel_if_needed(self._view_model)
 
     local regions = layout.table_regions(w, h, {
@@ -2897,6 +3024,7 @@ function M:draw(w, h)
     draw_redeal_modal(self, w, h)
     draw_bad_talon_modal(self, w, h)
     draw_rebuy_modal(self, w, h)
+    draw_write_off_prompt_modal(self, w, h)
     -- Privacy curtain renders last so its full-opacity backdrop sits
     -- above every other layer, including the marriage and redeal
     -- modals — those states are mutually exclusive in practice.
@@ -2921,6 +3049,7 @@ function M:_active_buttons()
         or modal == "redeal" -- i18n-ok
         or modal == "bad_talon" -- i18n-ok
         or modal == "rebuy" -- i18n-ok
+        or modal == "write_off_prompt" -- i18n-ok
     then
         return self._modal_buttons
     end
