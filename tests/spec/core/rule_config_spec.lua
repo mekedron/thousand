@@ -372,7 +372,10 @@ describe("core.rule_config", function()
             assert.are.equal(5, config.bidding.increment_below_200)
             assert.are.equal(10, config.bidding.increment_from_200)
             assert.are.equal("off", config.bidding.forced_opening)
-            assert.are.equal("off", config.bidding.forced_dealer_bid)
+            -- Phase 3.11: canonical Russian pins the *bolt* rule on so
+            -- the all-pass scenario can never collapse the deal — the
+            -- dealer always plays at 100 (book + video walkthroughs).
+            assert.are.equal("on", config.bidding.forced_dealer_bid)
             assert.are.equal("off", config.bidding.blind_bid)
             assert.are.equal("off", config.bidding.re_entry_after_pass)
             assert.are.equal("off", config.bidding.contra)

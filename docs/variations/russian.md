@@ -65,6 +65,12 @@ deal scoreboard from the first scored deal:
   exactly on **+555** *or* **−555**, that seat's running total is
   reset to zero. See
   [House Rules — Dump truck](./house-rules.md#dump-truck--самосвал).
+- **Forced dealer 100 (Бовт / Bolt).** The dealer is implicitly
+  committed to a 100 contract before the auction starts; if both
+  opponents pass without overcalling, the dealer takes the deal at
+  100 automatically. The auction can never collapse on all-pass —
+  every deal has play. See
+  [House Rules — Forced dealer bid](./house-rules.md#forced-dealer-bid-бовт--bolt).
 
 ## Defaults off (agreed-in-advance under Russian play)
 

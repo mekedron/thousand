@@ -53,7 +53,11 @@ bottom-card guard (no 9 or J at the end of the deck), the
 marriage-trick-required precondition, the every-three-sticks
 (*болт* / *палка*) penalty, the no-win-streak penalty, the
 write-off mid-deal concession, the every-third-write-off penalty,
-the three-falls barrel reset, and the ±555 dump-truck reset.
+the three-falls barrel reset, the ±555 dump-truck reset, and the
+forced dealer 100 (*бовт* / *bolt*) that ensures every deal has
+play (book + the two video walkthroughs agree the dealer always
+has 100 hanging before forehand acts, so the auction can never
+collapse on all-pass).
 
 The book's procedural cut-deck nine/jack ritual (re-cut up to three
 times before penalising the dealer) ships as the selectable

@@ -384,7 +384,19 @@ describe("core.auction", function()
         end)
 
         it("all three passing with no bid terminates as all_pass", function()
-            local a = open_auction(1) -- forehand = 2
+            -- Phase 3.11 flipped canonical Russian's forced_dealer_bid
+            -- to "on", which short-circuits this path into a forced-100
+            -- contract. The all-pass terminator is still reachable
+            -- when forced_dealer_bid is explicitly off — opt out here
+            -- so the test still exercises the original branch.
+            local rc = require("core.rule_config")
+            local jsmod = require("app.json")
+            local blob = jsmod.decode(rc.to_json(rc.canonical_russian))
+            blob.bidding.forced_dealer_bid = "off"
+            local cfg = rc.new(blob)
+            local result = auction.new(cfg, 1)
+            assert.is_true(result.ok, "fixture: auction.new must succeed")
+            local a = result.auction
             a = pass(a, 2)
             -- pass_count is now 1; auction still in progress.
             assert.are.equal("in_progress", a.status)

@@ -2947,7 +2947,17 @@ local function canonical_russian_blob()
             increment_below_200 = 5,
             increment_from_200 = 10,
             forced_opening = "off",
-            forced_dealer_bid = "off",
+            -- Book + the two video walkthroughs of the canonical
+            -- Russian rules agree the dealer is implicitly committed
+            -- to a 100 contract before the auction starts: "the
+            -- dealer has 100 hanging by default" / "the dealer
+            -- automatically bids 100. After two passes, the
+            -- remaining player gets the contract." With this on the
+            -- auction can never collapse on all-pass — the dealer
+            -- always plays the deal at 100 (or higher, if either
+            -- opponent overcalls). Sometimes called *бовт* / *bolt*.
+            -- See docs/variations/house-rules.md "Forced dealer bid".
+            forced_dealer_bid = "on",
             blind_bid = "off",
             blind_bid_success_multiplier = 2,
             blind_bid_failure_multiplier = 2,
@@ -3147,9 +3157,11 @@ M.builtins = {
             -- Russian book conventions (mid-deal write-off, every-third-
             -- write-off penalty, no-win streak penalty, three-falls
             -- barrel reset, ±555 dump-truck reset, every-three-sticks
-            -- penalty) are not part of standard Polish Tysiąc; opt out
-            -- here so the variant matches docs/variations/polish.md.
+            -- penalty, forced dealer 100) are not part of standard
+            -- Polish Tysiąc; opt out here so the variant matches
+            -- docs/variations/polish.md.
             write_off = "off",
+            forced_dealer_bid = "off",
         },
         tricks = {
             must_overtake_strictness = "polish_strict",
@@ -3167,9 +3179,9 @@ M.builtins = {
 
     -- Ukrainian Тисяча (docs/variations/ukrainian.md): tighter
     -- two-deal barrel rather than the canonical three. The bolt rule
-    -- (`bidding.forced_dealer_bid = "on"`) is the other defining
-    -- Ukrainian house rule but still deferred in Phase 3.2's schema;
-    -- it lands in Phase 3.6's bidding-house-rules task.
+    -- (`bidding.forced_dealer_bid = "on"`) inherits from the Russian
+    -- canonical defaults — both rule sets force the dealer into a
+    -- 100 contract on all-pass.
     ukrainian = M.new(with_overrides(canonical_russian_blob(), {
         dealing = { misdeal_handling = "standard" },
         bidding = { write_off = "off" },
@@ -3209,7 +3221,10 @@ M.builtins = {
             size = 0,
             distribution = "stock_draw",
         },
-        bidding = { write_off = "off" },
+        bidding = {
+            write_off = "off",
+            forced_dealer_bid = "off",
+        },
         barrel = { fall_count_resets_to_zero = "off" },
         -- Canonical-Russian book defaults are not part of the standard
         -- two-player rule sets; pin them off explicitly.
@@ -3232,7 +3247,10 @@ M.builtins = {
             two_player_config = "fixed_deal_no_draw",
         },
         dealing = { misdeal_handling = "standard" },
-        bidding = { write_off = "off" },
+        bidding = {
+            write_off = "off",
+            forced_dealer_bid = "off",
+        },
         barrel = { fall_count_resets_to_zero = "off" },
         -- Canonical-Russian book defaults are not part of the standard
         -- two-player rule sets; pin them off explicitly.
@@ -3257,7 +3275,10 @@ M.builtins = {
         },
         dealing = { misdeal_handling = "standard" },
         talon = { size = 0 },
-        bidding = { write_off = "off" },
+        bidding = {
+            write_off = "off",
+            forced_dealer_bid = "off",
+        },
         barrel = { fall_count_resets_to_zero = "off" },
         -- Canonical-Russian book defaults are not part of the standard
         -- four-player rule sets; pin them off explicitly.
@@ -3281,7 +3302,13 @@ M.builtins = {
             partnership_mode = "fixed_across_table",
         },
         dealing = { misdeal_handling = "standard" },
-        bidding = { write_off = "off" },
+        bidding = {
+            write_off = "off",
+            -- Configuration B's dealer sits out; the
+            -- `forced_dealer_bid_requires_active_dealer` invariant
+            -- rejects "on" here.
+            forced_dealer_bid = "off",
+        },
         barrel = { fall_count_resets_to_zero = "off" },
         -- Canonical-Russian book defaults are not part of the standard
         -- four-player rule sets; pin them off explicitly.

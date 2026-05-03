@@ -1021,27 +1021,35 @@ set without consulting the docs.
 ### 3.11 Decide canonical Russian all-pass behaviour
 
 Goal: pick a book-faithful default for the all-pass case. The book
-is silent on what happens when every seat passes the auction; the
-current default is `dealing.all_pass_handling = "redeal"` and
-`bidding.forced_dealer_bid = "off"`, which lets the deal collapse
-into a silent redeal. Two reasonable readings exist; pick exactly
-one for the canonical Russian template.
+itself is silent on what happens when every seat passes the
+auction, but two video walkthroughs of the canonical Russian rules
+both describe the dealer being implicitly committed to a 100
+contract before the auction starts ("the dealer has 100 hanging by
+default" / "the dealer automatically bids 100. After two passes,
+the remaining player gets the contract"), which rules out the
+all-pass redeal scenario.
 
-- [ ] Choose between the two book-faithful readings and pin the
+- [x] Choose between the two book-faithful readings and pin the
   defaults accordingly.
-  - **Reading A — silent redeal (status quo):** keep
-    `all_pass_handling = "redeal"` and `forced_dealer_bid = "off"`.
-    Matches "no stick if no trick was attempted."
-  - **Reading B — forced dealer 100:** flip `forced_dealer_bid` to
-    `"on"`. Matches "every deal has play, sticks accumulate." This
-    is the Ukrainian *bolt* / *болт* rule the book mentions
-    obliquely; the Ukrainian template also pins it on.
-  - Whichever reading wins, update the canonical Russian blob,
-    `docs/variations/russian.md`, and any spec that asserts the
-    old default.
-  - Non-Russian built-ins keep their own behaviour: Ukrainian
-    `forced_dealer_bid = "on"` regardless; Polish / 2-player /
-    4-player retain whatever their variant pages document.
+  - **Reading B chosen.** `bidding.forced_dealer_bid` flipped to
+    `"on"` in `canonical_russian`; the auction can no longer
+    collapse on all-pass.
+  - Non-Russian built-ins explicitly opt back off so the Russian
+    flip doesn't leak: Polish, 2-player A/B, 4-player A get
+    `forced_dealer_bid = "off"`. Ukrainian inherits "on" (matches
+    the *bolt* rule the book mentions obliquely). 4-player
+    Configuration B keeps "off" because the dealer sits out — the
+    `forced_dealer_bid_requires_active_dealer` invariant requires
+    it.
+  - `docs/variations/russian.md` lists forced-dealer-100 in the
+    canonical defaults section; `docs/variations/index.md`
+    "Comparison with the reference book" calls it out;
+    `docs/variations/house-rules.md` "Forced dealer bid" notes the
+    canonical default.
+  - Tests that exercised the old all-pass terminator
+    (`auction_spec`, `talon_spec`, `session_spec`,
+    `session_redeal_spec`, `table_view_model_spec`) opt back off
+    explicitly so the path stays reachable.
 
 ---
 

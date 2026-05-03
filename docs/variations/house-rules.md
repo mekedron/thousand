@@ -120,7 +120,12 @@ up to **150** if the bidder has very strong cards. Confirm before play.
 ### Forced dealer bid (Бовт / Bolt)
 
 If everyone passes, the dealer is forced into a 100 contract. Sometimes
-called *бовт* or *болт*. Standard in Ukrainian play; optional elsewhere.
+called *бовт* or *болт*. **Pinned on by default in canonical Russian**
+(book + video walkthroughs agree the dealer has 100 "hanging" before
+forehand acts, so the auction never collapses on all-pass) and standard
+in Ukrainian play; optional in Polish, 2-player, and 4-player Configuration A.
+Configuration B (dealer sits out) cannot turn this on — the
+`forced_dealer_bid_requires_active_dealer` invariant rejects the combination.
 
 :::warning[Same word, two rules]
 The Russian word *болт* (and its synonym *палка*) is **also** used for

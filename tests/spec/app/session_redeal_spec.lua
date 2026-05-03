@@ -495,7 +495,13 @@ describe("app.session redeal/misdeal/all-pass routing", function()
         end
 
         it("'redeal' (default) keeps the same dealer on next deal", function()
-            local s = Session.new({ seed = 1, dealer = 2 })
+            -- Phase 3.11 pinned canonical Russian's forced_dealer_bid
+            -- to "on", which short-circuits the all-pass branch the
+            -- "redeal" handling sits behind. canonical_with_dealing
+            -- already keeps forced_dealer_bid="off" so the all-pass
+            -- terminator stays reachable.
+            local cfg = canonical_with_dealing({ all_pass_handling = "redeal" })
+            local s = Session.new({ config = cfg, seed = 1, dealer = 2 })
             pass_two_seats(s)
             assert.are.equal("deal_done", s:current_phase())
             assert.are.equal("all_pass", s:deal_done().reason)

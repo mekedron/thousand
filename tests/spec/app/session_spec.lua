@@ -286,7 +286,16 @@ describe("app.session", function()
             -- With three players that's two passes; the engine never
             -- consults the dealer when no bid was made before they would
             -- have acted.
-            local s = Session.new({ seed = 42, dealer = 1 })
+            --
+            -- Phase 3.11 pinned canonical Russian's forced_dealer_bid
+            -- to "on", which short-circuits this path into a forced 100
+            -- contract. Opt out so the all-pass terminator stays
+            -- reachable for this assertion.
+            local jsmod = require("app.json")
+            local blob = jsmod.decode(rule_config.to_json(rule_config.canonical_russian))
+            blob.bidding.forced_dealer_bid = "off"
+            local cfg = rule_config.new(blob)
+            local s = Session.new({ config = cfg, seed = 42, dealer = 1 })
             assert(s:pass(2).ok)
             assert(s:pass(3).ok)
             assert.are.equal("deal_done", s:current_phase())

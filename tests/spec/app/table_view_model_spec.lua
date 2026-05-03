@@ -744,8 +744,22 @@ describe("app.table_view_model", function()
             assert.are.equal(1, view.cut_deck_banner.dealer)
         end)
 
+        -- Phase 3.11 flipped canonical Russian's forced_dealer_bid to
+        -- "on", which short-circuits all-pass into a forced 100
+        -- contract before the all_pass_handling branch fires. The
+        -- three tests below pin forced_dealer_bid back off so the
+        -- all_pass_banner block stays reachable.
+        local function canonical_with_all_pass(handling)
+            local cfg = canonical_with_dealing({ all_pass_handling = handling })
+            local jsmod = require("app.json")
+            local blob = jsmod.decode(rule_config.to_json(cfg))
+            blob.bidding.forced_dealer_bid = "off"
+            return rule_config.new(blob)
+        end
+
         it("renders an all_pass_banner with mode = redeal under the default", function()
-            local s = Session.new({ seed = 1, dealer = 1 })
+            local cfg = canonical_with_all_pass("redeal")
+            local s = Session.new({ config = cfg, seed = 1, dealer = 1 })
             assert.is_true(s:pass(s:current_turn()).ok)
             assert.is_true(s:pass(s:current_turn()).ok)
             local view = view_model.from_session(s)
@@ -754,7 +768,7 @@ describe("app.table_view_model", function()
         end)
 
         it("renders an all_pass_banner with mode = pass_out when configured", function()
-            local cfg = canonical_with_dealing({ all_pass_handling = "pass_out" })
+            local cfg = canonical_with_all_pass("pass_out")
             local s = Session.new({ config = cfg, seed = 1, dealer = 1 })
             assert.is_true(s:pass(s:current_turn()).ok)
             assert.is_true(s:pass(s:current_turn()).ok)
@@ -763,7 +777,7 @@ describe("app.table_view_model", function()
         end)
 
         it("renders raspassy_active = true with all_pass_banner mode = raspassy", function()
-            local cfg = canonical_with_dealing({ all_pass_handling = "raspassy" })
+            local cfg = canonical_with_all_pass("raspassy")
             local s = Session.new({ config = cfg, seed = 1, dealer = 1 })
             assert.is_true(s:pass(s:current_turn()).ok)
             assert.is_true(s:pass(s:current_turn()).ok)

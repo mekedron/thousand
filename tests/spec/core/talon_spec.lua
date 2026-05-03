@@ -125,12 +125,20 @@ describe("core.talon", function()
         end)
 
         it("rejects an all-pass auction", function()
-            local a = assert(auction.new(config, 1).auction)
+            -- Phase 3.11 pinned canonical Russian's forced_dealer_bid
+            -- on; opt back off so the auction terminator can reach the
+            -- "all_pass" status this test asserts on.
+            local rc = require("core.rule_config")
+            local jsmod = require("app.json")
+            local blob = jsmod.decode(rc.to_json(rc.canonical_russian))
+            blob.bidding.forced_dealer_bid = "off"
+            local cfg = rc.new(blob)
+            local a = assert(auction.new(cfg, 1).auction)
             a = assert(auction.pass(a, a.turn).auction)
             a = assert(auction.pass(a, a.turn).auction)
             assert.are.equal("all_pass", a.status)
             local hands, talon_cards = build_dealable_set()
-            local result = talon.new(config, a, hands, talon_cards)
+            local result = talon.new(cfg, a, hands, talon_cards)
             assert.is_false(result.ok)
             assert.are.equal("auction_was_all_pass", result.error.code)
         end)
