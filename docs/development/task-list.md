@@ -1152,12 +1152,6 @@ algorithmic.
     bot seats stall there. Add `choose_cut_deck` to the contract
     registry and a stub returning the canonical deck split, so a
     bot-driven game under `cut_deck_safety = "on"` does not block.
-- [ ] Replace `app/bot/stubs.lua` with real per-chooser heuristics.
-  - 4.3 ships baseline-legal play surface by surface (auction,
-    redeal, talon, bad-talon, rebuy); 4.5 ships Phase 3.6 toggles
-    (write-off, forced concession, pre-first-trick marriage,
-    contra). The driver wiring stays untouched — only the chooser
-    bodies in `app/bot/stubs.lua` (or its 4.3 replacement) change.
 
 ### 4.2 Single-player mode and seat assignment
 
@@ -1284,6 +1278,13 @@ is for human seats.
     bid avoidance under `overshoot_penalty`, exact-landing posture
     under `going_over_target = exact_only`). Penalty rules are
     automatic in the engine; the bot just plays cleanly under them.
+- [ ] Promote the per-surface heuristics from 4.3 and 4.5 over the
+  deterministic-legal scaffolding so the production driver's
+  default chooser registry no longer relies on `app/bot/stubs.lua`.
+  - The driver wiring itself stays untouched — only the default
+    chooser bodies change. `app/bot/stubs.lua` (or its successor)
+    remains available as the scripted-stub fallback that 4.6 wires
+    into journey tests.
 
 ### 4.6 Bot legality, latency, and tests
 
