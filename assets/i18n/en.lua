@@ -323,7 +323,9 @@ return {
 
     -- Cards.
     ["templates.field.cards.trick_rank_order.label"] = "Trick rank order",
+    ["templates.field.cards.trick_rank_order.help"] = "Card ranks listed from highest to lowest within a suit. Read-only — the canonical 9·J·Q·K·10·A order is shared across every variant.",
     ["templates.field.cards.point_values.label"] = "Card point values",
+    ["templates.field.cards.point_values.help"] = "Captured-points value of each rank: 9=0, J=2, Q=3, K=4, 10=10, A=11. Read-only — sums to 30 per suit, 120 across the 24-card deck.",
 
     -- Players.
     ["templates.field.players.count.label"] = "Player count",
@@ -467,6 +469,8 @@ return {
     ["templates.field.bidding.forced_bid_concession.equal_split"] = "Equal split",
     ["templates.field.bidding.forced_bid_concession.each_full"] = "Each defender full",
     ["templates.field.bidding.forced_bid_concession.preset_ratio"] = "Preset ratio",
+    ["templates.field.bidding.forced_bid_concession_preset_ratio.label"] = "Concession preset ratio",
+    ["templates.field.bidding.forced_bid_concession_preset_ratio.help"] = "Per-defender share of the contract used by the 'preset ratio' concession mode. Read-only list — list/map editing not yet available.",
     ["templates.field.bidding.no_contract_without_marriage.label"] = "No contract without marriage",
     ["templates.field.bidding.no_contract_without_marriage.help"] = "Forbid bids ≥120 without a marriage in hand.",
     ["templates.field.bidding.no_contract_without_marriage.off"] = "Off",
@@ -480,6 +484,8 @@ return {
     ["templates.field.bidding.named_contracts.help"] = "Allow special-contract bids (mizère, slam, open hand) at the auction.",
     ["templates.field.bidding.named_contracts.off"] = "Off",
     ["templates.field.bidding.named_contracts.on"] = "On",
+    ["templates.field.bidding.named_contracts_precedence.label"] = "Named-contract precedence",
+    ["templates.field.bidding.named_contracts_precedence.help"] = "Order in which named contracts outrank one another at the auction. Read-only list — list/map editing not yet available.",
     ["templates.field.bidding.blind_bid_success_multiplier.label"] = "Blind-bid success multiplier",
     ["templates.field.bidding.blind_bid_success_multiplier.help"] = "Multiplier applied to the bid when a blind contract succeeds. Conventional 2.",
     ["templates.field.bidding.blind_bid_failure_multiplier.label"] = "Blind-bid failure multiplier",

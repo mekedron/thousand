@@ -291,20 +291,20 @@ describe("ui.scenes.template_editor", function()
             )
         end)
 
-        local function widget_bearing_fields()
+        -- Every non-section descriptor the editor renders — leaf fields
+        -- (boolean / enum / numeric widgets), plus list and map fields
+        -- which render as readonly "view only" rows. All of them call
+        -- `t(field_label_key)` and `t(field_help_key)` at draw time, so
+        -- a missing key trips the i18n logger and leaves a blank cell.
+        local function rendered_fields()
             local out = {}
             for _, section in ipairs(rule_config.sections()) do
                 local sd = rule_config.schema_for(section)
                 if sd and sd.fields then
                     for _, field in ipairs(sd.fields) do
                         local d = rule_config.schema_for(section .. "." .. field)
-                        if d and d.kind == "leaf" and d.status ~= "deferred" then
-                            local has_enum = type(d.allowed) == "table"
-                            local is_bool = d.lua_type == "boolean"
-                            local is_num_widget = d.lua_type == "number" and (d.min or d.max)
-                            if has_enum or is_bool or is_num_widget then
-                                out[#out + 1] = { section = section, field = field }
-                            end
+                        if d and d.status ~= "deferred" then
+                            out[#out + 1] = { section = section, field = field }
                         end
                     end
                 end
@@ -312,11 +312,11 @@ describe("ui.scenes.template_editor", function()
             return out
         end
 
-        it("every widget-bearing field has a localized label", function()
+        it("every rendered field has a localized label", function()
             local i18n = require("app.i18n")
             i18n.set_locale("en")
             local missing = {}
-            for _, e in ipairs(widget_bearing_fields()) do
+            for _, e in ipairs(rendered_fields()) do
                 local key = "templates.field." .. e.section .. "." .. e.field .. ".label"
                 if i18n.t(key) == key then
                     missing[#missing + 1] = key
@@ -329,11 +329,11 @@ describe("ui.scenes.template_editor", function()
             )
         end)
 
-        it("every widget-bearing field has a localized help/description", function()
+        it("every rendered field has a localized help/description", function()
             local i18n = require("app.i18n")
             i18n.set_locale("en")
             local missing = {}
-            for _, e in ipairs(widget_bearing_fields()) do
+            for _, e in ipairs(rendered_fields()) do
                 local key = "templates.field." .. e.section .. "." .. e.field .. ".help"
                 if i18n.t(key) == key then
                     missing[#missing + 1] = key
