@@ -117,9 +117,10 @@ describe("app.bot.stubs", function()
     end)
 
     describe("choose_marriage", function()
-        it("skips the in-trick marriage announcement", function()
+        it("skips the in-trick marriage declaration", function()
             local action = stubs.choose_marriage(fake_view({}), 2)
-            assert.are.equal("skip_announce_marriage", action.kind)
+            assert.are.equal("skip_declare_marriage", action.kind)
+            assert_kind_in_registry("choose_marriage", action.kind)
         end)
     end)
 

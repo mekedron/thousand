@@ -52,7 +52,7 @@ function M.choose_write_off(_view, _seat)
 end
 
 function M.choose_marriage(_view, _seat)
-    return { kind = "skip_announce_marriage" } -- i18n-ok: action enum
+    return { kind = "skip_declare_marriage" } -- i18n-ok: action enum
 end
 
 function M.choose_pre_first_trick_marriage(_view, _seat)

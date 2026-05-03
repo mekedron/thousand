@@ -57,10 +57,31 @@ local MODAL_PHASE_TO_CHOOSER = {
     awaiting_forced_concession_decision = "choose_forced_bid_concession",
 }
 
--- Given a session, decide which chooser the driver should call. Returns
--- nil for phases the driver does not yet drive (cut, raspassy_play,
--- done, contra windows). Phase 4.3+ extends this map.
-local function pick_chooser(session)
+-- True when the seat on lead can declare an in-trick marriage right now:
+-- the timing rule allows on-lead declarations (only `pre_first_trick`
+-- mode forbids them), the trick is empty, and the seat holds at least
+-- one K+Q pair the engine still recognises.
+local function has_on_lead_marriage_opportunity(session, seat)
+    local config = session:config()
+    local marriages = config and config.marriages
+    -- i18n-ok: timing enum
+    if marriages and marriages.marriage_announcement_timing == "pre_first_trick" then
+        return false
+    end
+    local trick = session:current_trick()
+    if not trick or #trick.plays > 0 then
+        return false
+    end
+    local available = session:available_marriages(seat)
+    return available and #available > 0
+end
+
+-- Given a session and the responsible seat, decide which chooser the
+-- driver should call. Returns nil for phases the driver does not yet
+-- drive (cut, raspassy_play, done, contra windows). Phase 4.3+ extends
+-- this map. The driver method form (vs. a module-local function) is
+-- needed so the marriage-skip latch is in scope.
+function Driver:_pick_chooser(session, seat)
     local phase = session:current_phase()
     local modal = MODAL_PHASE_TO_CHOOSER[phase]
     if modal then
@@ -85,8 +106,12 @@ local function pick_chooser(session)
         return nil
     end
     if phase == "tricks" then
-        -- Phase 4.1 wires straight to choose_card; the marriage routing
-        -- lands with the Phase 4.3 marriage heuristic.
+        if self._marriage_skipped and self._marriage_skipped.seat == seat then
+            return "choose_card"
+        end
+        if has_on_lead_marriage_opportunity(session, seat) then
+            return "choose_marriage"
+        end
         return "choose_card"
     end
     if phase == "deal_done" then
@@ -197,6 +222,7 @@ local DISPATCH = {
     declare_marriage = function(s, seat, a)
         return s:declare_marriage(seat, a.suit)
     end,
+    skip_declare_marriage = noop,
     announce_marriage = function(s, seat, a)
         return s:announce_marriage(seat, a.suit)
     end,
@@ -228,6 +254,16 @@ function M.new(opts)
     self._max_delay = opts.max_delay or DEFAULT_MAX_DELAY
     self._now_fn = opts.now_fn or default_now
     self._pending = nil
+    -- Marriage-skip latch: when a chooser returns `skip_declare_marriage`
+    -- the engine state does not change (the chooser only declares
+    -- intent), so without a latch the next tick would observe the same
+    -- "marriages still available" state and route back to choose_marriage
+    -- forever. The latch is `nil` outside a skipped lead and
+    -- `{ seat = N }` after a skip applies; it clears on a successful
+    -- declare apply, on trick advance (the seat played a card), on
+    -- responsibility moving to a different seat, on leaving the tricks
+    -- phase, and on reset.
+    self._marriage_skipped = nil
     return self
 end
 
@@ -239,18 +275,42 @@ local function apply_action(session, seat, action)
     return handler(session, seat, action)
 end
 
+function Driver:_maintain_marriage_skip_latch(session, seat)
+    if not self._marriage_skipped then
+        return
+    end
+    if self._marriage_skipped.seat ~= seat then
+        self._marriage_skipped = nil
+        return
+    end
+    if session:current_phase() ~= "tricks" then -- i18n-ok: phase enum
+        self._marriage_skipped = nil
+        return
+    end
+    local trick = session:current_trick()
+    if not trick or #trick.plays > 0 then
+        self._marriage_skipped = nil
+    end
+end
+
 function Driver:tick(session, seat_kinds)
     if self._pending then
         if self._now_fn() >= self._pending.fire_at then
             local pending = self._pending
             self._pending = nil
             apply_action(session, pending.seat, pending.action)
+            if pending.action.kind == "skip_declare_marriage" then
+                self._marriage_skipped = { seat = pending.seat }
+            elseif pending.action.kind == "declare_marriage" then
+                self._marriage_skipped = nil
+            end
         end
         return
     end
 
     local seat = responsible_seat(session)
     if not seat then
+        self._marriage_skipped = nil
         return
     end
     local kind = (seat_kinds and seat_kinds[seat]) or "human"
@@ -258,7 +318,9 @@ function Driver:tick(session, seat_kinds)
         return
     end
 
-    local chooser_name = pick_chooser(session)
+    self:_maintain_marriage_skip_latch(session, seat)
+
+    local chooser_name = self:_pick_chooser(session, seat)
     if not chooser_name then
         return
     end
@@ -292,6 +354,7 @@ end
 
 function Driver:reset()
     self._pending = nil
+    self._marriage_skipped = nil
 end
 
 return M

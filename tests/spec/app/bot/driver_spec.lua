@@ -419,10 +419,61 @@ describe("app.bot.driver", function()
             assert.are.equal("choose_raise", invoked.name)
         end)
 
-        it("tricks → choose_card", function()
+        it("tricks → choose_card (no marriage opportunity)", function()
             local _, invoked = run_routing({
                 phase = "tricks",
                 turn = 2,
+                legal_cards = { [2] = { { suit = "hearts", rank = "9" } } },
+            }, { "human", "bot", "human" }, {
+                choose_card = { kind = "play", card = { suit = "hearts", rank = "9" } },
+            })
+            assert.are.equal("choose_card", invoked.name)
+        end)
+
+        it("tricks + on-lead marriage opportunity → choose_marriage", function()
+            local _, invoked = run_routing({
+                phase = "tricks",
+                turn = 2,
+                current_trick = { plays = {} },
+                available_marriages = { [2] = { "hearts" } },
+                config = {
+                    players = { count = 3 },
+                    marriages = { marriage_announcement_timing = "on_lead" },
+                },
+            }, { "human", "bot", "human" }, {
+                choose_marriage = { kind = "skip_declare_marriage" },
+            })
+            assert.are.equal("choose_marriage", invoked.name)
+            assert.are.equal(2, invoked.seat)
+        end)
+
+        it("tricks + non-empty trick → choose_card (predicate guards)", function()
+            local _, invoked = run_routing({
+                phase = "tricks",
+                turn = 2,
+                current_trick = { plays = { { card = "x" } } },
+                available_marriages = { [2] = { "hearts" } },
+                config = {
+                    players = { count = 3 },
+                    marriages = { marriage_announcement_timing = "on_lead" },
+                },
+                legal_cards = { [2] = { { suit = "hearts", rank = "9" } } },
+            }, { "human", "bot", "human" }, {
+                choose_card = { kind = "play", card = { suit = "hearts", rank = "9" } },
+            })
+            assert.are.equal("choose_card", invoked.name)
+        end)
+
+        it("tricks + pre_first_trick timing → choose_card (no in-trick declare)", function()
+            local _, invoked = run_routing({
+                phase = "tricks",
+                turn = 2,
+                current_trick = { plays = {} },
+                available_marriages = { [2] = { "hearts" } },
+                config = {
+                    players = { count = 3 },
+                    marriages = { marriage_announcement_timing = "pre_first_trick" },
+                },
                 legal_cards = { [2] = { { suit = "hearts", rank = "9" } } },
             }, { "human", "bot", "human" }, {
                 choose_card = { kind = "play", card = { suit = "hearts", rank = "9" } },
@@ -646,6 +697,157 @@ describe("app.bot.driver", function()
                 turn = 2,
             })
             assert.are.equal(0, #calls)
+        end)
+
+        it("declare_marriage → session:declare_marriage(seat, suit)", function()
+            local calls = dispatch({ kind = "declare_marriage", suit = "hearts" }, {
+                phase = "tricks",
+                turn = 2,
+                current_trick = { plays = {} },
+                available_marriages = { [2] = { "hearts" } },
+                config = {
+                    players = { count = 3 },
+                    marriages = { marriage_announcement_timing = "on_lead" },
+                },
+            })
+            assert.are.equal("declare_marriage", calls[1].method)
+            assert.are.equal(2, calls[1].args[1])
+            assert.are.equal("hearts", calls[1].args[2])
+        end)
+
+        it("skip_declare_marriage → no-op (driver swallows the descriptor)", function()
+            local calls = dispatch({ kind = "skip_declare_marriage" }, {
+                phase = "tricks",
+                turn = 2,
+                current_trick = { plays = {} },
+                available_marriages = { [2] = { "hearts" } },
+                config = {
+                    players = { count = 3 },
+                    marriages = { marriage_announcement_timing = "on_lead" },
+                },
+            })
+            assert.are.equal(0, #calls)
+        end)
+    end)
+
+    describe("marriage skip latch", function()
+        local function make_marriage_state()
+            return {
+                phase = "tricks",
+                turn = 2,
+                current_trick = { plays = {} },
+                available_marriages = { [2] = { "hearts" } },
+                config = {
+                    players = { count = 3 },
+                    marriages = { marriage_announcement_timing = "on_lead" },
+                },
+                legal_cards = { [2] = { { suit = "hearts", rank = "9" } } },
+            }
+        end
+
+        local function make_routing_driver(_state, clock)
+            local invoked = {}
+            local d = driver.new({
+                choosers = {
+                    choose_marriage = function(_, seat)
+                        invoked[#invoked + 1] = { name = "choose_marriage", seat = seat }
+                        return { kind = "skip_declare_marriage" }
+                    end,
+                    choose_card = function(_, seat)
+                        invoked[#invoked + 1] = { name = "choose_card", seat = seat }
+                        return { kind = "play", card = { suit = "hearts", rank = "9" } }
+                    end,
+                },
+                now_fn = clock.now,
+                delay = 0.5,
+            })
+            return d, invoked
+        end
+
+        it("does not loop back into choose_marriage after a skip applies", function()
+            local s = make_fake_session(make_marriage_state())
+            local clock = fake_clock(0)
+            local d, invoked = make_routing_driver(s, clock)
+            -- Tick 1: routes to choose_marriage; chooser returns skip; pending scheduled.
+            d:tick(s, { "human", "bot", "human" })
+            assert.are.equal(1, #invoked)
+            assert.are.equal("choose_marriage", invoked[1].name)
+            -- Fire pending — applies skip_declare_marriage (noop) and sets the latch.
+            clock.advance(1.0)
+            d:tick(s, { "human", "bot", "human" })
+            assert.are.equal(0, #s._calls) -- skip is noop on the engine
+            -- Tick 3: latch protects; routes to choose_card despite the still-
+            -- available marriage.
+            d:tick(s, { "human", "bot", "human" })
+            assert.are.equal(2, #invoked)
+            assert.are.equal("choose_card", invoked[2].name)
+        end)
+
+        it("clears the latch on a successful declare_marriage apply", function()
+            -- Defensive branch: even if a stale latch is set when a
+            -- declare_marriage descriptor fires, the latch must clear so
+            -- the next on-lead opportunity (e.g. the second K+Q pair) is
+            -- not silently suppressed.
+            local s = make_fake_session(make_marriage_state())
+            local clock = fake_clock(0)
+            local d = driver.new({ now_fn = clock.now })
+            d._marriage_skipped = { seat = 2 }
+            d._pending = {
+                seat = 2,
+                action = { kind = "declare_marriage", suit = "hearts" },
+                chooser_name = "choose_marriage",
+                fire_at = 0,
+            }
+            d:tick(s, { "human", "bot", "human" })
+            assert.is_nil(d._marriage_skipped)
+            assert.are.equal("declare_marriage", s._calls[1].method)
+            assert.are.equal("hearts", s._calls[1].args[2])
+        end)
+
+        it("clears the latch when the trick has plays (player advanced)", function()
+            local state = make_marriage_state()
+            -- Trick already has plays — predicate returns false, latch is
+            -- pruned by maintain.
+            state.current_trick = { plays = { { card = "x" } } }
+            local s = make_fake_session(state)
+            local clock = fake_clock(0)
+            local d, invoked = make_routing_driver(s, clock)
+            d._marriage_skipped = { seat = 2 }
+            d:tick(s, { "human", "bot", "human" })
+            assert.is_nil(d._marriage_skipped)
+            assert.are.equal("choose_card", invoked[1].name)
+        end)
+
+        it("clears the latch when the responsible seat changes", function()
+            local state = make_marriage_state()
+            state.turn = 3
+            state.available_marriages = { [3] = { "hearts" } }
+            state.legal_cards = { [3] = { { suit = "hearts", rank = "9" } } }
+            local s = make_fake_session(state)
+            local clock = fake_clock(0)
+            local d = driver.new({
+                choosers = {
+                    choose_marriage = function()
+                        return { kind = "skip_declare_marriage" }
+                    end,
+                    choose_card = function()
+                        return { kind = "play", card = { suit = "hearts", rank = "9" } }
+                    end,
+                },
+                now_fn = clock.now,
+                delay = 0,
+            })
+            d._marriage_skipped = { seat = 2 }
+            d:tick(s, { "human", "human", "bot" })
+            assert.is_nil(d._marriage_skipped)
+        end)
+
+        it("reset() clears the latch", function()
+            local clock = fake_clock(0)
+            local d = driver.new({ now_fn = clock.now })
+            d._marriage_skipped = { seat = 2 }
+            d:reset()
+            assert.is_nil(d._marriage_skipped)
         end)
     end)
 

@@ -1142,7 +1142,7 @@ algorithmic.
   - A "thinking…" indicator runs while a seat is deciding;
     effective decision latency is capped at 2 s including the
     indicator.
-- [ ] Route in-trick marriage declarations through the driver.
+- [x] Route in-trick marriage declarations through the driver.
   - The 4.1 commit ships `tricks → choose_card`; `choose_marriage` is
     in the registry but not yet routed. The Phase 4.3 marriage
     heuristic decides whether to declare on lead, then chains

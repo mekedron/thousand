@@ -104,6 +104,7 @@ local CHOOSERS = {
         phase = "tricks",
         returns = {
             "declare_marriage",
+            "skip_declare_marriage",
         },
     },
     {

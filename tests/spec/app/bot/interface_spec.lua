@@ -35,7 +35,7 @@ local EXPECTED_CHOOSERS = {
     {
         name = "choose_marriage",
         phase = "tricks",
-        returns = { "declare_marriage" },
+        returns = { "declare_marriage", "skip_declare_marriage" },
     },
     {
         name = "choose_next_deal",
