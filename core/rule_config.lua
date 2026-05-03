@@ -2963,7 +2963,9 @@ local function canonical_russian_blob()
             target_score = 1000,
             going_over_target = "win_immediately",
             tiebreaker = "declarer_wins",
-            dump_truck = "off",
+            -- Book's "common standard" Russian rule: ±555 reset to zero.
+            -- See docs/variations/house-rules.md "Dump truck / Самосвал".
+            dump_truck = "both_signs",
             dump_truck_threshold = 555,
         },
         specials = {
@@ -2978,7 +2980,11 @@ local function canonical_russian_blob()
             revoke_configurable_amount = 120,
             talon_look = "standard",
             showing_hand = "standard",
-            zero_tricks = "off",
+            -- Book's "common standard" Russian rule: every third stick (zero-
+            -- trick deal) earns a 120 penalty and clears the counter. See
+            -- docs/variations/house-rules.md "Zero-tricks penalty (Болт /
+            -- Палка)".
+            zero_tricks = "any_three",
             zero_tricks_threshold = 3,
             zero_tricks_penalty_amount = 120,
             zero_tricks_declarer_exempt = "off",
@@ -3055,6 +3061,11 @@ M.builtins = {
             must_trump_strictness = "polish_strict",
             defender_must_overtrump_declarer = "on",
         },
+        -- The book's 3-stick penalty and ±555 dump-truck reset are
+        -- canonical Russian conventions; Polish play does not pin them
+        -- on by default. Keep them off here.
+        endgame = { dump_truck = "off" },
+        penalties = { zero_tricks = "off" },
     })),
 
     -- Ukrainian Тисяча (docs/variations/ukrainian.md): tighter
@@ -3064,6 +3075,11 @@ M.builtins = {
     -- it lands in Phase 3.6's bidding-house-rules task.
     ukrainian = M.new(with_overrides(canonical_russian_blob(), {
         barrel = { deal_count = 2 },
+        -- Canonical-Russian book defaults (3-stick penalty, ±555 dump-
+        -- truck reset) are not part of standard Ukrainian Тисяча; opt
+        -- out explicitly so the variant page and the engine agree.
+        endgame = { dump_truck = "off" },
+        penalties = { zero_tricks = "off" },
     })),
 
     -- Two-player Variant A — closed talon, draw stock
@@ -3084,6 +3100,10 @@ M.builtins = {
             size = 0,
             distribution = "stock_draw",
         },
+        -- Canonical-Russian book defaults are not part of the standard
+        -- two-player rule sets; pin them off explicitly.
+        endgame = { dump_truck = "off" },
+        penalties = { zero_tricks = "off" },
     })),
 
     -- Two-player Variant B — fixed deal, no draw, 7-card hands and the
@@ -3096,6 +3116,10 @@ M.builtins = {
             count = 2,
             two_player_config = "fixed_deal_no_draw",
         },
+        -- Canonical-Russian book defaults are not part of the standard
+        -- two-player rule sets; pin them off explicitly.
+        endgame = { dump_truck = "off" },
+        penalties = { zero_tricks = "off" },
     })),
 
     -- Four-player Variant A — dealer plays, no talon, 6 cards each;
@@ -3110,6 +3134,10 @@ M.builtins = {
             partnership_mode = "fixed_across_table",
         },
         talon = { size = 0 },
+        -- Canonical-Russian book defaults are not part of the standard
+        -- four-player rule sets; pin them off explicitly.
+        endgame = { dump_truck = "off" },
+        penalties = { zero_tricks = "off" },
     })),
 
     -- Four-player Variant B — dealer sits out, otherwise standard
@@ -3123,6 +3151,10 @@ M.builtins = {
             four_player_config = "dealer_sits_out",
             partnership_mode = "fixed_across_table",
         },
+        -- Canonical-Russian book defaults are not part of the standard
+        -- four-player rule sets; pin them off explicitly.
+        endgame = { dump_truck = "off" },
+        penalties = { zero_tricks = "off" },
     })),
 }
 

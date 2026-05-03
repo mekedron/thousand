@@ -389,6 +389,9 @@ describe("core.rule_config", function()
             assert.are.equal("off", config.marriages.ace_marriage)
             assert.are.equal(200, config.marriages.ace_marriage_value)
             assert.are.equal("off", config.marriages.one_trump_per_deal)
+            -- Book default: a marriage may only be declared once the seat
+            -- has captured at least one trick.
+            assert.are.equal("on", config.marriages.trick_required)
         end)
 
         it("encodes the canonical strict trick rules", function()
@@ -445,7 +448,9 @@ describe("core.rule_config", function()
         it("encodes the canonical endgame toggles at their defaults", function()
             assert.are.equal("win_immediately", config.endgame.going_over_target)
             assert.are.equal("declarer_wins", config.endgame.tiebreaker)
-            assert.are.equal("off", config.endgame.dump_truck)
+            -- Book's "common standard" Russian rule: ±555 dump-truck reset on.
+            assert.are.equal("both_signs", config.endgame.dump_truck)
+            assert.are.equal(555, config.endgame.dump_truck_threshold)
         end)
 
         it("encodes the canonical special-contract toggles at their defaults", function()
@@ -461,7 +466,9 @@ describe("core.rule_config", function()
             assert.are.equal(120, config.penalties.revoke_configurable_amount)
             assert.are.equal("standard", config.penalties.talon_look)
             assert.are.equal("standard", config.penalties.showing_hand)
-            assert.are.equal("off", config.penalties.zero_tricks)
+            -- Book's "common standard" Russian rule: every third stick (zero-
+            -- trick deal) earns a 120 penalty and clears the counter.
+            assert.are.equal("any_three", config.penalties.zero_tricks)
             assert.are.equal(3, config.penalties.zero_tricks_threshold)
             assert.are.equal(120, config.penalties.zero_tricks_penalty_amount)
             assert.are.equal("off", config.penalties.zero_tricks_declarer_exempt)
@@ -5088,7 +5095,9 @@ describe("core.rule_config", function()
             local s = rule_config.to_json(rule_config.canonical_russian)
             local res = rule_config.from_json(s)
             assert.is_true(res.ok)
-            assert.are.equal("off", res.config.penalties.zero_tricks)
+            -- Canonical Russian pins the book's "any_three" value; the
+            -- schema-level default at line 5073 stays "off".
+            assert.are.equal("any_three", res.config.penalties.zero_tricks)
         end)
     end)
 

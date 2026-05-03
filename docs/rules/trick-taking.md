@@ -65,3 +65,10 @@ Each player has **8 cards** after the talon and pass, so each deal has
 Each side counts its captured **card points** ([see card values](../equipment/card-ranking)),
 adds any **marriage bonuses** declared during the deal, and proceeds to
 [Scoring](./scoring).
+
+:::note[Zero tricks → a "stick"]
+A seat that takes **no tricks at all** in a deal earns a **stick**
+(*болт* / *палка* / "pole"). The canonical Russian template fires a
+fixed −120 penalty on every third stick — see
+[House Rules — Zero-tricks penalty](../variations/house-rules.md#zero-tricks-penalty-болт--палка).
+:::

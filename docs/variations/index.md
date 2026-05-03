@@ -34,6 +34,34 @@ Three forces drive variation in Thousand:
 | [Four-player](./four-player.md) | 4 | Fixed partnerships; dealer sits out or plays. |
 | [House Rules](./house-rules.md) | any | Common kitchen-table tweaks worth agreeing in advance. |
 
+## Comparison with the reference book
+
+The implementation aligns with the "common standard" Russian rules
+described in the canonical reference book (see Phase 3.7 of the
+project task list). Two items the book describes remain
+**deferred** in v1:
+
+- **32-card deck variant.** The book mentions an optional 6–A deck
+  with sevens worth 7 points and eights worth 0. v1 ships the
+  standard 24-card deck only; the 32-card variant is out of scope
+  for the current release.
+- **Cut-deck nine/jack penalty.** The book's procedural rule —
+  "if a nine or jack ends up at the end of the deck, the deck is
+  cut again; on the third occurrence the dealer takes a penalty" —
+  is procedural rather than algorithmic and is not a good fit for
+  software simulation. The shuffle is reproducible from a seed in
+  v1, so the situation cannot arise the way it does at a physical
+  table.
+
+Every other rule the book lists as part of the standard penalty
+system (the 3-sticks penalty, the dump-truck reset, the
+marriage-trick-required precondition) is implemented and pinned on
+in the [Russian Thousand](./russian.md) canonical defaults. Rules
+the book frames as agreed-in-advance — write-off, every-third-write-
+off, no-win-streak, three-falls reset, dark-game stick doubling,
+two-nines-in-talon redeal, coexist barrel collision — ship as
+selectable [House Rules](./house-rules.md) toggles.
+
 ## How to read these pages
 
 Each variation page lists **only the differences** from the standard rules

@@ -144,6 +144,28 @@ done before turning the talon over. Distinct from
 after seeing the talon; forced-bid concession is reserved for players
 who didn't want the bid in the first place.
 
+### Write-off / Сдача
+
+The book's mid-deal concession. A declarer who sees that the contract
+is unmakeable may **write off** the deal at any point before the
+eighth trick: the **full bid** is subtracted from the declarer's
+running total, and **half of the bid** is credited to each opponent.
+
+Distinct from [forced-bid concession](#forced-bid-concession), which
+only fires on a forced minimum-100 contract pre-play.
+
+Split variants:
+
+- **Half to each** (book default): each opponent gets bid ÷ 2.
+- **Equal split**: the bid is divided equally among the opponents
+  regardless of count (in 2-player play this collapses to the same
+  thing as half-to-each; in 3- and 4-player play it splits
+  asymmetrically when partnerships are involved).
+
+Pairs naturally with the
+[every-third-write-off penalty](#every-third-write-off-penalty) — at
+many tables the two rules ride together.
+
 ## Talon house rules
 
 ### Pass-the-talon
@@ -440,6 +462,19 @@ strong ones.
 - **Mild**: barrel resets, no penalty (return to 880).
 - **Harsh**: −240 (back to 640).
 
+### Three-falls barrel reset
+
+The book's "if a player sat on the barrel 3 times and then fell off
+it, all results are reset to zero" rule. The third fall **overrides**
+the standard [barrel penalty](#barrel-penalty) and zeroes the
+running total instead of deducting 120.
+
+- **Off** (canonical default): every fall applies the standard
+  barrel penalty; the seat keeps any other accrued points.
+- **On**: the engine tracks per-seat barrel-fall counters across
+  the game; on the third fall the running total drops to zero and
+  the counter clears.
+
 ### Barrel-jump penalty
 
 Bidding **far above** the 120 needed (e.g. 200) while on the barrel and
@@ -506,8 +541,10 @@ commonly **+555**), their score is **reset to zero**. Pure
 kitchen-table folklore but widely known and frequently played.
 
 - **Positive only**: only the positive threshold triggers the reset
-  (most common).
+  (most common at non-Russian tables).
 - **Both signs**: positive and negative thresholds both trigger.
+  This is the canonical Russian default per the reference book —
+  Russian Thousand ships with `dump_truck = "both_signs"`.
 
 The exact threshold is configurable as a sibling toggle: tables that
 play with **+550** instead of **+555** use the same rule with a
@@ -570,9 +607,15 @@ bolts (commonly **3**), the player receives a fixed penalty (commonly
 Variants:
 
 - **Three consecutive bolts** (counter resets on any trick taken).
-- **Any 3 bolts during the game** (cumulative; never resets).
+- **Any 3 bolts during the game** (cumulative; never resets) — this
+  is the canonical Russian default and matches the book's "every
+  three sticks scored in the game" wording.
 - **Bolts doubled during golden deals** (when the
   [Golden deal](#golden-deal--золотой-кон) rule is active).
+- **Dark-game stick doubling** — a stick earned on a deal where the
+  seat opened with a [blind / dark bid](#dark--blind-bid) counts as
+  two sticks. The book frames this as standard for dark games; off
+  by default in the canonical template.
 - **Declarer exempt** — only defenders can earn bolts (rare).
 
 :::warning[Same word, different rule]
@@ -581,6 +624,34 @@ bid](#forced-dealer-bid-бовт--bolt) — that's also called *болт* in
 some traditions but means a forced 100 contract, not a zero-tricks
 penalty.
 :::
+
+### Every-third-write-off penalty
+
+A counter sibling to the zero-tricks bolt: every time a seat reaches
+the configured number of [write-offs](#write-off--сдача) (usually 3),
+a fixed −120 penalty fires and the write-off counter clears. The
+threshold is configurable in `[2, 5]`; the penalty amount is
+configurable in `[0, 240]`.
+
+Off-by-default in the canonical template — pin it on at any table
+that takes write-off seriously.
+
+### No-win-streak penalty
+
+The book's "no win for 3 rounds in a row or in total" rule. A seat
+that fails to win a deal (declarer making contract, or defender
+capturing positive deal points) for the configured number of deals
+earns a fixed −120 penalty and the streak counter clears.
+
+Variants:
+
+- **Off** (canonical default).
+- **Consecutive three**: the counter resets on any winning deal;
+  three losses in a row trip the penalty.
+- **Any three**: cumulative; only the penalty trigger resets the
+  counter.
+
+Threshold is configurable in `[2, 5]`; penalty amount in `[0, 240]`.
 
 ### Cross / Крест
 

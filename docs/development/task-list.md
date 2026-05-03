@@ -847,7 +847,7 @@ every-third-write-off counter in task 2 depends on it.
   - Built-in templates that legitimately allow trickless
     declaration pin `marriages.trick_required = "off"` explicitly.
 
-- [ ] Update `canonical_russian` defaults to match the book's standard
+- [x] Update `canonical_russian` defaults to match the book's standard
   and refresh the documentation.
   - Flip `penalties.zero_tricks` from `"off"` to `"any_three"` (book
     treats the every-3-sticks penalty as part of the standard

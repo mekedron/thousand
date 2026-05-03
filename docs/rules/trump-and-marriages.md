@@ -12,7 +12,8 @@ trump suit then changes every time a different marriage is declared.
 ## What is a marriage?
 
 A **marriage** is the **King + Queen of the same suit** held in one player's
-hand.
+hand. The reference book also calls a marriage a **boast** (and the
+declaration of a second one in the same deal an **overboast**).
 
 - **♥ Hearts marriage** — 100 points
 - **♦ Diamonds marriage** — 80 points
@@ -40,6 +41,19 @@ Holding K + Q is not enough. The marriage is **only** scored when one of
 the two cards is led from the player's hand on the lead. Cards captured in
 tricks do not count.
 :::
+
+## The trick-required precondition
+
+The reference book treats marriage declaration as conditional on
+having **already taken at least one trick** in the current deal. The
+canonical Russian template ships with this gate **on**: a seat may
+not declare a K-Q (or four-aces) marriage until they have captured
+a trick.
+
+The trickless variant — declarations legal at any phase including
+the first lead — is selectable as the
+[Marriage trick required](../variations/house-rules.md#marriage-trick-required)
+house rule.
 
 ## Multiple marriages
 

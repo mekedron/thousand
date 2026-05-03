@@ -75,6 +75,22 @@ A player who reaches exactly **1000 points** wins immediately. If multiple
 players cross 1000 in the same deal, the **declarer wins ties**;
 otherwise, the player with the **higher total** wins.
 
+## Dump truck (Самосвал) and write-off (Сдача)
+
+The reference book documents two further canonical scoring events:
+
+- **Dump truck (самосвал).** When a running total lands exactly on
+  **+555** *or* **−555**, that seat's running total is reset to
+  zero. The canonical Russian template ships with this rule **on**;
+  see
+  [House Rules — Dump truck](../variations/house-rules.md#dump-truck--самосвал).
+- **Write-off (сдача).** A declarer who sees that the contract is
+  unmakeable may write off the deal at any point before the eighth
+  trick: the **full bid** is subtracted from the declarer, and
+  **half the bid** is credited to each opponent. Off by default;
+  see
+  [House Rules — Write-off](../variations/house-rules.md#write-off--сдача).
+
 ## Sample running scoresheet
 
 ```
