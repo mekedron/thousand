@@ -1371,6 +1371,7 @@ local SCHEMA = {
             "pit_score",
             "collision_rule",
             "overshoot_penalty",
+            "fall_count_resets_to_zero",
             "reverse_barrel",
             "reverse_barrel_fallback",
         },
@@ -1452,6 +1453,26 @@ local SCHEMA = {
             -- bids from the barrel. See
             -- docs/variations/house-rules.md "Barrel-jump penalty".
             overshoot_penalty = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "selectable",
+            },
+            -- Phase 3.7 book toggle: a unit that falls off the barrel
+            -- three times has its running total reset to zero on the
+            -- third fall, overriding `fall_off_penalty`. Counter is
+            -- per-seat, persisted across deals, and survives auto-save
+            -- / resume. The third-fall threshold is hard-coded per the
+            -- book ("If a player sat on the barrel 3 times and then
+            -- fell off it"); custom thresholds are out of scope. The
+            -- reset takes precedence over `overshoot_penalty` on the
+            -- triggering fall (book frames the reset as replacing
+            -- `fall_off_penalty` regardless of bid). Inert under
+            -- "off". See docs/variations/house-rules.md
+            -- "Three-falls reset" (added by the Phase 3.7 closing
+            -- task).
+            fall_count_resets_to_zero = {
                 kind = "leaf",
                 lua_type = "string",
                 allowed = { "off", "on" },
@@ -1651,9 +1672,13 @@ local SCHEMA = {
             "zero_tricks_penalty_amount",
             "zero_tricks_declarer_exempt",
             "zero_tricks_golden_deal_doubled",
+            "zero_tricks_dark_game_doubled",
             "write_off_streak",
             "write_off_streak_threshold",
             "write_off_streak_penalty_amount",
+            "no_win_streak",
+            "no_win_streak_threshold",
+            "no_win_streak_penalty_amount",
             "cross",
             "cross_penalty_amount",
         },
@@ -1776,6 +1801,22 @@ local SCHEMA = {
                 default = "off",
                 status = "selectable",
             },
+            -- Phase 3.7 book toggle: when `on` AND the declarer's
+            -- winning bid was blind (a "dark game" / тёмная), a
+            -- zero-tricks seat earns 2 bolts instead of 1. Sister of
+            -- `zero_tricks_golden_deal_doubled`. Stacks additively
+            -- (i.e. doubling once — never more than 2 — even if both
+            -- triggers fire in the same deal). Inert under
+            -- `zero_tricks = "off"` or when no blind opening won the
+            -- auction. See docs/variations/house-rules.md "Dark-game
+            -- stick doubling" (added by the Phase 3.7 closing task).
+            zero_tricks_dark_game_doubled = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "on" },
+                default = "off",
+                status = "selectable",
+            },
             -- Phase 3.7 book toggle: every-third-write-off penalty.
             -- When set to `any_three`, a per-seat counter increments
             -- on each `bidding.write_off` use; on the configured
@@ -1811,6 +1852,52 @@ local SCHEMA = {
             -- `write_off_streak = "off"`. Bounded in [0, 240] — the
             -- book's "−120 typical" sits at the midpoint.
             write_off_streak_penalty_amount = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 0,
+                max = 240,
+                default = 120,
+                status = "selectable",
+            },
+            -- Phase 3.7 book toggle: no-win-streak penalty. The book
+            -- frames this as "no win for 3 rounds in a row or in
+            -- total" (lines 39–47): a seat that fails to win for
+            -- `no_win_streak_threshold` deals takes the configured
+            -- penalty and the counter resets. "Winning a deal" is
+            -- the declarer making contract OR a defender capturing
+            -- positive deal_scores; this is pinned in
+            -- `app/session.lua` so the rule cannot drift downstream.
+            -- Under `consecutive_three`, any winning deal resets the
+            -- counter; under `any_three`, only the threshold trigger
+            -- resets. Counter spans the whole game and survives
+            -- auto-save / resume. Inert under "off". Shape mirrors
+            -- the existing `zero_tricks` cluster. See
+            -- docs/variations/house-rules.md "No-win streak penalty"
+            -- (added by the Phase 3.7 closing task).
+            no_win_streak = {
+                kind = "leaf",
+                lua_type = "string",
+                allowed = { "off", "consecutive_three", "any_three" },
+                default = "off",
+                status = "selectable",
+            },
+            -- No-win count at which the no-win-streak penalty fires
+            -- and the counter resets. Inert under
+            -- `no_win_streak = "off"`. Bounded in [2, 5] — the book's
+            -- "no win for 3 rounds" sits at 3.
+            no_win_streak_threshold = {
+                kind = "leaf",
+                lua_type = "number",
+                min = 2,
+                max = 5,
+                default = 3,
+                status = "selectable",
+            },
+            -- Penalty deducted when a player's no-win count reaches
+            -- `no_win_streak_threshold`. Inert under
+            -- `no_win_streak = "off"`. Bounded in [0, 240] — the
+            -- book's "−120 typical" sits at the midpoint.
+            no_win_streak_penalty_amount = {
                 kind = "leaf",
                 lua_type = "number",
                 min = 0,
@@ -2772,6 +2859,7 @@ local function canonical_russian_blob()
             pit_score = 700,
             collision_rule = "last_mounter",
             overshoot_penalty = "off",
+            fall_count_resets_to_zero = "off",
             reverse_barrel = "off",
             reverse_barrel_fallback = -760,
         },
@@ -2798,9 +2886,13 @@ local function canonical_russian_blob()
             zero_tricks_penalty_amount = 120,
             zero_tricks_declarer_exempt = "off",
             zero_tricks_golden_deal_doubled = "off",
+            zero_tricks_dark_game_doubled = "off",
             write_off_streak = "off",
             write_off_streak_threshold = 3,
             write_off_streak_penalty_amount = 120,
+            no_win_streak = "off",
+            no_win_streak_threshold = 3,
+            no_win_streak_penalty_amount = 120,
             cross = "off",
             cross_penalty_amount = 120,
         },

@@ -469,5 +469,10 @@ return {
     ["templates.field.penalties.write_off_streak.label"] = "Штраф за кожну третю здачу",
     ["templates.field.penalties.write_off_streak_threshold.label"] = "Поріг серії здач",
     ["templates.field.penalties.write_off_streak_penalty_amount.label"] = "Штраф за серію здач",
+    ["templates.field.penalties.no_win_streak.label"] = "Штраф за серію поразок",
+    ["templates.field.penalties.no_win_streak_threshold.label"] = "Поріг серії поразок",
+    ["templates.field.penalties.no_win_streak_penalty_amount.label"] = "Штраф за серію поразок",
+    ["templates.field.penalties.zero_tricks_dark_game_doubled.label"] = "Подвоєння у темній",
+    ["templates.field.barrel.fall_count_resets_to_zero.label"] = "Три падіння — скидання",
     ["templates.field.penalties.cross.label"] = "Cross / крест",
 }

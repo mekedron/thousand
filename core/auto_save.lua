@@ -199,6 +199,13 @@ function M.serialize(session)
         -- written before the field existed simply round-trip as nil
         -- and Session.from_state defaults to all-zeros.
         write_off_counts = data_clone(session._write_off_counts),
+        -- Phase 3.7 cross-deal counters: no-win streak (under
+        -- penalties.no_win_streak) and barrel-fall (under
+        -- barrel.fall_count_resets_to_zero). Both round-trip per-seat
+        -- as plain integer arrays. Older saves load with all-zeros
+        -- because Session.from_state defaults missing fields.
+        no_win_streak_counts = data_clone(session._no_win_streak_counts),
+        barrel_fall_counts = data_clone(session._barrel_fall_counts),
     }
 end
 
@@ -245,6 +252,8 @@ function M.deserialize(blob)
         cross_count = blob.cross_count,
         recorded_penalties = blob.recorded_penalties,
         write_off_counts = blob.write_off_counts,
+        no_win_streak_counts = blob.no_win_streak_counts,
+        barrel_fall_counts = blob.barrel_fall_counts,
     }
 end
 

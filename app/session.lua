@@ -450,6 +450,18 @@ function M.new(opts)
         -- the configured penalty and resets the seat's counter to 0.
         -- Persisted across deals.
         _write_off_counts = zero_totals(config.players.count),
+        -- Phase 3.7 no-win-streak counter: per-seat persistent count of
+        -- consecutive (or total, depending on `penalties.no_win_streak`)
+        -- deals where the seat did not win. "Won the deal" = declarer
+        -- made contract OR defender captured positive deal_scores.
+        -- Threshold-hit fires the configured penalty and resets the
+        -- seat's counter to 0. Persisted across deals.
+        _no_win_streak_counts = zero_totals(config.players.count),
+        -- Phase 3.7 barrel-fall counter: per-seat persistent count of
+        -- forward-barrel fall-offs. When `barrel.fall_count_resets_to_zero
+        -- == "on"`, the third fall zeros the running total and the
+        -- counter resets to 0. Persisted across deals.
+        _barrel_fall_counts = zero_totals(config.players.count),
     }, Session)
     evaluate_entitlement_with_forced_loop(self)
     -- Phase 3.6 opening-game: drive the auction-end transition so the
@@ -527,6 +539,8 @@ function M.from_state(state)
         _cross_count = state.cross_count or zero_totals(player_count),
         _recorded_penalties = state.recorded_penalties or {},
         _write_off_counts = state.write_off_counts or zero_totals(player_count),
+        _no_win_streak_counts = state.no_win_streak_counts or zero_totals(player_count),
+        _barrel_fall_counts = state.barrel_fall_counts or zero_totals(player_count),
     }, Session)
     -- Phase 3.6: when from_state restores a tricks-phase session and
     -- the active variant is pre_first_trick, re-open the queue from
@@ -780,6 +794,23 @@ end
 -- cannot mutate session state.
 function Session:write_off_counts()
     return copy_list(self._write_off_counts)
+end
+
+-- Phase 3.7 per-seat persistent no-win-streak counter under
+-- `penalties.no_win_streak ~= "off"`. Counts deals where the seat
+-- did not win (declarer failed contract; defender captured no deal
+-- points). Threshold-hit fires the configured penalty and resets
+-- the seat's counter. Returns a copy.
+function Session:no_win_streak_counts()
+    return copy_list(self._no_win_streak_counts)
+end
+
+-- Phase 3.7 per-seat persistent barrel-fall counter under
+-- `barrel.fall_count_resets_to_zero = "on"`. Counts forward-barrel
+-- fall-offs; the third fall zeros the seat's running total and
+-- resets the counter. Returns a copy.
+function Session:barrel_fall_counts()
+    return copy_list(self._barrel_fall_counts)
 end
 
 -- Record a penalty violation for the current deal. The session
@@ -1580,7 +1611,17 @@ local function on_tricks_end(self)
         local threshold = pen_rules.zero_tricks_threshold
         local penalty_amount = pen_rules.zero_tricks_penalty_amount
         local exempt_declarer = pen_rules.zero_tricks_declarer_exempt == "on"
-        local doubled = pen_rules.zero_tricks_golden_deal_doubled == "on" and self._in_golden_deal
+        -- Phase 3.7 stick doubling. Either the golden-deal sub-flag or
+        -- the dark-game sub-flag (or both) bumps a zero-trick seat's
+        -- bolt earn from 1 to 2; doubling does not stack to 4 even
+        -- when both fire — the book's wording is "doubled" per
+        -- condition.
+        local declarer_was_blind = self._auction
+            and self._auction.blind_at_win == true
+            or false
+        local doubled = (
+            pen_rules.zero_tricks_golden_deal_doubled == "on" and self._in_golden_deal
+        ) or (pen_rules.zero_tricks_dark_game_doubled == "on" and declarer_was_blind)
         for seat = 1, player_count do
             local won = t.tricks_won[seat] or 0
             local exempt = exempt_declarer and seat == declarer
@@ -1682,6 +1723,52 @@ local function on_tricks_end(self)
         end
     end
 
+    -- Phase 3.7 no-win-streak penalty. "Won the deal" = declarer made
+    -- contract OR defender captured positive deal_scores. Mutates
+    -- `sd.scoring` in place (mirroring the cross-counter pattern
+    -- above) so the deal_done payload and advance_game both see the
+    -- final figures. The counter spans the whole game, persisted
+    -- across deals; threshold-hit fires `-penalty_amount` and resets
+    -- the seat's counter to 0.
+    local new_no_win = {}
+    for i = 1, player_count do
+        new_no_win[i] = self._no_win_streak_counts[i] or 0
+    end
+    local no_win_streak_penalty = {}
+    for i = 1, player_count do
+        no_win_streak_penalty[i] = 0
+    end
+    if pen_rules.no_win_streak ~= "off" then
+        local nws_threshold = pen_rules.no_win_streak_threshold
+        local nws_amount = pen_rules.no_win_streak_penalty_amount
+        local made = sd.scoring.made_contract and true or false
+        for seat = 1, player_count do
+            local won_this_deal
+            if seat == declarer then
+                won_this_deal = made
+            else
+                won_this_deal = (sd.scoring.deal_scores[seat] or 0) > 0
+            end
+            if won_this_deal then
+                if pen_rules.no_win_streak == "consecutive_three" then
+                    new_no_win[seat] = 0
+                end
+                -- under any_three: no reset on a winning deal; only
+                -- the threshold-hit reset clears the counter.
+            else
+                new_no_win[seat] = new_no_win[seat] + 1
+            end
+            if new_no_win[seat] >= nws_threshold then
+                no_win_streak_penalty[seat] = no_win_streak_penalty[seat] - nws_amount
+                sd.scoring.deltas[seat] = sd.scoring.deltas[seat] - nws_amount
+                sd.scoring.running_totals[seat] = sd.scoring.running_totals[seat] - nws_amount
+                new_no_win[seat] = 0
+            end
+        end
+    end
+    sd.scoring.no_win_streak_penalty = no_win_streak_penalty
+    self._no_win_streak_counts = new_no_win
+
     -- Commit zero-tricks counter updates after score_deal returns. The
     -- engine has already applied the threshold deductions through the
     -- penalty array; this just persists the new counters.
@@ -1698,6 +1785,7 @@ local function on_tricks_end(self)
         bid = type(bid) == "number" and bid or nil,
         declarer_made_contract = sd.scoring.made_contract and true or false,
         effective_target_before = self._effective_target,
+        barrel_fall_counts_before = self._barrel_fall_counts,
     })
     if not g.ok then
         error("session: advance_game failed: " .. tostring(g.error.message), 2)
@@ -1705,6 +1793,7 @@ local function on_tricks_end(self)
     self._running_totals = g.game.running_totals
     self._barrel_state = g.game.barrel_state
     self._effective_target = g.game.effective_target_after
+    self._barrel_fall_counts = g.game.barrel_fall_counts_after
     if g.game.tiebreaker_continuation_event then
         -- The deal ended with a tiebreaker_continuation event:
         -- effective_target jumped +500. Carry the elevated target into
@@ -1771,6 +1860,14 @@ local function on_tricks_end(self)
             cross_penalty = sd.scoring.cross_penalty,
             zero_tricks_bolts = copy_list(self._zero_tricks_bolts),
             cross_count = copy_list(self._cross_count),
+            -- Phase 3.7 cross-deal counter outputs. Per-seat signed
+            -- penalty array, post-deal counter snapshots, and the
+            -- per-seat fall event / reset flags from advance_game.
+            no_win_streak_penalty = no_win_streak_penalty,
+            no_win_streak_counts = copy_list(self._no_win_streak_counts),
+            barrel_fall_events = g.game.barrel_fall_events,
+            barrel_fall_resets = g.game.barrel_fall_resets,
+            barrel_fall_counts = copy_list(self._barrel_fall_counts),
         }
     end
 end

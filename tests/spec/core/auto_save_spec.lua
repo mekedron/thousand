@@ -267,5 +267,39 @@ describe("core.auto_save", function()
             local restored = Session.from_state(auto_save.deserialize(decoded))
             assert.are.same({ 0, 0, 0 }, restored:write_off_counts())
         end)
+
+        it("preserves no_win_streak_counts across a round-trip", function()
+            local s = Session.new({ seed = 7 })
+            s._no_win_streak_counts = { 0, 1, 2 }
+            local restored = Session.from_state(round_trip(s))
+            assert.are.same({ 0, 1, 2 }, restored:no_win_streak_counts())
+        end)
+
+        it("defaults no_win_streak_counts to zeros when missing from the blob", function()
+            local s = Session.new({ seed = 7 })
+            local blob = auto_save.serialize(s)
+            blob.no_win_streak_counts = nil
+            local encoded = json.encode(blob)
+            local decoded = json.decode(encoded)
+            local restored = Session.from_state(auto_save.deserialize(decoded))
+            assert.are.same({ 0, 0, 0 }, restored:no_win_streak_counts())
+        end)
+
+        it("preserves barrel_fall_counts across a round-trip", function()
+            local s = Session.new({ seed = 7 })
+            s._barrel_fall_counts = { 1, 0, 2 }
+            local restored = Session.from_state(round_trip(s))
+            assert.are.same({ 1, 0, 2 }, restored:barrel_fall_counts())
+        end)
+
+        it("defaults barrel_fall_counts to zeros when missing from the blob", function()
+            local s = Session.new({ seed = 7 })
+            local blob = auto_save.serialize(s)
+            blob.barrel_fall_counts = nil
+            local encoded = json.encode(blob)
+            local decoded = json.decode(encoded)
+            local restored = Session.from_state(auto_save.deserialize(decoded))
+            assert.are.same({ 0, 0, 0 }, restored:barrel_fall_counts())
+        end)
     end)
 end)

@@ -469,5 +469,10 @@ return {
     ["templates.field.penalties.write_off_streak.label"] = "Kara za co trzecie spasowanie",
     ["templates.field.penalties.write_off_streak_threshold.label"] = "Próg serii spasowań",
     ["templates.field.penalties.write_off_streak_penalty_amount.label"] = "Kara za serię spasowań",
+    ["templates.field.penalties.no_win_streak.label"] = "Kara za serię przegranych",
+    ["templates.field.penalties.no_win_streak_threshold.label"] = "Próg serii przegranych",
+    ["templates.field.penalties.no_win_streak_penalty_amount.label"] = "Kara za serię przegranych",
+    ["templates.field.penalties.zero_tricks_dark_game_doubled.label"] = "Podwojenie w ciemno",
+    ["templates.field.barrel.fall_count_resets_to_zero.label"] = "Trzy upadki — reset do zera",
     ["templates.field.penalties.cross.label"] = "Cross / крест",
 }

@@ -776,7 +776,7 @@ every-third-write-off counter in task 2 depends on it.
     toggle is on; the running scoreboard shows the write-off counter
     so players can see how close they are to the threshold.
 
-- [ ] Implement the cross-deal counter penalties: no-win-for-3-rounds,
+- [x] Implement the cross-deal counter penalties: no-win-for-3-rounds,
   three-falls reset, and dark-game stick doubling.
   - Book: a seat with no win in 3 consecutive (or total) rounds takes
     the 120 penalty; a player who fell off the barrel three times

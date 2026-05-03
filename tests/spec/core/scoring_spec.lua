@@ -335,6 +335,7 @@ describe("core.scoring", function()
                     pit_score = 700,
                     collision_rule = "last_mounter",
                     overshoot_penalty = "off",
+                    fall_count_resets_to_zero = "off",
                     reverse_barrel = "off",
                     reverse_barrel_fallback = -760,
                 },
@@ -361,9 +362,13 @@ describe("core.scoring", function()
                     zero_tricks_penalty_amount = 120,
                     zero_tricks_declarer_exempt = "off",
                     zero_tricks_golden_deal_doubled = "off",
+                    zero_tricks_dark_game_doubled = "off",
                     write_off_streak = "off",
                     write_off_streak_threshold = 3,
                     write_off_streak_penalty_amount = 120,
+                    no_win_streak = "off",
+                    no_win_streak_threshold = 3,
+                    no_win_streak_penalty_amount = 120,
                     cross = "off",
                     cross_penalty_amount = 120,
                 },
@@ -1544,6 +1549,7 @@ describe("core.scoring", function()
             bid = opts.bid,
             declarer_made_contract = opts.declarer_made_contract,
             effective_target_before = opts.effective_target_before,
+            barrel_fall_counts_before = opts.barrel_fall_counts_before,
         }
         local r = scoring.advance_game(cfg, final)
         assert.is_true(
@@ -1687,6 +1693,192 @@ describe("core.scoring", function()
             assert.are.equal(760, g.running_totals[1])
             assert.is_false(g.overshoot_penalty_applied[1])
         end)
+    end)
+
+    describe("advance_game() fall_count tracking", function()
+        it("returns zero counters and no fall events on a non-falling deal", function()
+            local g = advance_ok(default_advance_opts({
+                deltas = { 50, 0, 0 },
+                running_totals_before = { 100, 0, 0 },
+            }))
+            assert.are.same({ false, false, false }, g.barrel_fall_events)
+            assert.are.same({ false, false, false }, g.barrel_fall_resets)
+            assert.are.same({ 0, 0, 0 }, g.barrel_fall_counts_after)
+        end)
+
+        it("increments the per-seat counter on a barrel fall-off", function()
+            local g = advance_ok(default_advance_opts({
+                deltas = { 50, 0, 0 },
+                running_totals_before = { 880, 0, 0 },
+                deal_index = 8,
+                barrel_state_before = {
+                    { on_barrel = true, mounted_on_deal = 5, deals_remaining = 1 },
+                    { on_barrel = false },
+                    { on_barrel = false },
+                },
+            }))
+            assert.is_true(g.barrel_fall_events[1])
+            assert.is_false(g.barrel_fall_events[2])
+            assert.is_false(g.barrel_fall_events[3])
+            assert.are.same({ false, false, false }, g.barrel_fall_resets)
+            assert.are.same({ 1, 0, 0 }, g.barrel_fall_counts_after)
+            -- Standard fall-off behaviour preserved when reset toggle is off.
+            assert.are.equal(760, g.running_totals[1])
+        end)
+
+        it("threads barrel_fall_counts_before through unchanged for non-falling seats", function()
+            local g = advance_ok(default_advance_opts({
+                deltas = { 50, 0, 0 },
+                running_totals_before = { 100, 0, 0 },
+                barrel_fall_counts_before = { 2, 1, 0 },
+            }))
+            assert.are.same({ 2, 1, 0 }, g.barrel_fall_counts_after)
+        end)
+
+        it("defaults barrel_fall_counts_before to zeros when missing", function()
+            local g = advance_ok(default_advance_opts({
+                deltas = { 50, 0, 0 },
+                running_totals_before = { 100, 0, 0 },
+                -- no barrel_fall_counts_before field
+            }))
+            assert.are.same({ 0, 0, 0 }, g.barrel_fall_counts_after)
+        end)
+    end)
+
+    describe("advance_game() fall_count_resets_to_zero", function()
+        it("leaves fall behaviour unchanged under 'off' even when the counter is high", function()
+            local g = advance_ok(default_advance_opts({
+                deltas = { 50, 0, 0 },
+                running_totals_before = { 880, 0, 0 },
+                deal_index = 8,
+                barrel_state_before = {
+                    { on_barrel = true, mounted_on_deal = 5, deals_remaining = 1 },
+                    { on_barrel = false },
+                    { on_barrel = false },
+                },
+                barrel_fall_counts_before = { 2, 0, 0 },
+            }))
+            assert.are.equal(760, g.running_totals[1])
+            assert.are.same({ 3, 0, 0 }, g.barrel_fall_counts_after)
+            assert.are.same({ false, false, false }, g.barrel_fall_resets)
+        end)
+
+        it("first and second falls under 'on' behave as standard fall-off", function()
+            local cfg = with_endgame_overrides({
+                barrel = { fall_count_resets_to_zero = "on" },
+            })
+            local g1 = advance_with(cfg, {
+                deltas = { 50, 0, 0 },
+                running_totals_before = { 880, 0, 0 },
+                deal_index = 8,
+                barrel_state_before = {
+                    { on_barrel = true, mounted_on_deal = 5, deals_remaining = 1 },
+                    { on_barrel = false },
+                    { on_barrel = false },
+                },
+                barrel_fall_counts_before = { 0, 0, 0 },
+            })
+            assert.are.equal(760, g1.running_totals[1])
+            assert.is_false(g1.barrel_fall_resets[1])
+            assert.are.same({ 1, 0, 0 }, g1.barrel_fall_counts_after)
+
+            local g2 = advance_with(cfg, {
+                deltas = { 50, 0, 0 },
+                running_totals_before = { 880, 0, 0 },
+                deal_index = 12,
+                barrel_state_before = {
+                    { on_barrel = true, mounted_on_deal = 9, deals_remaining = 1 },
+                    { on_barrel = false },
+                    { on_barrel = false },
+                },
+                barrel_fall_counts_before = { 1, 0, 0 },
+            })
+            assert.are.equal(760, g2.running_totals[1])
+            assert.is_false(g2.barrel_fall_resets[1])
+            assert.are.same({ 2, 0, 0 }, g2.barrel_fall_counts_after)
+        end)
+
+        it("zeroes the running total and resets the counter on the third fall", function()
+            local cfg = with_endgame_overrides({
+                barrel = { fall_count_resets_to_zero = "on" },
+            })
+            local g = advance_with(cfg, {
+                deltas = { 50, 0, 0 },
+                running_totals_before = { 880, 0, 0 },
+                deal_index = 16,
+                barrel_state_before = {
+                    { on_barrel = true, mounted_on_deal = 13, deals_remaining = 1 },
+                    { on_barrel = false },
+                    { on_barrel = false },
+                },
+                barrel_fall_counts_before = { 2, 0, 0 },
+            })
+            assert.are.equal(0, g.running_totals[1])
+            assert.is_false(g.barrel_state[1].on_barrel)
+            assert.is_true(g.barrel_fall_resets[1])
+            assert.are.same({ 0, 0, 0 }, g.barrel_fall_counts_after)
+        end)
+
+        it("third-fall reset takes precedence over overshoot_penalty for the declarer", function()
+            local cfg = with_endgame_overrides({
+                barrel = {
+                    overshoot_penalty = "on",
+                    fall_count_resets_to_zero = "on",
+                },
+            })
+            local g = advance_with(cfg, {
+                deltas = { -200, 0, 0 },
+                running_totals_before = { 880, 0, 0 },
+                barrel_state_before = {
+                    { on_barrel = true, mounted_on_deal = 13, deals_remaining = 1 },
+                    { on_barrel = false },
+                    { on_barrel = false },
+                },
+                bid = 200,
+                declarer_made_contract = false,
+                deal_index = 16,
+                barrel_fall_counts_before = { 2, 0, 0 },
+            })
+            -- Third-fall reset wins → running total zeroed; overshoot
+            -- penalty NOT applied.
+            assert.are.equal(0, g.running_totals[1])
+            assert.is_true(g.barrel_fall_resets[1])
+            assert.is_false(g.overshoot_penalty_applied[1])
+            assert.are.same({ 0, 0, 0 }, g.barrel_fall_counts_after)
+        end)
+
+        it(
+            "increments both partners' counters and resets together when their unit falls",
+            function()
+                local cfg = rule_config.builtins.four_player_a
+                cfg = (function()
+                    local blob = require("dkjson").decode(rule_config.to_json(cfg))
+                    blob.barrel.fall_count_resets_to_zero = "on"
+                    return rule_config.new(blob)
+                end)()
+                local g = advance_with(cfg, {
+                    deltas = { 50, 0, 0, 0 },
+                    running_totals_before = { 880, 880, 0, 0 },
+                    deal_index = 8,
+                    barrel_state_before = {
+                        { on_barrel = true, mounted_on_deal = 5, deals_remaining = 1 },
+                        { on_barrel = true, mounted_on_deal = 5, deals_remaining = 1 },
+                        { on_barrel = false },
+                        { on_barrel = false },
+                    },
+                    barrel_fall_counts_before = { 2, 2, 0, 0 },
+                })
+                -- Partnership: seats 1 & 3 vs 2 & 4 in four_player_a.
+                -- The unit holding seats 1+3 falls; both partners' counts
+                -- reset and their shared running total zeros.
+                assert.are.equal(0, g.running_totals[1])
+                assert.are.equal(0, g.running_totals[3])
+                assert.is_true(g.barrel_fall_resets[1])
+                assert.is_true(g.barrel_fall_resets[3])
+                assert.are.equal(0, g.barrel_fall_counts_after[1])
+                assert.are.equal(0, g.barrel_fall_counts_after[3])
+            end
+        )
     end)
 
     describe("advance_game() collision_rule", function()

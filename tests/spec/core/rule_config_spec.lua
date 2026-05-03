@@ -123,6 +123,7 @@ local function valid_table()
             pit_score = 700,
             collision_rule = "last_mounter",
             overshoot_penalty = "off",
+            fall_count_resets_to_zero = "off",
             reverse_barrel = "off",
             reverse_barrel_fallback = -760,
         },
@@ -149,9 +150,13 @@ local function valid_table()
             zero_tricks_penalty_amount = 120,
             zero_tricks_declarer_exempt = "off",
             zero_tricks_golden_deal_doubled = "off",
+            zero_tricks_dark_game_doubled = "off",
             write_off_streak = "off",
             write_off_streak_threshold = 3,
             write_off_streak_penalty_amount = 120,
+            no_win_streak = "off",
+            no_win_streak_threshold = 3,
+            no_win_streak_penalty_amount = 120,
             cross = "off",
             cross_penalty_amount = 120,
         },
@@ -5082,6 +5087,159 @@ describe("core.rule_config", function()
                 assert.is_false(res.ok, "value " .. bad .. " should be rejected")
                 assert.are.equal("penalties.write_off_streak_penalty_amount", res.error.path)
             end
+        end)
+    end)
+
+    describe("penalties.no_win_streak", function()
+        it("exposes a selectable string-leaf descriptor", function()
+            local d = rule_config.schema_for("penalties.no_win_streak")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("selectable", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["consecutive_three"])
+            assert.is_true(allowed["any_three"])
+        end)
+
+        it("accepts every selectable value", function()
+            for _, value in ipairs({ "off", "consecutive_three", "any_three" }) do
+                local t = valid_table()
+                t.penalties.no_win_streak = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " should be accepted")
+                assert.are.equal(value, res.config.penalties.no_win_streak)
+            end
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.penalties.no_win_streak)
+        end)
+    end)
+
+    describe("penalties.no_win_streak_threshold", function()
+        it("exposes a selectable bounded number descriptor", function()
+            local d = rule_config.schema_for("penalties.no_win_streak_threshold")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(2, d.min)
+            assert.are.equal(5, d.max)
+            assert.are.equal(3, d.default)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("accepts values inside [2, 5]", function()
+            for _, value in ipairs({ 2, 3, 4, 5 }) do
+                local t = valid_table()
+                t.penalties.no_win_streak_threshold = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " should be accepted")
+                assert.are.equal(value, res.config.penalties.no_win_streak_threshold)
+            end
+        end)
+
+        it("rejects values outside [2, 5]", function()
+            for _, bad in ipairs({ 1, 6, 100 }) do
+                local t = valid_table()
+                t.penalties.no_win_streak_threshold = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
+                assert.are.equal("penalties.no_win_streak_threshold", res.error.path)
+            end
+        end)
+    end)
+
+    describe("penalties.no_win_streak_penalty_amount", function()
+        it("exposes a selectable bounded number descriptor", function()
+            local d = rule_config.schema_for("penalties.no_win_streak_penalty_amount")
+            assert.are.equal("number", d.lua_type)
+            assert.are.equal(0, d.min)
+            assert.are.equal(240, d.max)
+            assert.are.equal(120, d.default)
+            assert.are.equal("selectable", d.status)
+        end)
+
+        it("rejects values outside [0, 240]", function()
+            for _, bad in ipairs({ -1, 241 }) do
+                local t = valid_table()
+                t.penalties.no_win_streak_penalty_amount = bad
+                local res = rule_config.try_new(t)
+                assert.is_false(res.ok, "value " .. bad .. " should be rejected")
+                assert.are.equal("penalties.no_win_streak_penalty_amount", res.error.path)
+            end
+        end)
+    end)
+
+    describe("penalties.zero_tricks_dark_game_doubled", function()
+        it("exposes a selectable string-leaf descriptor", function()
+            local d = rule_config.schema_for("penalties.zero_tricks_dark_game_doubled")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("selectable", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["on"])
+        end)
+
+        it("accepts every selectable value", function()
+            for _, value in ipairs({ "off", "on" }) do
+                local t = valid_table()
+                t.penalties.zero_tricks_dark_game_doubled = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " should be accepted")
+                assert.are.equal(value, res.config.penalties.zero_tricks_dark_game_doubled)
+            end
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.penalties.zero_tricks_dark_game_doubled)
+        end)
+    end)
+
+    describe("barrel.fall_count_resets_to_zero", function()
+        it("exposes a selectable string-leaf descriptor", function()
+            local d = rule_config.schema_for("barrel.fall_count_resets_to_zero")
+            assert.are.equal("leaf", d.kind)
+            assert.are.equal("string", d.lua_type)
+            assert.are.equal("off", d.default)
+            assert.are.equal("selectable", d.status)
+            local allowed = {}
+            for _, v in ipairs(d.allowed) do
+                allowed[v] = true
+            end
+            assert.is_true(allowed["off"])
+            assert.is_true(allowed["on"])
+        end)
+
+        it("accepts every selectable value", function()
+            for _, value in ipairs({ "off", "on" }) do
+                local t = valid_table()
+                t.barrel.fall_count_resets_to_zero = value
+                local res = rule_config.try_new(t)
+                assert.is_true(res.ok, "value " .. value .. " should be accepted")
+                assert.are.equal(value, res.config.barrel.fall_count_resets_to_zero)
+            end
+        end)
+
+        it("survives a JSON round trip at its default", function()
+            local s = rule_config.to_json(rule_config.canonical_russian)
+            local res = rule_config.from_json(s)
+            assert.is_true(res.ok)
+            assert.are.equal("off", res.config.barrel.fall_count_resets_to_zero)
         end)
     end)
 

@@ -1195,6 +1195,7 @@ function M.advance_game(config, opts)
     local pit_lock_active = config.barrel.pit_lock_in == "on"
     local pit_score = config.barrel.pit_score
     local overshoot_active = config.barrel.overshoot_penalty == "on"
+    local fall_count_reset_active = config.barrel.fall_count_resets_to_zero == "on"
     local reverse_active = config.barrel.reverse_barrel == "on"
     local reverse_fallback = config.barrel.reverse_barrel_fallback
     local reverse_threshold = -threshold
@@ -1205,6 +1206,32 @@ function M.advance_game(config, opts)
     local dump_truck_mode = config.endgame.dump_truck
     local declarer_made_contract = opts.declarer_made_contract and true or false
     local declarer_bid = opts.bid
+
+    -- Phase 3.7 book toggle: per-seat barrel-fall counter. Optional
+    -- input array (length = player_count); defaults to all-zeros for
+    -- legacy callers / fresh games. Threshold for the third-fall reset
+    -- is hard-coded at 3 per the book ("If a player sat on the barrel
+    -- 3 times and then fell off it"); custom thresholds are out of
+    -- scope.
+    local FALL_COUNT_RESET_THRESHOLD = 3
+    local barrel_fall_counts_before = {}
+    if opts.barrel_fall_counts_before == nil then
+        for i = 1, player_count do
+            barrel_fall_counts_before[i] = 0
+        end
+    else
+        local fc_err = validate_player_list(
+            "barrel_fall_counts_before",
+            opts.barrel_fall_counts_before,
+            player_count
+        )
+        if fc_err then
+            return fc_err
+        end
+        for i = 1, player_count do
+            barrel_fall_counts_before[i] = opts.barrel_fall_counts_before[i]
+        end
+    end
 
     local sides = partnership_sides(config)
 
@@ -1273,11 +1300,37 @@ function M.advance_game(config, opts)
     local unit_pit_state = {}
     local unit_overshoot = {}
     local unit_eliminated = {}
+    -- Phase 3.7 per-unit fall tracking. `unit_fall_event` is true on
+    -- the deal that crossed `deals_remaining == 0`; `unit_fall_reset`
+    -- is true when the third-fall reset replaced `fall_off_penalty`
+    -- with a zero of the running total. `unit_fall_count_after` carries
+    -- the post-deal counter (the per-seat input is shared across both
+    -- partner seats in a unit, so this stays a per-unit scalar).
+    local unit_fall_event = {}
+    local unit_fall_reset = {}
+    local unit_fall_count_after = {}
     for u = 1, unit_count do
         unit_dump_truck[u] = false
         unit_pit_state[u] = "not_locked"
         unit_overshoot[u] = false
         unit_eliminated[u] = false
+        unit_fall_event[u] = false
+        unit_fall_reset[u] = false
+        -- Default each unit's post-counter to its before-value. The
+        -- before-value is shared by partner seats in a unit by
+        -- construction; reading the first seat's slot is canonical.
+        local before_seat
+        if sides then
+            for i = 1, player_count do
+                if sides[i] == u then
+                    before_seat = i
+                    break
+                end
+            end
+        else
+            before_seat = u
+        end
+        unit_fall_count_after[u] = barrel_fall_counts_before[before_seat] or 0
     end
 
     for u = 1, unit_count do
@@ -1328,13 +1381,28 @@ function M.advance_game(config, opts)
             else
                 local deals_remaining = before_entry.deals_remaining - 1
                 if deals_remaining <= 0 then
-                    -- Fall off. Overshoot penalty replaces the standard
-                    -- `fall_off_penalty` with the declarer's bid amount
-                    -- when (a) the toggle is on, (b) the bid strictly
-                    -- exceeds the closing-gap (`barrel_make`), and (c)
-                    -- this is the declarer's unit. Defender units fall
-                    -- off at the standard rate even under a hero bid.
-                    if
+                    -- Fall off.
+                    unit_fall_event[u] = true
+                    local new_count = unit_fall_count_after[u] + 1
+                    -- Phase 3.7 third-fall reset takes precedence over
+                    -- both the overshoot-penalty branch and the standard
+                    -- `fall_off_penalty` (book: "Reset to zero. Occurs
+                    -- … if a player sat on the barrel 3 times and then
+                    -- fell off it"). On the trigger fall the running
+                    -- total is zeroed and the counter resets back to
+                    -- zero so the cycle can begin again.
+                    if fall_count_reset_active and new_count >= FALL_COUNT_RESET_THRESHOLD then
+                        new_total = 0
+                        unit_fall_reset[u] = true
+                        unit_fall_count_after[u] = 0
+                    elseif
+                        -- Overshoot penalty replaces the standard
+                        -- `fall_off_penalty` with the declarer's bid
+                        -- amount when (a) the toggle is on, (b) the bid
+                        -- strictly exceeds the closing-gap, and (c)
+                        -- this is the declarer's unit. Defender units
+                        -- fall off at the standard rate even under a
+                        -- hero bid.
                         overshoot_active
                         and is_declarer_unit
                         and is_integer(declarer_bid)
@@ -1342,8 +1410,10 @@ function M.advance_game(config, opts)
                     then
                         new_total = threshold - declarer_bid
                         unit_overshoot[u] = true
+                        unit_fall_count_after[u] = new_count
                     else
                         new_total = fall_off_total
+                        unit_fall_count_after[u] = new_count
                     end
                     new_entry = off_barrel_entry()
                 else
@@ -1638,6 +1708,12 @@ function M.advance_game(config, opts)
     local overshoot_penalty_applied = {}
     local eliminated_seat = {}
     local going_over_target_capped = {}
+    -- Phase 3.7 per-seat fall-tracking arrays. Partner seats in a unit
+    -- share the same fall event / reset / counter values by construction
+    -- so the fan-out is a straight read of the unit-level scalar.
+    local barrel_fall_events = {}
+    local barrel_fall_resets = {}
+    local barrel_fall_counts_after = {}
     for i = 1, player_count do
         local u = sides and sides[i] or i
         dump_truck_events[i] = unit_dump_truck[u] and true or false
@@ -1645,6 +1721,9 @@ function M.advance_game(config, opts)
         overshoot_penalty_applied[i] = unit_overshoot[u] and true or false
         eliminated_seat[i] = unit_eliminated[u] and true or false
         going_over_target_capped[i] = going_over_caps[u] and true or false
+        barrel_fall_events[i] = unit_fall_event[u] and true or false
+        barrel_fall_resets[i] = unit_fall_reset[u] and true or false
+        barrel_fall_counts_after[i] = unit_fall_count_after[u] or 0
     end
 
     -- Per-side aggregates for the UI's pooled-side scoreboard row.
@@ -1681,6 +1760,12 @@ function M.advance_game(config, opts)
         side_running_totals = side_running_totals,
         side_barrel_state = side_barrel_state,
         winning_side = winning_side,
+        -- Phase 3.7 fall-tracking outputs. Per-seat arrays parallel to
+        -- `dump_truck_events`. Defaults to all-false / before-counter
+        -- when no fall happened this deal.
+        barrel_fall_events = barrel_fall_events,
+        barrel_fall_resets = barrel_fall_resets,
+        barrel_fall_counts_after = barrel_fall_counts_after,
     })
     return { ok = true, game = state }
 end

@@ -1114,6 +1114,15 @@ function M.from_session(session)
     local write_off_streak_active = pen_rules.write_off_streak ~= "off"
     local write_off_counts = write_off_streak_active and session:write_off_counts() or nil
     local write_off_threshold = pen_rules.write_off_streak_threshold
+    -- Phase 3.7 cross-deal counters: no-win streak and barrel-fall.
+    -- Both surface only under their respective toggles so the renderer
+    -- can skip the line under the default-off configuration.
+    local no_win_streak_active = pen_rules.no_win_streak ~= "off"
+    local no_win_streak_counts = no_win_streak_active and session:no_win_streak_counts() or nil
+    local no_win_streak_threshold = pen_rules.no_win_streak_threshold
+    local barrel_rules = session:config().barrel
+    local barrel_fall_active = barrel_rules.fall_count_resets_to_zero == "on"
+    local barrel_fall_counts = barrel_fall_active and session:barrel_fall_counts() or nil
 
     local scoreboard = {}
     for i = 1, player_count do
@@ -1153,6 +1162,20 @@ function M.from_session(session)
             write_offs = write_off_counts and {
                 count = write_off_counts[i] or 0,
                 threshold = write_off_threshold,
+            } or nil,
+            -- Phase 3.7 no-win streak counter: only present when the
+            -- toggle is selectable. Renderer reads count + threshold
+            -- and skips the line when nil.
+            no_win = no_win_streak_counts and {
+                count = no_win_streak_counts[i] or 0,
+                threshold = no_win_streak_threshold,
+            } or nil,
+            -- Phase 3.7 barrel-fall counter: only present when the
+            -- third-fall reset toggle is on. Threshold is hard-coded
+            -- at 3 per the book.
+            barrel_falls = barrel_fall_counts and {
+                count = barrel_fall_counts[i] or 0,
+                threshold = 3,
             } or nil,
             is_dealer = (i == dealer),
             is_turn = (i == turn),

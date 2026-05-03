@@ -1959,13 +1959,25 @@ local function draw_scoreboard(view, region)
     -- below the optional state line. The view-model only sets
     -- `entry.bolts` / `entry.crosses` when the matching toggle is on,
     -- so we can scan once to decide the row height.
-    local has_bolts, has_crosses = false, false
+    -- Phase 3.7 adds two more counters: no-win streak and barrel
+    -- falls. Same scan-once-then-add-line-height pattern.
+    local has_bolts, has_crosses, has_write_offs = false, false, false
+    local has_no_win, has_barrel_falls = false, false
     for _, entry in ipairs(view.scoreboard) do
         if entry.bolts then
             has_bolts = true
         end
         if entry.crosses then
             has_crosses = true
+        end
+        if entry.write_offs then
+            has_write_offs = true
+        end
+        if entry.no_win then
+            has_no_win = true
+        end
+        if entry.barrel_falls then
+            has_barrel_falls = true
         end
     end
 
@@ -1975,6 +1987,15 @@ local function draw_scoreboard(view, region)
         row_h = row_h + 14
     end
     if has_crosses then
+        row_h = row_h + 14
+    end
+    if has_write_offs then
+        row_h = row_h + 14
+    end
+    if has_no_win then
+        row_h = row_h + 14
+    end
+    if has_barrel_falls then
         row_h = row_h + 14
     end
     for _, entry in ipairs(view.scoreboard) do
@@ -2074,6 +2095,33 @@ local function draw_scoreboard(view, region)
                     t("scene.table.scoreboard.write_off_counter", {
                         count = entry.write_offs.count,
                         threshold = entry.write_offs.threshold,
+                    }),
+                    region.x + 12,
+                    extra_y
+                )
+                extra_y = extra_y + 14
+            end
+            -- Phase 3.7 no-win streak counter. Muted teal sets it
+            -- apart from the other counters at a glance.
+            if entry.no_win then
+                love.graphics.setColor(0.40, 0.70, 0.65, 1)
+                love.graphics.print(
+                    t("scene.table.scoreboard.no_win_counter", {
+                        count = entry.no_win.count,
+                        threshold = entry.no_win.threshold,
+                    }),
+                    region.x + 12,
+                    extra_y
+                )
+                extra_y = extra_y + 14
+            end
+            -- Phase 3.7 barrel-fall counter. Warm red — rare event,
+            -- and matches the falling-off-the-barrel mood.
+            if entry.barrel_falls then
+                love.graphics.setColor(0.85, 0.40, 0.35, 1)
+                love.graphics.print(
+                    t("scene.table.scoreboard.barrel_fall_counter", {
+                        count = entry.barrel_falls.count,
                     }),
                     region.x + 12,
                     extra_y

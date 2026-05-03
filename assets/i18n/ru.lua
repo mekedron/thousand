@@ -469,5 +469,10 @@ return {
     ["templates.field.penalties.write_off_streak.label"] = "Штраф за каждую третью сдачу",
     ["templates.field.penalties.write_off_streak_threshold.label"] = "Порог серии сдач",
     ["templates.field.penalties.write_off_streak_penalty_amount.label"] = "Штраф за серию сдач",
+    ["templates.field.penalties.no_win_streak.label"] = "Штраф за серию проигрышей",
+    ["templates.field.penalties.no_win_streak_threshold.label"] = "Порог серии проигрышей",
+    ["templates.field.penalties.no_win_streak_penalty_amount.label"] = "Штраф за серию проигрышей",
+    ["templates.field.penalties.zero_tricks_dark_game_doubled.label"] = "Удвоение в тёмной",
+    ["templates.field.barrel.fall_count_resets_to_zero.label"] = "Три падения — обнуление",
     ["templates.field.penalties.cross.label"] = "Cross / крест",
 }
