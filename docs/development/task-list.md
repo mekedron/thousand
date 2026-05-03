@@ -682,7 +682,7 @@ ships scripted engine tests covering every value.
     so players see how close they are to the threshold.
   - All five fields flip to selectable.
   - Penalty engine tests cover every variant value.
-- [ ] Extend the built-in template engine tests to full scripted deals.
+- [x] Extend the built-in template engine tests to full scripted deals.
   - `Polish Tysiąc` plays a scripted deal under `talon.size = 2` once
     the talon-variants gameplay task lifts the dealer's
     `unsupported_talon_size` guard.

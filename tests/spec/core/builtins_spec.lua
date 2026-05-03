@@ -359,6 +359,28 @@ describe("core.rule_config builtins (engine integration)", function()
             end
             assert.are.equal("done", s.status)
             assert.are.equal(8, s.tricks_played)
+            -- All 24 cards reach a hand under pass_without_taking, so
+            -- card points conserve to the full deck total.
+            assert.are.equal(120, captured_sum(s))
+
+            -- Score the deal: Polish inherits canonical russian's
+            -- 5-step rounding (it does not override
+            -- scoring.round_to_nearest), so each rounded card-points
+            -- entry must be a multiple of 5.
+            local m = marriages_module.new(config).marriages
+            local sd = scoring.score_deal(config, {
+                declarer = a.declarer,
+                bid = a.final_bid,
+                captured_points = s.captured_points,
+                marriage_bonuses = m.bonuses,
+                running_totals = { 0, 0, 0 },
+            }).scoring
+            assert.is_table(sd)
+            assert.is_boolean(sd.made_contract)
+            assert.are.equal(3, #sd.deltas)
+            for _, n in ipairs(sd.card_points_rounded) do
+                assert.are.equal(0, n % 5, "card-points must round to nearest 5")
+            end
         end)
     end)
 
@@ -411,6 +433,22 @@ describe("core.rule_config builtins (engine integration)", function()
             assert.are.equal(12, s.tricks_played)
             assert.are.equal(0, #s.stock)
             assert.are.equal("strict", s.phase)
+            -- The stock-draw phase consumes the entire 24-card deck
+            -- across both seats, so card points conserve to the full
+            -- deck total.
+            assert.are.equal(120, s.captured_points[1] + s.captured_points[2])
+
+            local m = marriages_module.new(config).marriages
+            local sd = scoring.score_deal(config, {
+                declarer = a.declarer,
+                bid = a.final_bid,
+                captured_points = s.captured_points,
+                marriage_bonuses = m.bonuses,
+                running_totals = { 0, 0 },
+            }).scoring
+            assert.is_table(sd)
+            assert.is_boolean(sd.made_contract)
+            assert.are.equal(2, #sd.deltas)
         end)
     end)
 
@@ -459,6 +497,23 @@ describe("core.rule_config builtins (engine integration)", function()
             end
             assert.are.equal("done", s.status)
             assert.are.equal(8, s.tricks_played)
+
+            -- 2-player B uses 7+7 hands plus a 3-card talon (17 of the
+            -- 24 cards), and the declarer discards one after take/pass,
+            -- so captured points sum to less than the full deck. We
+            -- assert structural shape here; raw point totals are
+            -- seed-dependent.
+            local m = marriages_module.new(config).marriages
+            local sd = scoring.score_deal(config, {
+                declarer = a.declarer,
+                bid = a.final_bid,
+                captured_points = s.captured_points,
+                marriage_bonuses = m.bonuses,
+                running_totals = { 0, 0 },
+            }).scoring
+            assert.is_table(sd)
+            assert.is_boolean(sd.made_contract)
+            assert.are.equal(2, #sd.deltas)
         end)
     end)
 
@@ -583,6 +638,33 @@ describe("core.rule_config builtins (engine integration)", function()
             -- The sitting-out seat never won a trick or captured points.
             assert.are.equal(0, s.captured_points[2])
             assert.are.equal(0, s.tricks_won[2])
+            -- The three playing seats consume the entire 24-card deck
+            -- (3 × 7 hands + 3 talon, fully exchanged), so card points
+            -- conserve to the full deck total across them.
+            assert.are.equal(
+                120,
+                s.captured_points[1] + s.captured_points[3] + s.captured_points[4]
+            )
+
+            local m = marriages_module.new(config).marriages
+            local sd = scoring.score_deal(config, {
+                declarer = a.declarer,
+                bid = a.final_bid,
+                captured_points = s.captured_points,
+                marriage_bonuses = m.bonuses,
+                running_totals = { 0, 0, 0, 0 },
+            }).scoring
+            assert.is_table(sd)
+            assert.is_boolean(sd.made_contract)
+            assert.are.equal(4, #sd.deltas)
+            -- 4-player B inherits fixed_across_table partnerships, so
+            -- the side ledger mirrors four_player_a.
+            assert.is_table(sd.sides)
+            assert.are.equal(2, #sd.side_deal_scores)
+            -- The sits-out seat carries no captures and no marriage
+            -- bonuses, so its deal_score is zero — the partnership
+            -- side score collapses to the active partner alone.
+            assert.are.equal(0, sd.deal_scores[2])
         end)
     end)
 end)
