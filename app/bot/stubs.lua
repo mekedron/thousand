@@ -14,15 +14,6 @@
 
 local M = {}
 
-local function first_opponent(declarer, player_count)
-    for seat = 1, player_count do
-        if seat ~= declarer then
-            return seat
-        end
-    end
-    return nil
-end
-
 function M.choose_bid(_view, _seat)
     return { kind = "pass" } -- i18n-ok: action enum
 end
@@ -83,19 +74,19 @@ end
 function M.choose_talon_pass(view, seat)
     local substate = view:talon_substate()
     local hand = view:hands()[seat] or {}
-    local config = view:config()
-    local target = first_opponent(seat, config.players.count)
+    if substate == "discard" then
+        return {
+            kind = "discard_talon", -- i18n-ok: action enum
+            card = hand[1],
+        }
+    end
+    local targets = view:talon_pass_targets() or {}
+    local target = targets[1]
     if substate == "polish_pass" then
         return {
             kind = "pass_polish_talon", -- i18n-ok: action enum
             target = target,
             talon_index = 1,
-        }
-    end
-    if substate == "discard" then
-        return {
-            kind = "discard_talon", -- i18n-ok: action enum
-            card = hand[1],
         }
     end
     return {

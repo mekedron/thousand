@@ -965,6 +965,38 @@ function Session:talon_substate()
     return nil
 end
 
+-- Opponent seats that can currently receive a talon pass — non-declarer,
+-- non-sits-out, not yet recorded in `passes_received`. Returns the list
+-- in seat order at the "pass" substate (declarer-takes-then-passes,
+-- post-take) and at the "polish_pass" substate (Polish direct 2-card
+-- distribution); returns nil at every other substate (no talon, "action"
+-- pre-take, "discard" 2-player-B, "raise" post-pass). The bot stub
+-- chooses the head of the list on each consecutive pass; the table
+-- view-model derives its single pass_target_seat from the same engine
+-- struct.
+function Session:talon_pass_targets()
+    local talon = self._talon
+    if not talon then
+        return nil
+    end
+    local substate = self:talon_substate()
+    if substate ~= "pass" and substate ~= "polish_pass" then -- i18n-ok: substate enums
+        return nil
+    end
+    local count = self._config.players.count
+    local targets = {}
+    for seat = 1, count do
+        if
+            seat ~= talon.declarer
+            and seat ~= talon.sits_out
+            and not talon.passes_received[seat]
+        then
+            targets[#targets + 1] = seat
+        end
+    end
+    return targets
+end
+
 -- The seat that should act next, or nil when the phase has no actor
 -- (a finished game, a deal that ended on all-pass, or the gap between
 -- the eighth trick and the next-deal hand-off).

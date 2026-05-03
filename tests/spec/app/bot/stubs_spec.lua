@@ -8,7 +8,6 @@
 local stubs = require("app.bot.stubs")
 local contract = require("app.bot.contract")
 local Session = require("app.session")
-local rule_config = require("core.rule_config")
 
 local function fake_view(stubbed)
     local view = {}
@@ -183,7 +182,7 @@ describe("app.bot.stubs", function()
     describe("choose_talon_pass", function()
         local card = { suit = "hearts", rank = "A" }
 
-        it("passes the first hand card to the first opponent (regular flow)", function()
+        it("passes the first hand card to the first pending opponent (regular)", function()
             local view = fake_view({
                 talon_substate = function()
                     return "pass"
@@ -191,19 +190,35 @@ describe("app.bot.stubs", function()
                 hands = function()
                     return { {}, { card }, {} }
                 end,
-                config = function()
-                    return rule_config.canonical_russian
+                talon_pass_targets = function()
+                    return { 1, 3 }
                 end,
             })
             local action = stubs.choose_talon_pass(view, 2)
             assert.are.equal("pass_talon", action.kind)
             assert.are.equal(card, action.card)
-            assert.is_true(action.target == 1 or action.target == 3)
-            assert.are_not.equal(2, action.target)
+            assert.are.equal(1, action.target)
             assert_kind_in_registry("choose_talon_pass", action.kind)
         end)
 
-        it("uses pass_polish_talon under Polish distribution", function()
+        it("advances to the remaining opponent when only one is pending", function()
+            local view = fake_view({
+                talon_substate = function()
+                    return "pass"
+                end,
+                hands = function()
+                    return { {}, { card }, {} }
+                end,
+                talon_pass_targets = function()
+                    return { 3 }
+                end,
+            })
+            local action = stubs.choose_talon_pass(view, 2)
+            assert.are.equal("pass_talon", action.kind)
+            assert.are.equal(3, action.target)
+        end)
+
+        it("uses pass_polish_talon at the polish_pass sub-state", function()
             local view = fake_view({
                 talon_substate = function()
                     return "polish_pass"
@@ -211,27 +226,24 @@ describe("app.bot.stubs", function()
                 hands = function()
                     return { {}, { card }, {} }
                 end,
-                config = function()
-                    return rule_config.builtins.polish
+                talon_pass_targets = function()
+                    return { 3, 1 }
                 end,
             })
             local action = stubs.choose_talon_pass(view, 2)
             assert.are.equal("pass_polish_talon", action.kind)
             assert.are.equal(1, action.talon_index)
-            assert.is_true(action.target == 1 or action.target == 3)
+            assert.are.equal(3, action.target)
             assert_kind_in_registry("choose_talon_pass", action.kind)
         end)
 
-        it("uses discard_talon at the awaiting_discard sub-state", function()
+        it("uses discard_talon at the discard sub-state (no target needed)", function()
             local view = fake_view({
                 talon_substate = function()
                     return "discard"
                 end,
                 hands = function()
                     return { {}, { card }, {} }
-                end,
-                config = function()
-                    return rule_config.canonical_russian
                 end,
             })
             local action = stubs.choose_talon_pass(view, 2)
@@ -263,6 +275,37 @@ describe("app.bot.stubs", function()
             local action = stubs.choose_card(view, seat)
             assert.are.equal("play", action.kind)
             assert(s:play(seat, action.card).ok)
+        end)
+
+        -- Regression for the Phase 4.1 stub bug where the chooser always
+        -- returned the lowest non-declarer seat, so the second consecutive
+        -- pass tried to send another card to the opponent who had already
+        -- received one and the engine rejected it (target_already_received).
+        it("choose_talon_pass drives both passes legally on consecutive calls", function()
+            local s = Session.new({ seed = 42, dealer = 1 })
+            assert(s:bid(2, 100).ok)
+            assert(s:pass(3).ok)
+            assert(s:pass(1).ok)
+            assert(s:take_talon().ok)
+            if s:current_phase() == "awaiting_write_off_decision" then
+                assert(s:accept_play().ok)
+            end
+            assert.are.equal("pass", s:talon_substate())
+
+            local view = contract.make_view(s)
+
+            local first = stubs.choose_talon_pass(view, 2)
+            assert.are.equal("pass_talon", first.kind)
+            local first_result = s:pass_talon(first.target, first.card)
+            assert.is_true(first_result.ok, "first pass must land legally")
+
+            local second = stubs.choose_talon_pass(view, 2)
+            assert.are.equal("pass_talon", second.kind)
+            assert.are_not.equal(first.target, second.target)
+            local second_result = s:pass_talon(second.target, second.card)
+            assert.is_true(second_result.ok, "second pass must land legally")
+
+            assert.are.equal("raise", s:talon_substate())
         end)
     end)
 end)

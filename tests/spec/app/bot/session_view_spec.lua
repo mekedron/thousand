@@ -107,6 +107,21 @@ describe("app.bot.session_view", function()
             assert.are.equal("action", at_talon_view:talon_substate())
         end)
 
+        it("forwards talon_pass_targets() — list during pass, nil otherwise", function()
+            local fresh = fresh_auction_session()
+            local fresh_view = session_view.new(fresh)
+            assert.is_nil(fresh_view:talon_pass_targets())
+
+            local at_pass = drive_to_talon()
+            assert(at_pass:take_talon().ok)
+            if at_pass:current_phase() == "awaiting_write_off_decision" then
+                assert(at_pass:accept_play().ok)
+            end
+            local at_pass_view = session_view.new(at_pass)
+            assert.are.same(at_pass:talon_pass_targets(), at_pass_view:talon_pass_targets())
+            assert.are.same({ 1, 3 }, at_pass_view:talon_pass_targets())
+        end)
+
         it("forwards config() — same reference as Session:config", function()
             local s = fresh_auction_session()
             local view = session_view.new(s)

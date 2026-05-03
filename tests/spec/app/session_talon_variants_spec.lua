@@ -1011,4 +1011,57 @@ describe("app.session talon variants", function()
             assert.are.equal("wrong_phase", result.error.code)
         end)
     end)
+
+    describe("Session:talon_pass_targets", function()
+        local function drive_to_pass_substate(seed)
+            local s = Session.new({ seed = seed or 42, dealer = 1 })
+            assert(s:bid(2, 100).ok)
+            assert(s:pass(3).ok)
+            assert(s:pass(1).ok)
+            assert(s:take_talon().ok)
+            if s:current_phase() == "awaiting_write_off_decision" then
+                assert(s:accept_play().ok)
+            end
+            assert.are.equal("pass", s:talon_substate())
+            return s
+        end
+
+        it("returns nil when no talon phase is live (pre-auction)", function()
+            local s = Session.new({ seed = 42, dealer = 1 })
+            assert.is_nil(s:talon_pass_targets())
+        end)
+
+        it("returns nil at the action substate (revealed, pre-take)", function()
+            local s = Session.new({ seed = 42, dealer = 1 })
+            assert(s:bid(2, 100).ok)
+            assert(s:pass(3).ok)
+            assert(s:pass(1).ok)
+            assert.are.equal("action", s:talon_substate())
+            assert.is_nil(s:talon_pass_targets())
+        end)
+
+        it("lists both opponents in seat order at the pass substate", function()
+            local s = drive_to_pass_substate()
+            assert.are.same({ 1, 3 }, s:talon_pass_targets())
+        end)
+
+        it("shrinks to the remaining opponent after one pass lands", function()
+            local s = drive_to_pass_substate()
+            local hand = s:hands()[2]
+            assert(s:pass_talon(1, hand[1]).ok)
+            assert.are.same({ 3 }, s:talon_pass_targets())
+        end)
+
+        it("becomes empty after both passes land (talon advances to raise)", function()
+            local s = drive_to_pass_substate()
+            local hand = s:hands()[2]
+            assert(s:pass_talon(1, hand[1]).ok)
+            hand = s:hands()[2]
+            assert(s:pass_talon(3, hand[1]).ok)
+            -- Substate flipped to raise; targets accessor is no longer
+            -- meaningful and returns nil.
+            assert.are.equal("raise", s:talon_substate())
+            assert.is_nil(s:talon_pass_targets())
+        end)
+    end)
 end)
