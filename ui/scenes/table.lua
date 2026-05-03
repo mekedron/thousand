@@ -40,10 +40,17 @@ local layout = require("ui.layout")
 local cards = require("ui.cards")
 local view_model = require("app.table_view_model")
 local settings = require("app.settings")
+local bot_driver = require("app.bot.driver")
 local t = i18n.t
 
 local M = {}
 M.__index = M
+
+-- Phase 4.1 test seam: e2e journeys set this to a seat_kinds list (e.g.
+-- {"human","bot","bot"}) before navigating to the table so the new-game
+-- flow's lack of bot-binding UI does not block the bot-driver journey.
+-- Phase 4.2 deletes this hook once the menu owns the binding.
+M._test_seat_kinds = nil
 
 local MENU_BTN_W = 120
 local MENU_BTN_H = 48
@@ -148,6 +155,14 @@ function M.new(manager)
         _last_revealed_seat = nil,
         _curtain_button = nil,
         _curtain_focus = nil,
+        -- Phase 4.1 bot driver wiring. _seat_kinds is one entry per
+        -- seat ("human" | "bot"); the driver's tick polls current_turn
+        -- and asks the bot module for an action when the responsible
+        -- seat is a bot. Phase 4.2 plumbs seat_kinds through the
+        -- new-game flow; today the scene defaults to all-human and
+        -- tests / journeys override via the enter() params.
+        _seat_kinds = nil,
+        _bot_driver = nil,
     }, M)
     self._back_button = Button.new({
         id = "back_to_menu", -- i18n-ok
@@ -178,7 +193,7 @@ function M:_refresh_view_model()
     end
 end
 
-function M:enter(_prev_id, _params)
+function M:enter(_prev_id, params)
     self._back_button.hovered = false
     self._back_button.pressed = false
     self._modal = nil
@@ -201,6 +216,14 @@ function M:enter(_prev_id, _params)
     self._last_revealed_seat = nil
     self._curtain_button = nil
     self._curtain_focus = nil
+    -- Phase 4.1: read the per-seat human/bot binding off the params,
+    -- defaulting to all-human. Phase 4.2 plumbs this through the new-
+    -- game flow and the save format; today only journeys / tests pass
+    -- it explicitly. The `_test_seat_kinds` hook lets e2e journeys
+    -- pre-configure the binding before the menu hands off to this
+    -- scene without ever-present production plumbing.
+    self._seat_kinds = (params and params.seat_kinds) or M._test_seat_kinds
+    self._bot_driver = bot_driver.new({})
     self:_refresh_view_model()
 end
 
@@ -1231,9 +1254,23 @@ function M:_apply_curtain_trigger()
     if self._curtain then
         return
     end
+    -- Phase 4.1: bot seats never see the privacy curtain — there's no
+    -- human eye to protect. The curtain re-fires when control returns
+    -- to a different human seat (last_revealed_seat is only set by
+    -- _close_curtain when an actual human dismisses the cover).
+    if self:_seat_is_bot(view.turn_player) then
+        return
+    end
     if view.turn_player ~= self._last_revealed_seat then
         self:_open_curtain(view.turn_player)
     end
+end
+
+function M:_seat_is_bot(seat)
+    if not seat or not self._seat_kinds then
+        return false
+    end
+    return self._seat_kinds[seat] == "bot"
 end
 
 -- Per-frame panel building --------------------------------------------
@@ -2980,6 +3017,30 @@ local function draw_toast(self, regions)
     love.graphics.setColor(1, 1, 1, 1)
 end
 
+-- Phase 4.1: render the "Bot N thinking…" banner while the driver is
+-- holding a pending decision. Sits at the top of the centre region so
+-- it never collides with the toast (bottom) or the panel (below).
+local function draw_bot_thinking_banner(self, regions)
+    if not self._bot_driver or not self._bot_driver:is_thinking() then
+        return
+    end
+    local seat = self._bot_driver:thinking_seat()
+    if not seat then
+        return
+    end
+    local centre = regions.centre
+    local text = t("scene.table.bot_thinking", { n = seat })
+    local banner_w = math.min(centre.w - 32, 320)
+    local banner_h = 28
+    local x = centre.x + math.floor((centre.w - banner_w) * 0.5)
+    local y = centre.y + 4
+    love.graphics.setColor(TOAST_BG)
+    love.graphics.rectangle("fill", x, y, banner_w, banner_h)
+    love.graphics.setColor(TOAST_FG)
+    love.graphics.print(text, x + 12, y + 6)
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
 -- Lifecycle ------------------------------------------------------------
 
 function M:update(dt)
@@ -2987,6 +3048,16 @@ function M:update(dt)
         self._toast.remaining = self._toast.remaining - (dt or 0)
         if self._toast.remaining <= 0 then
             self._toast = nil
+        end
+    end
+    -- Phase 4.1: drive bot seats. The driver self-throttles via its
+    -- own clock so a "thinking…" indicator can render between the
+    -- decision and the apply. No-op if seat_kinds is nil (no bot
+    -- seats configured) or the active seat is human.
+    if self._bot_driver and self._seat_kinds then
+        local session = self:_session()
+        if session then
+            self._bot_driver:tick(session, self._seat_kinds)
         end
     end
 end
@@ -3054,6 +3125,7 @@ function M:draw(w, h)
     self._back_button:draw()
 
     draw_toast(self, regions)
+    draw_bot_thinking_banner(self, regions)
     draw_marriage_modal(self, w, h)
     draw_redeal_modal(self, w, h)
     draw_bad_talon_modal(self, w, h)

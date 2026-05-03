@@ -753,6 +753,106 @@ describe("ui.scenes.table", function()
             )
         end)
     end)
+
+    describe("bot driver wiring (Phase 4.1)", function()
+        local function fake_clock()
+            local now = 0
+            return {
+                read = function()
+                    return now
+                end,
+                advance = function(dt)
+                    now = now + dt
+                end,
+            }
+        end
+
+        it("stores seat_kinds from enter params and instantiates the driver", function()
+            local table_scene = require("ui.scenes.table")
+            local sc = table_scene.new(fake_manager(session))
+            sc:enter(nil, { seat_kinds = { "human", "bot", "bot" } })
+            assert.are.same({ "human", "bot", "bot" }, sc._seat_kinds)
+            assert.is_not_nil(sc._bot_driver)
+            assert.is_function(sc._bot_driver.tick)
+        end)
+
+        it("defaults seat_kinds to nil when no params are passed", function()
+            local table_scene = require("ui.scenes.table")
+            local sc = table_scene.new(fake_manager(session))
+            sc:enter(nil, nil)
+            assert.is_nil(sc._seat_kinds)
+        end)
+
+        it("does not open the privacy curtain on a bot turn", function()
+            local table_scene = require("ui.scenes.table")
+            local sc = table_scene.new(fake_manager(session))
+            sc:enter(nil, { seat_kinds = { "human", "bot", "bot" } })
+            sc:draw(1024, 720)
+            -- Forehand is seat 2 (a bot under this binding) → no curtain.
+            assert.is_nil(sc._curtain, "no curtain expected on a bot turn")
+            assert.is_nil(
+                find_text(mock, t("scene.table.privacy.prompt", { n = 2 })),
+                "no privacy prompt expected for the bot seat"
+            )
+        end)
+
+        it("applies a bot pass via the session mutator after the thinking delay", function()
+            local clock = fake_clock()
+            local bot_driver = require("app.bot.driver")
+            bot_driver._clock_for_test = clock.read
+
+            local table_scene = require("ui.scenes.table")
+            local sc = table_scene.new(fake_manager(session))
+            sc:enter(nil, { seat_kinds = { "human", "bot", "bot" } })
+
+            -- Forehand is seat 2 (bot). Tick: pending decision; no apply.
+            sc:update(0.0)
+            assert.is_true(sc._bot_driver:is_thinking())
+            assert.are.equal(2, sc._bot_driver:thinking_seat())
+            assert.are.equal("auction", session:current_phase())
+            assert.are.equal(2, session:current_turn())
+
+            -- Advance past the default delay; tick triggers apply.
+            clock.advance(1.0)
+            sc:update(0.0)
+            assert.is_false(sc._bot_driver:is_thinking())
+            -- The bot stub passes; the next forehand candidate is seat 3.
+            assert.are.equal(3, session:current_turn())
+
+            bot_driver._clock_for_test = nil
+        end)
+
+        it("renders the thinking banner while a bot decision is pending", function()
+            local clock = fake_clock()
+            local bot_driver = require("app.bot.driver")
+            bot_driver._clock_for_test = clock.read
+
+            local table_scene = require("ui.scenes.table")
+            local sc = table_scene.new(fake_manager(session))
+            sc:enter(nil, { seat_kinds = { "human", "bot", "bot" } })
+            sc:update(0.0)
+
+            mock.graphics.clear_recording()
+            sc:draw(1024, 720)
+            assert.is_not_nil(
+                find_text(mock, t("scene.table.bot_thinking", { n = 2 })),
+                "expected the bot-thinking banner during the pending decision"
+            )
+
+            bot_driver._clock_for_test = nil
+        end)
+
+        it("is a no-op when seat_kinds is nil (existing human-only flow)", function()
+            local table_scene = require("ui.scenes.table")
+            local sc = table_scene.new(fake_manager(session))
+            sc:enter(nil, nil)
+            sc:update(0.5)
+            -- Driver did not run (no seat_kinds), session unchanged.
+            assert.are.equal("auction", session:current_phase())
+            assert.are.equal(2, session:current_turn())
+            assert.is_false(sc._bot_driver:is_thinking())
+        end)
+    end)
 end)
 
 -- ---------------------------------------------------------------------------

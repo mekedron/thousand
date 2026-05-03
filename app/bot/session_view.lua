@@ -21,6 +21,7 @@ local READ_ONLY_ACCESSORS = {
     "current_trick",
     "trump",
     "talon_cards",
+    "talon_substate",
     "redeal_offer",
     "bad_talon_offer_state",
     "rebuy_offer_state",

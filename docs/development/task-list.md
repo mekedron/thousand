@@ -1126,7 +1126,7 @@ algorithmic.
     `available_marriages`, `config`); no UI or LLM imports.
   - CI guards that `app/bot/` imports nothing from `ui/` or
     `app/llm/`.
-- [ ] Wire the bot driver into the table scene.
+- [x] Wire the bot driver into the table scene.
   - When `current_turn()` is a bot seat, the table scene calls the
     bot module for that seat and applies the returned action via
     the same Session mutator a human button would call.
@@ -1142,6 +1142,22 @@ algorithmic.
   - A "thinking…" indicator runs while a seat is deciding;
     effective decision latency is capped at 2 s including the
     indicator.
+- [ ] Route in-trick marriage declarations through the driver.
+  - The 4.1 commit ships `tricks → choose_card`; `choose_marriage` is
+    in the registry but not yet routed. The Phase 4.3 marriage
+    heuristic decides whether to declare on lead, then chains
+    `choose_marriage` → apply → `choose_card` on the next tick.
+- [ ] Add a chooser for the cut-deck phase.
+  - `Session:current_phase() == "cut"` has no chooser entry today;
+    bot seats stall there. Add `choose_cut_deck` to the contract
+    registry and a stub returning the canonical deck split, so a
+    bot-driven game under `cut_deck_safety = "on"` does not block.
+- [ ] Replace `app/bot/stubs.lua` with real per-chooser heuristics.
+  - 4.3 ships baseline-legal play surface by surface (auction,
+    redeal, talon, bad-talon, rebuy); 4.5 ships Phase 3.6 toggles
+    (write-off, forced concession, pre-first-trick marriage,
+    contra). The driver wiring stays untouched — only the chooser
+    bodies in `app/bot/stubs.lua` (or its 4.3 replacement) change.
 
 ### 4.2 Single-player mode and seat assignment
 

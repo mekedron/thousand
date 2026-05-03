@@ -97,6 +97,16 @@ describe("app.bot.session_view", function()
             assert.are.equal(3, #view:talon_cards())
         end)
 
+        it("forwards talon_substate() — nil during auction, 'action' at revealed", function()
+            local fresh = fresh_auction_session()
+            local fresh_view = session_view.new(fresh)
+            assert.is_nil(fresh_view:talon_substate())
+
+            local at_talon = drive_to_talon()
+            local at_talon_view = session_view.new(at_talon)
+            assert.are.equal("action", at_talon_view:talon_substate())
+        end)
+
         it("forwards config() — same reference as Session:config", function()
             local s = fresh_auction_session()
             local view = session_view.new(s)

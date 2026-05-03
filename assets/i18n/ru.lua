@@ -171,6 +171,8 @@ return {
     ["scene.table.toast.concession_disabled"] = "Forced-bid concession is not enabled",
     ["scene.table.toast.named_contracts_disabled"] = "Named contracts not enabled",
 
+    ["scene.table.bot_thinking"] = "Bot %{n} thinking…",
+
     ["scene.end_of_game.title"] = "Game Over",
     ["scene.end_of_game.placeholder"] = "Final scores will appear here.",
     ["scene.end_of_game.winner"] = "Winner: Player %{n}",

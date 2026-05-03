@@ -862,6 +862,44 @@ function Session:current_phase()
     return "auction"
 end
 
+-- Phase 4.1: classify the talon sub-step so the bot driver can route a
+-- single phase ("talon") to one of the three choosers without poking
+-- private fields.
+--
+--   * "action"      — declarer chooses take_talon | concede_deal | buyback_hand
+--                     (status "revealed", non-Polish distribution).
+--   * "pass"        — declarer must pass a card to an opponent
+--                     (status "awaiting_pass").
+--   * "polish_pass" — Polish 2-card direct pass (status "revealed",
+--                     distribution "pass_without_taking").
+--   * "discard"     — 2-player Variant B face-down discard
+--                     (status "awaiting_discard").
+--   * "raise"       — declarer chooses raise | skip_raise
+--                     (status "awaiting_raise").
+--   * nil           — outside the talon phase, or status "done".
+function Session:talon_substate()
+    if not self._talon then
+        return nil
+    end
+    local status = self._talon.status
+    if status == "revealed" then
+        if self._talon.distribution == "pass_without_taking" then
+            return "polish_pass" -- i18n-ok: substate enum
+        end
+        return "action" -- i18n-ok: substate enum
+    end
+    if status == "awaiting_pass" then
+        return "pass" -- i18n-ok: substate enum
+    end
+    if status == "awaiting_discard" then
+        return "discard" -- i18n-ok: substate enum
+    end
+    if status == "awaiting_raise" then
+        return "raise" -- i18n-ok: substate enum
+    end
+    return nil
+end
+
 -- The seat that should act next, or nil when the phase has no actor
 -- (a finished game, a deal that ended on all-pass, or the gap between
 -- the eighth trick and the next-deal hand-off).

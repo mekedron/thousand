@@ -618,4 +618,61 @@ describe("app.session", function()
     it("imports the marriages module without error", function()
         assert.is_function(marriages_module.detect)
     end)
+
+    -- Phase 4.1: talon_substate() classifies the talon sub-step so the
+    -- bot driver can route a single phase ("talon") to one of the three
+    -- choosers (choose_talon_action / choose_talon_pass / choose_raise)
+    -- without inspecting private fields. Pure read-only.
+    describe("Session:talon_substate", function()
+        it("returns nil during the auction (no talon yet)", function()
+            local s = Session.new({ seed = SEED_NO_MARRIAGE, dealer = 1 })
+            assert.are.equal("auction", s:current_phase())
+            assert.is_nil(s:talon_substate())
+        end)
+
+        it("returns 'action' when the talon is revealed (take/concede/buyback window)", function()
+            local s = drive_to_talon(SEED_NO_MARRIAGE)
+            assert.are.equal("talon", s:current_phase())
+            assert.are.equal("revealed", s._talon.status)
+            assert.are.equal("action", s:talon_substate())
+        end)
+
+        it("returns 'pass' after the declarer takes the talon", function()
+            local s = drive_to_talon(SEED_NO_MARRIAGE)
+            assert(s:take_talon().ok)
+            clear_write_off_prompt_if_pending(s)
+            assert.are.equal("awaiting_pass", s._talon.status)
+            assert.are.equal("pass", s:talon_substate())
+        end)
+
+        it("returns 'raise' after the declarer finishes passing", function()
+            local s = drive_to_talon(SEED_NO_MARRIAGE)
+            assert(s:take_talon().ok)
+            clear_write_off_prompt_if_pending(s)
+            local hand = s:hands()[2]
+            assert(s:pass_talon(1, hand[1]).ok)
+            hand = s:hands()[2]
+            assert(s:pass_talon(3, hand[1]).ok)
+            assert.are.equal("awaiting_raise", s._talon.status)
+            assert.are.equal("raise", s:talon_substate())
+        end)
+
+        it("returns nil during trick play (talon ended)", function()
+            local s = drive_to_tricks_no_marriage(SEED_NO_MARRIAGE)
+            assert.are.equal("tricks", s:current_phase())
+            assert.is_nil(s:talon_substate())
+        end)
+
+        it("returns 'polish_pass' for Polish pass_without_taking at revealed status", function()
+            local polish = rule_config.builtins.polish
+            local s = Session.new({ seed = 1, dealer = 1, config = polish })
+            assert(s:bid(2, 100).ok)
+            assert(s:pass(3).ok)
+            assert(s:pass(1).ok)
+            assert.are.equal("talon", s:current_phase())
+            assert.are.equal("revealed", s._talon.status)
+            assert.are.equal("pass_without_taking", s._talon.distribution)
+            assert.are.equal("polish_pass", s:talon_substate())
+        end)
+    end)
 end)
